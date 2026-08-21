@@ -259,21 +259,49 @@ Invoke-Safe 'storage' {
 # AMD chipset driver (if AMD board)
 Invoke-Safe 'chipset' {
     if ($baseboard.manufacturer -notmatch 'ASRock|ASUS|Gigabyte|MSI' -and $computer.manufacturer -notmatch 'AMD') { return }
-    $chipsetDrv = Get-CimInstance Win32_PnPSignedDriver |
+    $chipsetDrivers = @(Get-CimInstance Win32_PnPSignedDriver |
         Where-Object { $_.DeviceName -match 'AMD (PSP|SMBus|Chipset|GPIO|I2C|PCI|IOMMU)' -and $_.DriverVersion } |
-        Sort-Object DriverVersion -Descending | Select-Object -First 1
-    if (-not $chipsetDrv) { return }
+        Sort-Object DeviceName)
+    $chipsetDrv = $chipsetDrivers | Where-Object DeviceName -match 'AMD PSP' | Select-Object -First 1
+    if (-not $chipsetDrv) { $chipsetDrv = $chipsetDrivers | Select-Object -First 1 }
+
+    # AMD publishes one chipset software package containing several device drivers
+    # with unrelated version schemes (PSP, SMBus, GPIO, PCI, and others). Compare
+    # package-to-package versions instead of treating a PSP version as the package.
+    $uninstallRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    $chipsetPackage = Get-ItemProperty $uninstallRoots -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -eq 'AMD Chipset Software' -and $_.DisplayVersion } |
+        Sort-Object {
+            try { [version]$_.DisplayVersion } catch { [version]'0.0' }
+        } -Descending |
+        Select-Object -First 1
+    if (-not $chipsetDrv -and -not $chipsetPackage) { return }
+
     $chipset = $null
     if ($baseboard.product -match '(B550|B450|X570|X470|A520|B650|B650E|X670|X670E|B850|B840|X870|X870E)') { $chipset = $Matches[1] }
+    $packageVersion = if ($chipsetPackage) { "$($chipsetPackage.DisplayVersion)" } else { $null }
+    $fallbackVersion = if ($chipsetDrv) { "$($chipsetDrv.DriverVersion)" } else { $null }
     $components.Add([ordered]@{
-        component_key = Get-ComponentKey 'chipset' $chipsetDrv.DeviceID $chipsetDrv.DeviceName
+        component_key = Get-ComponentKey 'chipset' "AMD:$chipset" $baseboard.product
         category      = 'chipset'
         vendor        = 'AMD'
-        model         = if ($chipset) { "AMD $chipset Chipset" } else { $chipsetDrv.DeviceName }
-        hardware_id   = Get-HardwareId $chipsetDrv.DeviceID
-        current       = [ordered]@{ driver_version = $chipsetDrv.DriverVersion; driver_date = (ConvertTo-IsoDate $chipsetDrv.DriverDate); firmware = $null }
-        source        = 'Win32_PnPSignedDriver'
-        lookup_hints  = [ordered]@{ chipset = $chipset; board_model = $baseboard.product }
+        model         = if ($chipset) { "AMD $chipset Chipset" } elseif ($chipsetDrv) { $chipsetDrv.DeviceName } else { 'AMD Chipset' }
+        hardware_id   = if ($chipsetDrv) { Get-HardwareId $chipsetDrv.DeviceID } else { $null }
+        current       = [ordered]@{
+            driver_version = if ($packageVersion) { $packageVersion } else { $fallbackVersion }
+            driver_date    = if ($packageVersion) { $null } elseif ($chipsetDrv) { ConvertTo-IsoDate $chipsetDrv.DriverDate } else { $null }
+            firmware       = $null
+        }
+        source        = if ($packageVersion) { 'Registry:AMD Chipset Software' } else { 'Win32_PnPSignedDriver fallback' }
+        lookup_hints  = [ordered]@{
+            chipset            = $chipset
+            board_model        = $baseboard.product
+            package_version    = $packageVersion
+            psp_driver_version = if ($chipsetDrv) { "$($chipsetDrv.DriverVersion)" } else { $null }
+        }
     })
 } | Out-Null
 
@@ -374,7 +402,10 @@ $memory = Invoke-Safe 'memory' {
     [ordered]@{
         total_slots   = $total_slots
         populated     = $slots.Count
-        total_bytes   = ($slots | Measure-Object -Property Capacity -Sum).Sum
+        # Keep this an integer in JSON. PowerShell can promote Measure-Object's
+        # sum to a floating-point value (for example 17179869184.0), which is
+        # needlessly incompatible with strongly typed consumers.
+        total_bytes   = [long](($slots | Measure-Object -Property Capacity -Sum).Sum)
         slots         = @($slots | ForEach-Object {
             [ordered]@{
                 bank          = "$($_.BankLabel)"

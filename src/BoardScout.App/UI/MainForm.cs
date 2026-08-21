@@ -48,6 +48,7 @@ public sealed class MainForm : Form
     private readonly Label _inspectDetail = new();
     private readonly Label _inspectCapabilityHeading = new();
     private readonly Label _inspectCapability = new();
+    private readonly LinkLabel _inspectLink = new();
 
     private ScanManifest? _scan;
     private DriverReport? _report;
@@ -306,7 +307,7 @@ public sealed class MainForm : Form
     private void BuildInspector()
     {
         _inspectPanel.Dock = DockStyle.Top;
-        _inspectPanel.Height = 235;
+        _inspectPanel.Height = 270;
         _inspectPanel.BackColor = AppTheme.SurfaceRaised;
         _inspectPanel.Tag = "raised";
 
@@ -345,13 +346,23 @@ public sealed class MainForm : Form
 
         _inspectCapability.Font = new Font("Segoe UI", 9);
         _inspectCapability.Location = new Point(16, 166);
-        _inspectCapability.Height = 56;
+        _inspectCapability.Height = 50;
         _inspectCapability.ForeColor = AppTheme.Text;
         _inspectCapability.Tag = "text";
 
+        _inspectLink.Text = "Open official update page  ↗";
+        _inspectLink.Font = new Font("Segoe UI Semibold", 9);
+        _inspectLink.Location = new Point(16, 226);
+        _inspectLink.Height = 28;
+        _inspectLink.LinkColor = AppTheme.Accent;
+        _inspectLink.ActiveLinkColor = AppTheme.Good;
+        _inspectLink.VisitedLinkColor = AppTheme.Accent;
+        _inspectLink.Visible = false;
+        _inspectLink.LinkClicked += (_, _) => OpenOfficialUrl(_inspectLink.Tag as string);
+
         _inspectPanel.Controls.AddRange([
             _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail,
-            _inspectCapabilityHeading, _inspectCapability]);
+            _inspectCapabilityHeading, _inspectCapability, _inspectLink]);
         _inspectPanel.SizeChanged += (_, _) => LayoutInspector();
         LayoutInspector();
     }
@@ -360,7 +371,7 @@ public sealed class MainForm : Form
     {
         var width = Math.Max(200, _inspectPanel.ClientSize.Width - 32);
         foreach (var label in new[]
-                 { _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail, _inspectCapabilityHeading, _inspectCapability })
+                 { _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail, _inspectCapabilityHeading, _inspectCapability, _inspectLink })
             label.Width = width;
     }
 
@@ -379,12 +390,26 @@ public sealed class MainForm : Form
             ("Category", 90), ("Component", 285), ("Installed", 145), ("Date", 100),
             ("Latest", 130), ("Status", 125), ("Source", 110));
         _drivers.CellDoubleClick += (_, e) => OpenDriverLink(e.RowIndex);
+        _drivers.CellContentClick += (_, e) =>
+        {
+            if (e.ColumnIndex == 7) OpenDriverLink(e.RowIndex);
+        };
+        _drivers.Columns.Add(new DataGridViewLinkColumn
+        {
+            HeaderText = "Official update",
+            Width = 125,
+            MinimumWidth = 110,
+            TrackVisitedState = false,
+            LinkColor = AppTheme.Accent,
+            ActiveLinkColor = AppTheme.Good,
+            VisitedLinkColor = AppTheme.Accent
+        });
         page.Controls.Add(_drivers);
         page.Controls.Add(new Label
         {
             Dock = DockStyle.Top,
             Height = 28,
-            Text = "Double-click an update row to open its vendor or OEM page. BoardScout never installs drivers.",
+            Text = "Use Official update to open the vendor or OEM page. BoardScout never installs drivers or firmware.",
             ForeColor = AppTheme.Muted,
             Padding = new Padding(4, 5, 0, 0),
             Tag = "muted"
@@ -787,6 +812,7 @@ public sealed class MainForm : Form
                 component.Current.DriverDate ?? "—", latest, status, result?.Best.Source ?? "—");
             var row = _drivers.Rows[rowIndex];
             row.Tag = result;
+            SetDriverLink(row, result);
             ColorDriverRow(row, status, component.Current);
         }
 
@@ -797,9 +823,18 @@ public sealed class MainForm : Form
             var rowIndex = _drivers.Rows.Add(result.Category, result.Model, result.Best.InstalledVersion ?? "—", "—",
                 result.Best.LatestVersion ?? result.Best.LatestDate ?? "—", result.Status, result.Best.Source);
             _drivers.Rows[rowIndex].Tag = result;
+            SetDriverLink(_drivers.Rows[rowIndex], result);
             ColorDriverRow(_drivers.Rows[rowIndex], result.Status, new CurrentVersion());
         }
         BindMetrics();
+    }
+
+    private static void SetDriverLink(DataGridViewRow row, DriverResult? result)
+    {
+        if (row.Cells.Count <= 7) return;
+        var url = result?.DownloadUrl ?? result?.Best.DownloadUrl;
+        row.Cells[7].Value = string.IsNullOrWhiteSpace(url) ? "—" : "Official page ↗";
+        row.Cells[7].Tag = url;
     }
 
     private static void ColorDriverRow(DataGridViewRow row, string status, CurrentVersion current)
@@ -854,8 +889,14 @@ public sealed class MainForm : Form
     {
         if (rowIndex < 0 || _drivers.Rows[rowIndex].Tag is not DriverResult result) return;
         var url = result.DownloadUrl ?? result.Best.DownloadUrl;
-        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out _)) return;
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        OpenOfficialUrl(url);
+    }
+
+    private static void OpenOfficialUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)) return;
+        Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
     }
 
     private void SetBusy(bool busy, string message)
@@ -924,6 +965,15 @@ public sealed class MainForm : Form
         _log.BackColor = AppTheme.SurfaceRaised;
         _log.ForeColor = AppTheme.Text;
         _quickFacts.BackColor = AppTheme.Surface;
+        _inspectLink.LinkColor = AppTheme.Accent;
+        _inspectLink.ActiveLinkColor = AppTheme.Good;
+        _inspectLink.VisitedLinkColor = AppTheme.Accent;
+        foreach (var column in _drivers.Columns.OfType<DataGridViewLinkColumn>())
+        {
+            column.LinkColor = AppTheme.Accent;
+            column.ActiveLinkColor = AppTheme.Good;
+            column.VisitedLinkColor = AppTheme.Accent;
+        }
         _themeButton.Text = AppTheme.IsDark ? "Light mode" : "Dark mode";
         _boardMap.RefreshTheme();
         AppTheme.ApplyWindowTheme(this);
@@ -989,6 +1039,8 @@ public sealed class MainForm : Form
             _inspectStatus.Text = "Live telemetry ready";
             _inspectDetail.Text = "Move over the CPU, memory, graphics, drives, ports, or open slots.";
             _inspectCapability.Text = "BoardScout will explain current status, measured usage where available, and what each part is suited to doing.";
+            _inspectLink.Visible = false;
+            _inspectLink.Tag = null;
             SetInspectorTone(PartStatusTone.Info);
             return;
         }
@@ -998,6 +1050,8 @@ public sealed class MainForm : Form
         _inspectStatus.Text = details.Status;
         _inspectDetail.Text = details.Detail;
         _inspectCapability.Text = details.Capability;
+        _inspectLink.Tag = details.OfficialUrl;
+        _inspectLink.Visible = !string.IsNullOrWhiteSpace(details.OfficialUrl);
         SetInspectorTone(details.Tone);
     }
 

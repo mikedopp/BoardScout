@@ -132,5 +132,6 @@ function Invoke-Resolver_AmdChipset {
         latest_name       = $target.name
         download_url      = $target.url
         amd_chipset       = $chipset
+        note              = 'Compared against the installed AMD Chipset Software package version, not an individual PSP/SMBus/GPIO driver.'
     }
 }

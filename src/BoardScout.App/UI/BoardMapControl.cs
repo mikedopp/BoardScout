@@ -13,7 +13,8 @@ public sealed record BoardPartDetails(
     string Status,
     string Detail,
     string Capability,
-    PartStatusTone Tone);
+    PartStatusTone Tone,
+    string? OfficialUrl = null);
 
 public sealed class BoardMapControl : Control
 {
@@ -341,7 +342,13 @@ public sealed class BoardMapControl : Control
         for (var i = 0; i < 6; i++)
         {
             var rect = Box(700, 270 + i * 39, 170, 31);
-            if (i < sata.Count)
+            var disabledByM2 = IsB550MSteelLegend(scan) && nvme.Count >= 2 && i >= 4;
+            if (disabledByM2)
+            {
+                DrawDashed(g, rect, AppTheme.Muted, $"Port {i + 1} · disabled by M2_2", smallFont);
+                AddRegion(rect, $"sata-disabled-{i}", "sata-disabled", i);
+            }
+            else if (i < sata.Count)
             {
                 DrawPortBox(g, rect, $"{i + 1}", sata[i].Model, smallFont);
                 AddRegion(rect, $"sata-{i}", "sata", storage.IndexOf(sata[i]));
@@ -353,9 +360,11 @@ public sealed class BoardMapControl : Control
             }
         }
 
+        var boardIdentityRect = Box(525, 570, 345, 37);
         DrawTextFit(g,
             $"{scan.SystemInfo.Baseboard.Manufacturer} {scan.SystemInfo.Baseboard.Product}  ·  {scan.FormFactor.ToUpperInvariant()}",
-            titleFont, AppTheme.Muted, Box(20, 582, 850, 25), ContentAlignment.MiddleRight);
+            titleFont, AppTheme.Muted, boardIdentityRect, ContentAlignment.MiddleRight);
+        AddRegion(boardIdentityRect, "motherboard", "motherboard");
     }
 
     private void AddRegion(RectangleF bounds, string id, string type, int index = -1) =>
@@ -384,6 +393,9 @@ public sealed class BoardMapControl : Control
             "gpu" => ComponentDetails(scan.Components.ElementAtOrDefault(region.Index), region.Id, "Graphics", GpuCapability),
             "chipset" => ComponentDetails(scan.Components.ElementAtOrDefault(region.Index), region.Id, "Chipset",
                 _ => "Coordinates PCIe, storage, USB, and platform I/O. It affects expansion and connectivity more than raw compute speed."),
+            "motherboard" => ComponentDetails(scan.Components.FirstOrDefault(c => c.Category == "bios"), region.Id,
+                "Motherboard firmware",
+                _ => "BIOS firmware initializes the board, CPU, memory, storage, security, and boot process. Update only for a needed fix, compatibility change, or security release."),
             "nvme" or "sata" => StorageDetails(scan.Components.Where(c => c.Category == "storage").ElementAtOrDefault(region.Index), region),
             "rear-io" => new BoardPartDetails(region.Id, "CONNECTIVITY", "Rear I/O",
                 $"{scan.UsbDevices.Count(d => d.DeviceClass != "USB")} attached USB devices",
@@ -392,8 +404,12 @@ public sealed class BoardMapControl : Control
                 PartStatusTone.Good),
             "nvme-open" => OpenSlot(region, "M.2 slot", "Can accept compatible compact NVMe or SATA storage; exact key and lane support should be checked in the board manual."),
             "sata-open" => OpenSlot(region, $"SATA port {region.Index + 1}", "Can connect a compatible SATA SSD, hard drive, or optical drive."),
-            "pcie-open" => OpenSlot(region, region.Index == 0 ? "PCIe expansion slot" : "PCIe x1 slot",
-                "Can add compatible expansion hardware such as capture, network, storage, or sound cards. Slot layout is estimated."),
+            "sata-disabled" => new BoardPartDetails(region.Id, "LANE SHARING", $"SATA port {region.Index + 1}",
+                "Unavailable while M2_2 is occupied",
+                "On the B550M Steel Legend, M2_2 shares lanes with SATA3_5 and SATA3_6.",
+                "Remove the M2_2 drive to restore these two SATA ports; otherwise use SATA ports 1–4, PCIe expansion, or external USB storage.",
+                PartStatusTone.Muted),
+            "pcie-open" => PcieSlotDetails(scan, region),
             _ => EmptyDetails(region.Id)
         };
     }
@@ -480,8 +496,9 @@ public sealed class BoardMapControl : Control
             _ => ("Detected · driver not checked", PartStatusTone.Good)
         };
         var version = component.Current.DriverVersion ?? component.Current.Firmware ?? "Version unavailable";
+        var officialUrl = result?.DownloadUrl ?? result?.Best.DownloadUrl;
         return new BoardPartDetails(id, category.ToUpperInvariant(), component.Model, status,
-            $"Installed version · {version}", capability(component), tone);
+            $"Installed version · {version}", capability(component), tone, officialUrl);
     }
 
     private static BoardPartDetails OpenSlot(HitRegion region, string title, string capability) =>
@@ -491,6 +508,21 @@ public sealed class BoardMapControl : Control
     private static BoardPartDetails EmptyDetails(string id) =>
         new(id, "COMPONENT", "Hardware component", "Detected", "Details unavailable.",
             "Run a fresh inventory scan if the hardware changed.", PartStatusTone.Muted);
+
+    private static BoardPartDetails PcieSlotDetails(ScanManifest scan, HitRegion region)
+    {
+        if (IsB550MSteelLegend(scan) && region.Index == 0)
+            return new BoardPartDetails(region.Id, "EXPANSION", "PCIe 3.0 x4 slot (PCIE3)",
+                "Appears available · verify physical clearance",
+                "This is the lower full-length slot. It is electrically PCIe 3.0 x4 with the installed Ryzen 7 5700G.",
+                "A single-drive PCIe-to-M.2 NVMe adapter is a good fit. Cheap passive multi-drive cards may require lane bifurcation the board does not advertise.",
+                PartStatusTone.Info);
+        return OpenSlot(region, region.Index == 0 ? "PCIe expansion slot" : "PCIe x1 slot",
+            "Can add compatible expansion hardware such as capture, network, storage, or sound cards. Slot layout is estimated.");
+    }
+
+    private static bool IsB550MSteelLegend(ScanManifest scan) =>
+        scan.SystemInfo.Baseboard.Product.Contains("B550M Steel Legend", StringComparison.OrdinalIgnoreCase);
 
     private IEnumerable<VolumeInfo> FindVolumes(HardwareComponent component)
     {

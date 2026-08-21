@@ -21,6 +21,8 @@ You can also run the published executable directly:
 - Hover over detected CPU, memory, graphics, storage, chipset, I/O, or expansion
   areas to see health, driver or capacity status, and a plain-language
   capability estimate.
+- Supported board layouts explain lane sharing and disabled ports instead of
+  presenting every connector as simultaneously available.
 - CPU and physical-memory utilization update locally once per second. Storage
   blocks show mounted-capacity usage; GPU usage is not claimed when Windows
   does not expose a reliable counter.
@@ -36,7 +38,9 @@ BoardScout deliberately separates work by cost:
    firmware changes, not every time the app starts.
 3. **Check Drivers** is a separate, cancellable online operation. It uses
    DriverScout resolvers for vendor, OEM, and Microsoft catalog comparisons.
-4. BoardScout presents links for review and **never installs or flashes
+4. The Drivers table and motherboard inspector link directly to official
+   vendor, OEM, or Microsoft update pages.
+5. BoardScout presents every update for review and **never installs or flashes
    anything automatically**.
 
 The Efficiency screen looks for:
