@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     BoardScout - Portable hardware inventory scanner.
 

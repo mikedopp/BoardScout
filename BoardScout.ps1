@@ -1,33 +1,18 @@
-<#
-.SYNOPSIS
-    Scans this Windows PC, builds the BoardScout dashboard, and opens it.
-.PARAMETER ScanFile
-    Build from an existing scan instead of scanning this PC.
-.PARAMETER NoLaunch
-    Build the dashboard without opening it.
-#>
 [CmdletBinding()]
 param(
-    [string]$ScanFile,
-    [switch]$NoLaunch
+    [switch]$Rebuild
 )
 
 $ErrorActionPreference = 'Stop'
-$scanDir = Join-Path $PSScriptRoot 'data\scans'
-$buildDir = Join-Path $PSScriptRoot 'build'
+$runtime = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
+$exe = Join-Path $PSScriptRoot "build\portable\$runtime\BoardScout.exe"
 
-if (-not $ScanFile) {
-    New-Item -ItemType Directory -Force -Path $scanDir | Out-Null
-    $scanner = Join-Path $PSScriptRoot 'src\Invoke-BoardScan.ps1'
-    $ScanFile = & $scanner -OutDir $scanDir -Quiet | Select-Object -Last 1
+if ($Rebuild -or -not (Test-Path -LiteralPath $exe)) {
+    & (Join-Path $PSScriptRoot 'Build-Portable.ps1') -Runtime $runtime
 }
 
-$builder = Join-Path $PSScriptRoot 'Build-BoardScout.ps1'
-$dashboard = & $builder -ScanFile $ScanFile -OutputDir $buildDir | Select-Object -Last 1
-Write-Host "BoardScout dashboard: $dashboard" -ForegroundColor Green
-
-if (-not $NoLaunch) {
-    Start-Process -FilePath $dashboard
+if (-not (Test-Path -LiteralPath $exe)) {
+    throw "Portable build was not created: $exe"
 }
 
-return $dashboard
+Start-Process -FilePath $exe

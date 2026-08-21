@@ -1,9 +1,13 @@
 # Local scans contain hostnames and hardware identifiers.
 /data/scans/*.json
 
-# Built dashboards may contain an embedded private scan.
+# Portable builds and generated dashboards.
 /build/*
 !/build/.gitkeep
+
+**/bin/
+**/obj/
+.vs/
 
 *.log
 .DS_Store

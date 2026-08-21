@@ -1,43 +1,66 @@
 # BoardScout
 
-BoardScout turns a local Windows hardware scan into a visual motherboard and
-storage dashboard. It is portable, dependency-free, and keeps scan data on the
-machine.
+BoardScout is a portable native C# desktop application for Windows hardware,
+motherboard, storage, and driver health. It bundles the DriverScout engine and
+does not require an installer, administrator rights, or a machine-wide .NET
+runtime.
 
-## Run it
+## Run
 
-Double-click `BoardScout.cmd`, or run:
+Double-click **BoardScout.cmd**. The launcher uses the matching portable build
+for x64 or ARM64 Windows and builds it first when necessary.
 
-```powershell
-.\\BoardScout.ps1
-```
+You can also run the published executable directly:
 
-The launcher scans the PC, writes the private scan under `data\\scans`, builds
-a self-contained dashboard at `build\\index.html`, and opens it in the default
-browser. No local web server is required.
+    .\build\portable\win-x64\BoardScout.exe
 
-To build from an existing schema-2 scan without opening a browser:
+## Efficient workflow
 
-```powershell
-.\\BoardScout.ps1 -ScanFile D:\\path\\scan.json -NoLaunch
-```
+BoardScout deliberately separates work by cost:
 
-You can also open `src\\web\\index.html` directly and choose **Load Scan JSON**.
+1. **Startup uses the cached scan** and opens immediately.
+2. **Scan Hardware** performs local inventory only. Run it after hardware or
+   firmware changes, not every time the app starts.
+3. **Check Drivers** is a separate, cancellable online operation. It uses
+   DriverScout resolvers for vendor, OEM, and Microsoft catalog comparisons.
+4. BoardScout presents links for review and **never installs or flashes
+   anything automatically**.
 
-## Privacy and accuracy
+The Efficiency screen looks for:
 
-Raw scans can include hostnames, hardware IDs, and serial numbers. They are
-ignored by Git, and the dashboard does not display the motherboard serial.
-Generated dashboards can embed the full scan, so `build\\` is ignored too.
+- memory running below its advertised XMP/DOCP/EXPO rate;
+- critically full or nearly full volumes;
+- Device Manager error codes;
+- older BIOS firmware that merits a manual review;
+- old driver dates, excluding Windows inbox disk.inf dates;
+- update results verified by DriverScout sources.
 
-The board drawing is a schematic, not a manufacturer CAD diagram. BoardScout
-uses firmware-reported expansion-slot data when available and clearly marks
-form-factor-based connector counts as estimates. Confirm physical connectors
-and PCIe lane sharing in the motherboard manual before buying hardware.
+## Portable build
 
-## Layout
+Build the self-contained application and distribution zip:
 
-- `src\\Invoke-BoardScan.ps1` — Windows hardware collector
-- `src\\web\\index.html` — standalone dashboard source
-- `Build-BoardScout.ps1` — produces `build\\index.html`
-- `BoardScout.ps1` / `BoardScout.cmd` — scan, build, and launch
+    .\Build-Portable.ps1 -Runtime win-x64
+
+Outputs:
+
+- build\portable\win-x64\BoardScout.exe
+- build\BoardScout-0.2.0-win-x64.zip
+
+The portable folder includes the bundled DriverScout scripts and offline PCI/USB
+ID databases. Zip that folder, move it to another Windows 10/11 PC, extract it,
+and run **BoardScout.exe**.
+
+If the application folder is writable, scans and reports stay in its **Data**
+directory. If it is read-only, BoardScout falls back to
+%LOCALAPPDATA%\BoardScout. Set BOARDSCOUT_DATA to override this location.
+
+## Source layout
+
+- src\BoardScout.App — .NET 8 WinForms application
+- src\BoardScout.App\DriverScout — bundled DriverScout engine and notices
+- src\BoardScout.App\Services — scanning, driver checks, caching, suggestions
+- src\BoardScout.App\UI — native motherboard view and application screens
+- Build-Portable.ps1 — self-contained publisher and zip packager
+
+DriverScout is bundled under its own MIT license. See
+src\BoardScout.App\DriverScout\LICENSE and THIRD-PARTY-NOTICES.md.
