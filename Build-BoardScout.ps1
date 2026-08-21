@@ -19,7 +19,8 @@ if (-not (Test-Path -LiteralPath $templatePath)) {
 }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$html = Get-Content -LiteralPath $templatePath -Raw
+$utf8 = [Text.Encoding]::UTF8
+$html = [IO.File]::ReadAllText($templatePath, $utf8)
 $marker = '<!-- BOARD_SCOUT_SCAN_DATA -->'
 if (-not $html.Contains($marker)) {
     throw 'Dashboard template is missing the scan-data marker.'
@@ -28,7 +29,7 @@ if (-not $html.Contains($marker)) {
 $injection = ''
 if ($ScanFile) {
     $resolvedScan = (Resolve-Path -LiteralPath $ScanFile).Path
-    $rawJson = (Get-Content -LiteralPath $resolvedScan -Raw).TrimStart([char]0xFEFF)
+    $rawJson = [IO.File]::ReadAllText($resolvedScan, $utf8).TrimStart([char]0xFEFF)
     $scan = $rawJson | ConvertFrom-Json
     if (-not $scan.system -or -not $scan.components) {
         throw "Not a compatible BoardScout scan: $resolvedScan"
@@ -40,5 +41,6 @@ if ($ScanFile) {
 }
 
 $outputPath = Join-Path $OutputDir 'index.html'
-$html.Replace($marker, $injection) | Set-Content -LiteralPath $outputPath -Encoding UTF8
+$utf8NoBom = New-Object Text.UTF8Encoding($false)
+[IO.File]::WriteAllText($outputPath, $html.Replace($marker, $injection), $utf8NoBom)
 Write-Output (Resolve-Path -LiteralPath $outputPath).Path
