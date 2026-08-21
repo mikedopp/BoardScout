@@ -1,0 +1,10 @@
+# Local scans contain hostnames and hardware identifiers.
+/data/scans/*.json
+
+# Built dashboards may contain an embedded private scan.
+/build/*
+!/build/.gitkeep
+
+*.log
+.DS_Store
+Thumbs.db
