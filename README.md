@@ -14,12 +14,25 @@ You can also run the published executable directly:
 
     .\build\portable\win-x64\BoardScout.exe
 
+## Interactive motherboard map
+
+- BoardScout opens in a large workspace and supports persistent light and dark
+  modes.
+- Hover over detected CPU, memory, graphics, storage, chipset, I/O, or expansion
+  areas to see health, driver or capacity status, and a plain-language
+  capability estimate.
+- CPU and physical-memory utilization update locally once per second. Storage
+  blocks show mounted-capacity usage; GPU usage is not claimed when Windows
+  does not expose a reliable counter.
+- Use the map buttons or mouse wheel to zoom from 100% to 250%. Drag the map to
+  pan while zoomed, and click the percentage button to reset the view.
+
 ## Efficient workflow
 
 BoardScout deliberately separates work by cost:
 
 1. **Startup uses the cached scan** and opens immediately.
-2. **Scan Hardware** performs local inventory only. Run it after hardware or
+2. **Scan now** performs local inventory only. Run it after hardware or
    firmware changes, not every time the app starts.
 3. **Check Drivers** is a separate, cancellable online operation. It uses
    DriverScout resolvers for vendor, OEM, and Microsoft catalog comparisons.

@@ -5,19 +5,30 @@ using System.Runtime.InteropServices;
 
 internal static class AppTheme
 {
-    // BoardScout should feel like a dependable Windows instrument, not a neon web dashboard.
-    public static readonly Color Background = Color.FromArgb(244, 246, 248);
-    public static readonly Color Surface = Color.White;
-    public static readonly Color SurfaceRaised = Color.FromArgb(248, 250, 252);
-    public static readonly Color Border = Color.FromArgb(218, 224, 231);
-    public static readonly Color Text = Color.FromArgb(27, 38, 49);
-    public static readonly Color Muted = Color.FromArgb(98, 113, 128);
-    public static readonly Color Accent = Color.FromArgb(25, 105, 132);
-    public static readonly Color AccentSoft = Color.FromArgb(228, 241, 245);
-    public static readonly Color Good = Color.FromArgb(35, 123, 87);
-    public static readonly Color Warning = Color.FromArgb(174, 99, 20);
-    public static readonly Color Critical = Color.FromArgb(184, 55, 67);
-    public static readonly Color Purple = Color.FromArgb(103, 82, 157);
+    public static bool IsDark { get; private set; }
+
+    public static Color Background => IsDark ? Color.FromArgb(14, 20, 27) : Color.FromArgb(244, 246, 248);
+    public static Color Surface => IsDark ? Color.FromArgb(21, 29, 38) : Color.White;
+    public static Color SurfaceRaised => IsDark ? Color.FromArgb(27, 37, 48) : Color.FromArgb(248, 250, 252);
+    public static Color Border => IsDark ? Color.FromArgb(52, 66, 80) : Color.FromArgb(218, 224, 231);
+    public static Color Text => IsDark ? Color.FromArgb(237, 242, 247) : Color.FromArgb(27, 38, 49);
+    public static Color Muted => IsDark ? Color.FromArgb(158, 174, 189) : Color.FromArgb(98, 113, 128);
+    public static Color Accent => IsDark ? Color.FromArgb(73, 174, 205) : Color.FromArgb(25, 105, 132);
+    public static Color AccentSoft => IsDark ? Color.FromArgb(25, 62, 74) : Color.FromArgb(228, 241, 245);
+    public static Color Good => IsDark ? Color.FromArgb(76, 196, 139) : Color.FromArgb(35, 123, 87);
+    public static Color Warning => IsDark ? Color.FromArgb(242, 174, 82) : Color.FromArgb(174, 99, 20);
+    public static Color Critical => IsDark ? Color.FromArgb(244, 111, 121) : Color.FromArgb(184, 55, 67);
+    public static Color Purple => IsDark ? Color.FromArgb(177, 148, 236) : Color.FromArgb(103, 82, 157);
+
+    public static void SetDarkMode(bool enabled) => IsDark = enabled;
+
+    public static void ApplyWindowTheme(Form form)
+    {
+        if (!form.IsHandleCreated) return;
+        var enabled = IsDark ? 1 : 0;
+        if (DwmSetWindowAttribute(form.Handle, 20, ref enabled, sizeof(int)) != 0)
+            DwmSetWindowAttribute(form.Handle, 19, ref enabled, sizeof(int));
+    }
 
     public static Icon CreateAppIcon()
     {
@@ -51,13 +62,20 @@ internal static class AppTheme
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
     public static void StyleButton(Button button, bool primary = false)
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
         button.FlatAppearance.BorderColor = primary ? Accent : Border;
-        button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(19, 89, 113) : SurfaceRaised;
-        button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(14, 75, 96) : AccentSoft;
+        button.FlatAppearance.MouseOverBackColor = primary
+            ? (IsDark ? Color.FromArgb(48, 144, 174) : Color.FromArgb(19, 89, 113))
+            : SurfaceRaised;
+        button.FlatAppearance.MouseDownBackColor = primary
+            ? (IsDark ? Color.FromArgb(37, 120, 146) : Color.FromArgb(14, 75, 96))
+            : AccentSoft;
         button.BackColor = primary ? Accent : Surface;
         button.ForeColor = primary ? Color.White : Text;
         button.Padding = new Padding(12, 2, 12, 2);
@@ -94,7 +112,9 @@ internal static class AppTheme
             SelectionForeColor = Text,
             Padding = new Padding(8, 4, 8, 4)
         };
-        grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(250, 251, 252);
+        grid.AlternatingRowsDefaultCellStyle.BackColor = IsDark
+            ? Color.FromArgb(18, 26, 34)
+            : Color.FromArgb(250, 251, 252);
         grid.RowHeadersVisible = false;
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
     }

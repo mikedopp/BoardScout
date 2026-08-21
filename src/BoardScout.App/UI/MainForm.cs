@@ -7,6 +7,8 @@ namespace BoardScout.UI;
 public sealed class MainForm : Form
 {
     private readonly DriverScoutService _service = new();
+    private readonly SystemTelemetryService _telemetryService = new();
+    private readonly System.Windows.Forms.Timer _telemetryTimer = new() { Interval = 1000 };
     private readonly BoardMapControl _boardMap = new() { Dock = DockStyle.Fill };
     private readonly Label _title = new();
     private readonly Label _subtitle = new();
@@ -23,37 +25,79 @@ public sealed class MainForm : Form
     private readonly Button _loadButton = new();
     private readonly Button _exportButton = new();
     private readonly Button _cancelButton = new();
+    private readonly Button _dataButton = new();
+    private readonly Button _themeButton = new();
+    private readonly Button _zoomOutButton = new();
+    private readonly Button _zoomResetButton = new();
+    private readonly Button _zoomInButton = new();
     private readonly TabControl _tabs = new();
+    private readonly Panel _tabHeaderFill = new();
+    private readonly Panel _tabPageTopFill = new();
+    private readonly List<(Button Button, bool Primary)> _themedButtons = [];
+
+    private readonly Panel _header = new();
+    private readonly Panel _statusPanel = new();
+    private readonly Panel _boardCard = new();
+    private readonly Panel _detailsCard = new();
+    private readonly Panel _boardToolbar = new();
+    private readonly Panel _inspectPanel = new();
+    private readonly Label _factsHeading = new();
+    private readonly Label _inspectCategory = new();
+    private readonly Label _inspectTitle = new();
+    private readonly Label _inspectStatus = new();
+    private readonly Label _inspectDetail = new();
+    private readonly Label _inspectCapabilityHeading = new();
+    private readonly Label _inspectCapability = new();
 
     private ScanManifest? _scan;
     private DriverReport? _report;
     private string? _scanPath;
     private CancellationTokenSource? _operationCts;
+    private BoardPartDetails? _currentPartDetails;
+    private readonly string _themePath;
 
     public MainForm()
     {
+        _themePath = Path.Combine(_service.DataRoot, "theme.txt");
+        LoadThemePreference();
         Text = "BoardScout";
         Icon = AppTheme.CreateAppIcon();
-        MinimumSize = new Size(980, 680);
-        Size = new Size(1320, 880);
+        MinimumSize = new Size(1300, 760);
+        Size = new Size(1540, 960);
+        WindowState = FormWindowState.Maximized;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = AppTheme.Background;
         ForeColor = AppTheme.Text;
         Font = new Font("Segoe UI", 9.25f);
 
         BuildUi();
+        HandleCreated += (_, _) => AppTheme.ApplyWindowTheme(this);
         _service.OutputReceived += ServiceOnOutputReceived;
-        Shown += async (_, _) => await LoadCachedDataAsync();
-        FormClosing += (_, _) => _operationCts?.Cancel();
+        _boardMap.PartHovered += (_, details) => ShowPartDetails(details);
+        _boardMap.ZoomChanged += (_, _) => _zoomResetButton.Text = $"{_boardMap.ZoomPercent}%";
+        _telemetryTimer.Tick += (_, _) => SampleTelemetry();
+        Shown += async (_, _) =>
+        {
+            await LoadCachedDataAsync();
+            SampleTelemetry();
+            _telemetryTimer.Start();
+        };
+        FormClosing += (_, _) =>
+        {
+            _operationCts?.Cancel();
+            _telemetryTimer.Stop();
+        };
     }
 
     private void BuildUi()
     {
-        var header = BuildHeader();
+        BuildHeader();
         Controls.Add(_tabs);
         Controls.Add(_progress);
         Controls.Add(BuildStatusBar());
-        Controls.Add(header);
+        Controls.Add(_header);
+        Controls.Add(_tabHeaderFill);
+        Controls.Add(_tabPageTopFill);
 
         _tabs.Dock = DockStyle.Fill;
         _tabs.Padding = new Point(16, 8);
@@ -68,22 +112,35 @@ public sealed class MainForm : Form
         _tabs.TabPages.Add(BuildSuggestionsTab());
         _tabs.TabPages.Add(BuildLogTab());
 
+        _tabHeaderFill.Height = _tabs.ItemSize.Height + 2;
+        _tabHeaderFill.BackColor = AppTheme.Background;
+        _tabHeaderFill.Tag = "background";
+        _tabHeaderFill.Enabled = false;
+        _tabPageTopFill.Height = 13;
+        _tabPageTopFill.BackColor = AppTheme.Background;
+        _tabPageTopFill.Tag = "background";
+        _tabPageTopFill.Enabled = false;
+        Layout += (_, _) => LayoutTabHeaderFill();
+        LayoutTabHeaderFill();
+        _tabHeaderFill.BringToFront();
+        _tabPageTopFill.BringToFront();
+
         _progress.Dock = DockStyle.Bottom;
         _progress.Height = 3;
         _progress.Style = ProgressBarStyle.Marquee;
         _progress.MarqueeAnimationSpeed = 25;
         _progress.Visible = false;
+        ShowPartDetails(null);
+        ApplyTheme();
     }
 
-    private Control BuildHeader()
+    private void BuildHeader()
     {
-        var header = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 124,
-            BackColor = AppTheme.Surface,
-            Padding = new Padding(24, 16, 24, 10)
-        };
+        _header.Dock = DockStyle.Top;
+        _header.Height = 158;
+        _header.BackColor = AppTheme.Surface;
+        _header.Padding = new Padding(24, 16, 24, 12);
+        _header.Tag = "surface";
 
         var textPanel = new Panel { Dock = DockStyle.Fill };
         _title.Text = "BoardScout";
@@ -91,16 +148,18 @@ public sealed class MainForm : Form
         _title.ForeColor = AppTheme.Text;
         _title.AutoSize = true;
         _title.Location = new Point(0, 0);
+        _title.Tag = "text";
 
         _subtitle.Text = "Portable motherboard, storage, and driver intelligence";
         _subtitle.ForeColor = AppTheme.Muted;
         _subtitle.AutoSize = true;
         _subtitle.Location = new Point(2, 38);
+        _subtitle.Tag = "muted";
 
         _metrics.AutoSize = false;
-        _metrics.Size = new Size(500, 40);
+        _metrics.Size = new Size(520, 50);
         _metrics.WrapContents = false;
-        _metrics.Location = new Point(0, 66);
+        _metrics.Location = new Point(0, 70);
         _metrics.BackColor = Color.Transparent;
         textPanel.Controls.Add(_title);
         textPanel.Controls.Add(_subtitle);
@@ -109,7 +168,7 @@ public sealed class MainForm : Form
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 610,
+            Width = 720,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             Padding = new Padding(0, 4, 0, 0),
@@ -121,18 +180,17 @@ public sealed class MainForm : Form
         ConfigureButton(_loadButton, "Import", async (_, _) => await LoadScanFromFileAsync());
         ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
-        var dataButton = new Button();
-        ConfigureButton(dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
+        ConfigureButton(_dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
+        ConfigureButton(_themeButton, "Dark mode", (_, _) => ToggleTheme());
 
         _cancelButton.Visible = false;
         _updatesButton.Enabled = false;
         _exportButton.Enabled = false;
-        actions.Controls.AddRange([dataButton, _exportButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
+        actions.Controls.AddRange([_themeButton, _dataButton, _exportButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
 
-        header.Controls.Add(textPanel);
-        header.Controls.Add(actions);
-        header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = AppTheme.Border });
-        return header;
+        _header.Controls.Add(textPanel);
+        _header.Controls.Add(actions);
+        _header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = AppTheme.Border, Tag = "border" });
     }
 
     private TabPage BuildOverviewTab()
@@ -145,48 +203,173 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             BackColor = AppTheme.Background,
             SplitterWidth = 12,
-            Panel1MinSize = 520,
-            Panel2MinSize = 250
+            FixedPanel = FixedPanel.Panel2,
+            Panel1MinSize = 720,
+            Panel2MinSize = 360
         };
-        split.SplitterDistance = 880;
+        split.SplitterDistance = 1100;
+        split.Tag = "background";
 
         split.Panel1.BackColor = AppTheme.Background;
-        var boardCard = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = AppTheme.Surface,
-            BorderStyle = BorderStyle.FixedSingle,
-            Padding = new Padding(4)
-        };
-        boardCard.Controls.Add(_boardMap);
-        split.Panel1.Controls.Add(boardCard);
+        split.Panel1.Tag = "background";
+        split.Panel2.BackColor = AppTheme.Background;
+        split.Panel2.Tag = "background";
+        _boardCard.Dock = DockStyle.Fill;
+        _boardCard.BackColor = AppTheme.Surface;
+        _boardCard.BorderStyle = BorderStyle.FixedSingle;
+        _boardCard.Padding = new Padding(4);
+        _boardCard.Tag = "surface";
 
-        var right = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = AppTheme.Surface,
-            BorderStyle = BorderStyle.FixedSingle,
-            Padding = new Padding(18, 16, 18, 16)
-        };
-        var heading = new Label
-        {
-            Dock = DockStyle.Top,
-            Height = 38,
-            Text = "System details",
-            Font = new Font("Segoe UI Semibold", 12),
-            ForeColor = AppTheme.Text
-        };
+        BuildBoardToolbar();
+        _boardCard.Controls.Add(_boardMap);
+        _boardCard.Controls.Add(_boardToolbar);
+        split.Panel1.Controls.Add(_boardCard);
+
+        _detailsCard.Dock = DockStyle.Fill;
+        _detailsCard.BackColor = AppTheme.Surface;
+        _detailsCard.BorderStyle = BorderStyle.FixedSingle;
+        _detailsCard.Padding = new Padding(18, 16, 18, 16);
+        _detailsCard.Tag = "surface";
+
+        BuildInspector();
+        _factsHeading.Dock = DockStyle.Top;
+        _factsHeading.Height = 40;
+        _factsHeading.Text = "System details";
+        _factsHeading.Font = new Font("Segoe UI Semibold", 12);
+        _factsHeading.ForeColor = AppTheme.Text;
+        _factsHeading.Tag = "text";
         _quickFacts.Dock = DockStyle.Fill;
         _quickFacts.BackColor = AppTheme.Surface;
         _quickFacts.FlowDirection = FlowDirection.TopDown;
         _quickFacts.WrapContents = false;
         _quickFacts.AutoScroll = true;
         _quickFacts.Padding = new Padding(0, 2, 0, 0);
-        right.Controls.Add(_quickFacts);
-        right.Controls.Add(heading);
-        split.Panel2.Controls.Add(right);
+        _quickFacts.Tag = "surface";
+        _quickFacts.SizeChanged += (_, _) => ResizeFactRows();
+        _detailsCard.Controls.Add(_quickFacts);
+        _detailsCard.Controls.Add(_factsHeading);
+        _detailsCard.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14, BackColor = AppTheme.Surface, Tag = "surface" });
+        _detailsCard.Controls.Add(_inspectPanel);
+        split.Panel2.Controls.Add(_detailsCard);
         page.Controls.Add(split);
         return page;
+    }
+
+    private void BuildBoardToolbar()
+    {
+        _boardToolbar.Dock = DockStyle.Top;
+        _boardToolbar.Height = 50;
+        _boardToolbar.BackColor = AppTheme.Surface;
+        _boardToolbar.Padding = new Padding(12, 6, 8, 6);
+        _boardToolbar.Tag = "surface";
+
+        var title = new Label
+        {
+            Dock = DockStyle.Left,
+            Width = 175,
+            Text = "Interactive board",
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font("Segoe UI Semibold", 11),
+            ForeColor = AppTheme.Text,
+            Tag = "text"
+        };
+        var hint = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "Hover for status and capability  ·  mouse wheel to zoom  ·  drag to pan",
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = AppTheme.Muted,
+            Tag = "muted"
+        };
+        var zoom = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            Width = 210,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0)
+        };
+        ConfigureButton(_zoomOutButton, "−", (_, _) => _boardMap.ZoomOut());
+        ConfigureButton(_zoomResetButton, "100%", (_, _) => _boardMap.ResetView());
+        ConfigureButton(_zoomInButton, "+", (_, _) => _boardMap.ZoomIn());
+        _zoomOutButton.Width = 42;
+        _zoomResetButton.Width = 76;
+        _zoomInButton.Width = 42;
+        zoom.Controls.AddRange([_zoomOutButton, _zoomResetButton, _zoomInButton]);
+
+        _boardToolbar.Controls.Add(hint);
+        _boardToolbar.Controls.Add(title);
+        _boardToolbar.Controls.Add(zoom);
+    }
+
+    private void BuildInspector()
+    {
+        _inspectPanel.Dock = DockStyle.Top;
+        _inspectPanel.Height = 235;
+        _inspectPanel.BackColor = AppTheme.SurfaceRaised;
+        _inspectPanel.Tag = "raised";
+
+        _inspectCategory.Font = new Font("Segoe UI Semibold", 8);
+        _inspectCategory.Location = new Point(16, 13);
+        _inspectCategory.Height = 18;
+        _inspectCategory.ForeColor = AppTheme.Accent;
+        _inspectCategory.Tag = "accent";
+
+        _inspectTitle.Font = new Font("Segoe UI Semibold", 14);
+        _inspectTitle.Location = new Point(16, 34);
+        _inspectTitle.Height = 30;
+        _inspectTitle.ForeColor = AppTheme.Text;
+        _inspectTitle.AutoEllipsis = true;
+        _inspectTitle.Tag = "text";
+
+        _inspectStatus.Font = new Font("Segoe UI Semibold", 9);
+        _inspectStatus.Location = new Point(16, 69);
+        _inspectStatus.Height = 26;
+        _inspectStatus.TextAlign = ContentAlignment.MiddleLeft;
+        _inspectStatus.Padding = new Padding(8, 0, 8, 0);
+        _inspectStatus.AutoEllipsis = true;
+
+        _inspectDetail.Font = new Font("Segoe UI", 8.5f);
+        _inspectDetail.Location = new Point(16, 101);
+        _inspectDetail.Height = 38;
+        _inspectDetail.ForeColor = AppTheme.Muted;
+        _inspectDetail.Tag = "muted";
+
+        _inspectCapabilityHeading.Text = "Capability estimate";
+        _inspectCapabilityHeading.Font = new Font("Segoe UI Semibold", 8);
+        _inspectCapabilityHeading.Location = new Point(16, 145);
+        _inspectCapabilityHeading.Height = 18;
+        _inspectCapabilityHeading.ForeColor = AppTheme.Muted;
+        _inspectCapabilityHeading.Tag = "muted";
+
+        _inspectCapability.Font = new Font("Segoe UI", 9);
+        _inspectCapability.Location = new Point(16, 166);
+        _inspectCapability.Height = 56;
+        _inspectCapability.ForeColor = AppTheme.Text;
+        _inspectCapability.Tag = "text";
+
+        _inspectPanel.Controls.AddRange([
+            _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail,
+            _inspectCapabilityHeading, _inspectCapability]);
+        _inspectPanel.SizeChanged += (_, _) => LayoutInspector();
+        LayoutInspector();
+    }
+
+    private void LayoutInspector()
+    {
+        var width = Math.Max(200, _inspectPanel.ClientSize.Width - 32);
+        foreach (var label in new[]
+                 { _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail, _inspectCapabilityHeading, _inspectCapability })
+            label.Width = width;
+    }
+
+    private void LayoutTabHeaderFill()
+    {
+        if (_tabs.Width <= 0) return;
+        var left = _tabs.Left + _tabs.ItemSize.Width * _tabs.TabCount + 8;
+        _tabHeaderFill.SetBounds(left, _tabs.Top + 1, Math.Max(0, _tabs.Right - left), _tabs.ItemSize.Height + 1);
+        _tabPageTopFill.SetBounds(_tabs.Left, _tabs.Top + _tabs.ItemSize.Height + 1, _tabs.Width, 13);
     }
 
     private TabPage BuildDriversTab()
@@ -203,7 +386,8 @@ public sealed class MainForm : Form
             Height = 28,
             Text = "Double-click an update row to open its vendor or OEM page. BoardScout never installs drivers.",
             ForeColor = AppTheme.Muted,
-            Padding = new Padding(4, 5, 0, 0)
+            Padding = new Padding(4, 5, 0, 0),
+            Tag = "muted"
         });
         return page;
     }
@@ -236,8 +420,8 @@ public sealed class MainForm : Form
         _log.Multiline = true;
         _log.ReadOnly = true;
         _log.ScrollBars = ScrollBars.Both;
-        _log.BackColor = Color.FromArgb(250, 251, 252);
-        _log.ForeColor = Color.FromArgb(45, 63, 74);
+        _log.BackColor = AppTheme.SurfaceRaised;
+        _log.ForeColor = AppTheme.Text;
         _log.BorderStyle = BorderStyle.FixedSingle;
         _log.Font = new Font("Cascadia Mono", 9);
         page.Controls.Add(_log);
@@ -246,19 +430,18 @@ public sealed class MainForm : Form
 
     private Control BuildStatusBar()
     {
-        var panel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 30,
-            BackColor = AppTheme.Surface,
-            BorderStyle = BorderStyle.FixedSingle,
-            Padding = new Padding(14, 6, 14, 0)
-        };
+        _statusPanel.Dock = DockStyle.Bottom;
+        _statusPanel.Height = 30;
+        _statusPanel.BackColor = AppTheme.Surface;
+        _statusPanel.BorderStyle = BorderStyle.FixedSingle;
+        _statusPanel.Padding = new Padding(14, 6, 14, 0);
+        _statusPanel.Tag = "surface";
         _status.Dock = DockStyle.Fill;
         _status.Text = "Ready — cached results load instantly; scan only when hardware changes.";
         _status.ForeColor = AppTheme.Muted;
-        panel.Controls.Add(_status);
-        return panel;
+        _status.Tag = "muted";
+        _statusPanel.Controls.Add(_status);
+        return _statusPanel;
     }
 
     private static TabPage NewPage(string text) => new(text)
@@ -266,14 +449,17 @@ public sealed class MainForm : Form
         Name = text,
         BackColor = AppTheme.Background,
         ForeColor = AppTheme.Text,
-        Padding = new Padding(12)
+        Padding = new Padding(12),
+        Tag = "background"
     };
 
-    private static void ConfigureButton(Button button, string text, EventHandler handler, bool primary = false)
+    private void ConfigureButton(Button button, string text, EventHandler handler, bool primary = false)
     {
         button.Text = text;
+        button.Tag = primary ? "primaryButton" : "button";
         AppTheme.StyleButton(button, primary);
         button.Click += handler;
+        _themedButtons.Add((button, primary));
     }
 
     private static void ConfigureGrid(DataGridView grid, params (string Name, int Width)[] columns)
@@ -356,6 +542,7 @@ public sealed class MainForm : Form
         {
             var reportPath = await _service.CheckDriversAsync(_scanPath, token);
             _report = await _service.LoadReportAsync(reportPath, token);
+            _boardMap.SetDriverReport(_report);
             BindDrivers();
             BindSuggestions();
             var updates = _report.Results.Count(r => r.Status == "update-available");
@@ -439,6 +626,7 @@ public sealed class MainForm : Form
         _title.Text = $"{board.Manufacturer} {board.Product}".Trim();
         _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {cpu.Name}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
         _boardMap.SetSnapshot(_scan);
+        _boardMap.SetDriverReport(_report);
         BindMetrics();
         BindQuickFacts();
         BindDrivers();
@@ -464,16 +652,18 @@ public sealed class MainForm : Form
     {
         var panel = new Panel
         {
-            Width = 114,
-            Height = 38,
+            Width = 122,
+            Height = 46,
             BackColor = AppTheme.Surface,
-            Margin = new Padding(0, 0, 8, 0)
+            Margin = new Padding(0, 0, 8, 0),
+            Tag = "surface"
         };
         panel.Controls.Add(new Panel
         {
             Dock = DockStyle.Right,
             Width = 1,
-            BackColor = AppTheme.Border
+            BackColor = AppTheme.Border,
+            Tag = "border"
         });
         panel.Controls.Add(new Label
         {
@@ -481,19 +671,21 @@ public sealed class MainForm : Form
             ForeColor = AppTheme.Muted,
             Font = new Font("Segoe UI", 7.5f),
             AutoSize = false,
-            Location = new Point(1, 20),
-            Size = new Size(96, 14),
-            TextAlign = ContentAlignment.MiddleLeft
+            Location = new Point(1, 26),
+            Size = new Size(108, 17),
+            TextAlign = ContentAlignment.TopLeft,
+            Tag = "muted"
         });
         panel.Controls.Add(new Label
         {
             Text = value,
             ForeColor = AppTheme.Text,
-            Font = new Font("Segoe UI Semibold", 10.5f),
+            Font = new Font("Segoe UI Semibold", 11.5f),
             AutoSize = false,
             Location = new Point(0, 2),
-            Size = new Size(98, 20),
-            TextAlign = ContentAlignment.MiddleLeft
+            Size = new Size(108, 24),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Tag = "text"
         });
         return panel;
     }
@@ -520,13 +712,14 @@ public sealed class MainForm : Form
 
     private void AddFact(string label, string value, Color? valueColor = null)
     {
-        var width = Math.Max(220, _quickFacts.ClientSize.Width - 4);
+        var width = Math.Max(220, _quickFacts.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10);
         var row = new Panel
         {
             Width = width,
             Height = 43,
             BackColor = AppTheme.Surface,
-            Margin = new Padding(0)
+            Margin = new Padding(0),
+            Tag = "surface"
         };
         row.Controls.Add(new Label
         {
@@ -534,7 +727,8 @@ public sealed class MainForm : Form
             ForeColor = AppTheme.Muted,
             Font = new Font("Segoe UI", 8),
             Location = new Point(0, 2),
-            Size = new Size(width, 16)
+            Size = new Size(width, 16),
+            Tag = "muted"
         });
         row.Controls.Add(new Label
         {
@@ -543,14 +737,17 @@ public sealed class MainForm : Form
             Font = new Font("Segoe UI Semibold", 9.5f),
             Location = new Point(0, 18),
             Size = new Size(width, 21),
-            AutoEllipsis = true
+            AutoEllipsis = true,
+            Tag = valueColor == AppTheme.Good ? "good" :
+                valueColor == AppTheme.Critical ? "critical" :
+                valueColor == AppTheme.Warning ? "warning" : "text"
         });
         _quickFacts.Controls.Add(row);
     }
 
     private void AddFactSection(string text)
     {
-        var width = Math.Max(220, _quickFacts.ClientSize.Width - 4);
+        var width = Math.Max(220, _quickFacts.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10);
         _quickFacts.Controls.Add(new Label
         {
             Text = text,
@@ -559,8 +756,15 @@ public sealed class MainForm : Form
             Width = width,
             Height = 36,
             Padding = new Padding(0, 12, 0, 0),
-            Margin = new Padding(0, 6, 0, 0)
+            Margin = new Padding(0, 6, 0, 0),
+            Tag = "text"
         });
+    }
+
+    private void ResizeFactRows()
+    {
+        var width = Math.Max(220, _quickFacts.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10);
+        foreach (Control control in _quickFacts.Controls) control.Width = width;
     }
 
     private void BindDrivers()
@@ -677,6 +881,166 @@ public sealed class MainForm : Form
         AddFact("Inventory", "Uses built-in Windows tools");
         AddFact("Safe by design", "Never installs drivers automatically", AppTheme.Good);
         _boardMap.SetSnapshot(null);
+        _boardMap.SetDriverReport(null);
+    }
+
+    private void LoadThemePreference()
+    {
+        try
+        {
+            AppTheme.SetDarkMode(File.Exists(_themePath) &&
+                                 File.ReadAllText(_themePath).Trim().Equals("dark", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            AppTheme.SetDarkMode(false);
+        }
+    }
+
+    private void ToggleTheme()
+    {
+        AppTheme.SetDarkMode(!AppTheme.IsDark);
+        try
+        {
+            File.WriteAllText(_themePath, AppTheme.IsDark ? "dark" : "light");
+        }
+        catch (Exception ex)
+        {
+            AppendLog("THEME: Could not save preference: " + ex.Message);
+        }
+        ApplyTheme();
+    }
+
+    private void ApplyTheme()
+    {
+        BackColor = AppTheme.Background;
+        ForeColor = AppTheme.Text;
+        ApplyTaggedTheme(this);
+        foreach (var (button, primary) in _themedButtons) AppTheme.StyleButton(button, primary);
+
+        foreach (var grid in new[] { _drivers, _storage, _suggestions }) AppTheme.StyleGrid(grid);
+        _tabs.BackColor = AppTheme.Background;
+        _tabs.ForeColor = AppTheme.Text;
+        _log.BackColor = AppTheme.SurfaceRaised;
+        _log.ForeColor = AppTheme.Text;
+        _quickFacts.BackColor = AppTheme.Surface;
+        _themeButton.Text = AppTheme.IsDark ? "Light mode" : "Dark mode";
+        _boardMap.RefreshTheme();
+        AppTheme.ApplyWindowTheme(this);
+        _tabs.Invalidate();
+
+        if (_scan is not null)
+        {
+            BindMetrics();
+            BindQuickFacts();
+            BindDrivers();
+            BindStorage();
+            BindSuggestions();
+        }
+        ShowPartDetails(_currentPartDetails);
+    }
+
+    private static void ApplyTaggedTheme(Control root)
+    {
+        switch (root.Tag as string)
+        {
+            case "background":
+                root.BackColor = AppTheme.Background;
+                root.ForeColor = AppTheme.Text;
+                break;
+            case "surface":
+                root.BackColor = AppTheme.Surface;
+                break;
+            case "raised":
+                root.BackColor = AppTheme.SurfaceRaised;
+                break;
+            case "border":
+                root.BackColor = AppTheme.Border;
+                break;
+            case "text":
+                root.ForeColor = AppTheme.Text;
+                break;
+            case "muted":
+                root.ForeColor = AppTheme.Muted;
+                break;
+            case "accent":
+                root.ForeColor = AppTheme.Accent;
+                break;
+            case "good":
+                root.ForeColor = AppTheme.Good;
+                break;
+            case "warning":
+                root.ForeColor = AppTheme.Warning;
+                break;
+            case "critical":
+                root.ForeColor = AppTheme.Critical;
+                break;
+        }
+        foreach (Control child in root.Controls) ApplyTaggedTheme(child);
+    }
+
+    private void ShowPartDetails(BoardPartDetails? details)
+    {
+        _currentPartDetails = details;
+        if (details is null)
+        {
+            _inspectCategory.Text = "INTERACTIVE MAP";
+            _inspectTitle.Text = "Hover over a component";
+            _inspectStatus.Text = "Live telemetry ready";
+            _inspectDetail.Text = "Move over the CPU, memory, graphics, drives, ports, or open slots.";
+            _inspectCapability.Text = "BoardScout will explain current status, measured usage where available, and what each part is suited to doing.";
+            SetInspectorTone(PartStatusTone.Info);
+            return;
+        }
+
+        _inspectCategory.Text = details.Category;
+        _inspectTitle.Text = details.Title;
+        _inspectStatus.Text = details.Status;
+        _inspectDetail.Text = details.Detail;
+        _inspectCapability.Text = details.Capability;
+        SetInspectorTone(details.Tone);
+    }
+
+    private void SetInspectorTone(PartStatusTone tone)
+    {
+        var foreground = tone switch
+        {
+            PartStatusTone.Good => AppTheme.Good,
+            PartStatusTone.Warning => AppTheme.Warning,
+            PartStatusTone.Critical => AppTheme.Critical,
+            PartStatusTone.Muted => AppTheme.Muted,
+            _ => AppTheme.Accent
+        };
+        var background = (tone, AppTheme.IsDark) switch
+        {
+            (PartStatusTone.Good, false) => Color.FromArgb(229, 244, 236),
+            (PartStatusTone.Good, true) => Color.FromArgb(24, 58, 46),
+            (PartStatusTone.Warning, false) => Color.FromArgb(251, 241, 226),
+            (PartStatusTone.Warning, true) => Color.FromArgb(65, 47, 24),
+            (PartStatusTone.Critical, false) => Color.FromArgb(251, 232, 234),
+            (PartStatusTone.Critical, true) => Color.FromArgb(68, 31, 37),
+            (PartStatusTone.Muted, false) => Color.FromArgb(237, 240, 243),
+            (PartStatusTone.Muted, true) => Color.FromArgb(38, 47, 57),
+            (_, false) => AppTheme.AccentSoft,
+            _ => AppTheme.AccentSoft
+        };
+        _inspectStatus.ForeColor = foreground;
+        _inspectStatus.BackColor = background;
+        _inspectCategory.ForeColor = foreground;
+    }
+
+    private void SampleTelemetry()
+    {
+        if (WindowState == FormWindowState.Minimized) return;
+        try
+        {
+            _boardMap.SetTelemetry(_telemetryService.Sample());
+        }
+        catch (Exception ex)
+        {
+            _telemetryTimer.Stop();
+            AppendLog("TELEMETRY: " + ex.Message);
+        }
     }
 
     private void ServiceOnOutputReceived(object? sender, string line)

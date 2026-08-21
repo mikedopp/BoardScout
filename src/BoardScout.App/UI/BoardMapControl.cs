@@ -1,23 +1,93 @@
 using System.Drawing.Drawing2D;
+using System.Text.RegularExpressions;
 using BoardScout.Models;
 
 namespace BoardScout.UI;
 
+public enum PartStatusTone { Info, Good, Warning, Critical, Muted }
+
+public sealed record BoardPartDetails(
+    string Id,
+    string Category,
+    string Title,
+    string Status,
+    string Detail,
+    string Capability,
+    PartStatusTone Tone);
+
 public sealed class BoardMapControl : Control
 {
+    private sealed record HitRegion(RectangleF Bounds, string Id, string Type, int Index = -1);
+
+    private readonly List<HitRegion> _regions = [];
+    private readonly ToolTip _toolTip = new()
+    {
+        InitialDelay = 350,
+        ReshowDelay = 100,
+        AutoPopDelay = 10000,
+        ShowAlways = true
+    };
+
     private ScanManifest? _snapshot;
+    private DriverReport? _report;
+    private SystemTelemetry? _telemetry;
+    private string? _hoveredId;
+    private float _zoom = 1f;
+    private PointF _pan;
+    private Point _dragStart;
+    private PointF _panStart;
+    private bool _dragging;
 
     public BoardMapControl()
     {
         DoubleBuffered = true;
         ResizeRedraw = true;
         BackColor = AppTheme.Surface;
-        MinimumSize = new Size(520, 380);
+        MinimumSize = new Size(620, 440);
+        TabStop = true;
     }
+
+    public event EventHandler<BoardPartDetails?>? PartHovered;
+    public event EventHandler? ZoomChanged;
+
+    public int ZoomPercent => (int)Math.Round(_zoom * 100);
 
     public void SetSnapshot(ScanManifest? snapshot)
     {
         _snapshot = snapshot;
+        _hoveredId = null;
+        _regions.Clear();
+        Invalidate();
+    }
+
+    public void SetDriverReport(DriverReport? report)
+    {
+        _report = report;
+        RefreshHoveredDetails();
+        Invalidate();
+    }
+
+    public void SetTelemetry(SystemTelemetry telemetry)
+    {
+        _telemetry = telemetry;
+        RefreshHoveredDetails();
+        Invalidate();
+    }
+
+    public void ZoomIn() => SetZoom(_zoom + 0.2f);
+    public void ZoomOut() => SetZoom(_zoom - 0.2f);
+
+    public void ResetView()
+    {
+        _zoom = 1f;
+        _pan = PointF.Empty;
+        ZoomChanged?.Invoke(this, EventArgs.Empty);
+        Invalidate();
+    }
+
+    public void RefreshTheme()
+    {
+        BackColor = AppTheme.Surface;
         Invalidate();
     }
 
@@ -26,122 +96,449 @@ public sealed class BoardMapControl : Control
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        _regions.Clear();
 
-        var area = Rectangle.Inflate(ClientRectangle, -20, -20);
+        var viewport = RectangleF.Inflate(ClientRectangle, -22, -22);
         if (_snapshot is null)
         {
-            DrawCentered(e.Graphics, "Run a hardware scan to map this motherboard.", area, AppTheme.Muted, 12);
+            DrawCentered(e.Graphics, "Run a hardware scan to build the interactive motherboard map.",
+                Rectangle.Round(viewport), AppTheme.Muted, 12);
             return;
         }
 
-        DrawBoard(e.Graphics, area, _snapshot);
+        var width = viewport.Width * _zoom;
+        var height = viewport.Height * _zoom;
+        var board = new RectangleF(
+            viewport.Left + (viewport.Width - width) / 2 + _pan.X,
+            viewport.Top + (viewport.Height - height) / 2 + _pan.Y,
+            width,
+            height);
+
+        DrawBoard(e.Graphics, board, _snapshot);
+        DrawHover(e.Graphics);
     }
 
-    private static void DrawBoard(Graphics g, Rectangle bounds, ScanManifest scan)
+    protected override void OnMouseWheel(MouseEventArgs e)
     {
-        using var boardBrush = new SolidBrush(Color.FromArgb(251, 252, 253));
-        using var boardPen = new Pen(Color.FromArgb(196, 207, 218), 1.5f);
+        base.OnMouseWheel(e);
+        SetZoom(_zoom + (e.Delta > 0 ? 0.15f : -0.15f));
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        Focus();
+        if (e.Button != MouseButtons.Left || _zoom <= 1.01f) return;
+        _dragging = true;
+        _dragStart = e.Location;
+        _panStart = _pan;
+        Capture = true;
+        Cursor = Cursors.SizeAll;
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (!_dragging) return;
+        _dragging = false;
+        Capture = false;
+        UpdateHover(e.Location);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_dragging)
+        {
+            _pan = new PointF(
+                _panStart.X + e.X - _dragStart.X,
+                _panStart.Y + e.Y - _dragStart.Y);
+            ClampPan();
+            Invalidate();
+            return;
+        }
+        UpdateHover(e.Location);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_dragging) return;
+        _hoveredId = null;
+        Cursor = Cursors.Default;
+        _toolTip.SetToolTip(this, "");
+        PartHovered?.Invoke(this, null);
+        Invalidate();
+    }
+
+    private void SetZoom(float value)
+    {
+        var next = Math.Clamp(value, 1f, 2.5f);
+        if (Math.Abs(next - _zoom) < 0.001f) return;
+        _zoom = next;
+        if (_zoom <= 1.01f) _pan = PointF.Empty;
+        ClampPan();
+        ZoomChanged?.Invoke(this, EventArgs.Empty);
+        Invalidate();
+    }
+
+    private void ClampPan()
+    {
+        if (_zoom <= 1.01f)
+        {
+            _pan = PointF.Empty;
+            return;
+        }
+        var maxX = ClientSize.Width * (_zoom - 1) / 2 + 60;
+        var maxY = ClientSize.Height * (_zoom - 1) / 2 + 60;
+        _pan = new PointF(Math.Clamp(_pan.X, -maxX, maxX), Math.Clamp(_pan.Y, -maxY, maxY));
+    }
+
+    private void UpdateHover(Point location)
+    {
+        var region = _regions.LastOrDefault(r => r.Bounds.Contains(location));
+        if (region?.Id == _hoveredId)
+        {
+            Cursor = region is null ? Cursors.Default : Cursors.Hand;
+            return;
+        }
+
+        _hoveredId = region?.Id;
+        Cursor = region is null ? Cursors.Default : Cursors.Hand;
+        var details = region is null ? null : CreateDetails(region);
+        _toolTip.SetToolTip(this, details is null
+            ? ""
+            : $"{details.Title}\n{details.Status}\n{details.Capability}");
+        PartHovered?.Invoke(this, details);
+        Invalidate();
+    }
+
+    private void RefreshHoveredDetails()
+    {
+        if (_hoveredId is null) return;
+        var region = _regions.FirstOrDefault(r => r.Id == _hoveredId);
+        if (region is not null) PartHovered?.Invoke(this, CreateDetails(region));
+    }
+
+    private void DrawBoard(Graphics g, RectangleF bounds, ScanManifest scan)
+    {
+        var boardFill = AppTheme.IsDark ? Color.FromArgb(18, 29, 38) : Color.FromArgb(251, 252, 253);
+        var boardBorder = AppTheme.IsDark ? Color.FromArgb(58, 78, 92) : Color.FromArgb(196, 207, 218);
+        var gridColor = AppTheme.IsDark ? Color.FromArgb(31, 46, 57) : Color.FromArgb(238, 242, 245);
+        var traceColor = AppTheme.IsDark ? Color.FromArgb(37, 83, 98) : Color.FromArgb(204, 225, 231);
+        using var boardBrush = new SolidBrush(boardFill);
+        using var boardPen = new Pen(boardBorder, 1.5f);
         g.FillRoundedRectangle(boardBrush, bounds, 12);
         g.DrawRoundedRectangle(boardPen, bounds, 12);
 
         var scaleX = bounds.Width / 900f;
         var scaleY = bounds.Height / 620f;
+        var fontScale = Math.Min(scaleX, scaleY);
         RectangleF Box(float x, float y, float w, float h) =>
             new(bounds.Left + x * scaleX, bounds.Top + y * scaleY, w * scaleX, h * scaleY);
 
-        // Quiet reference grid and traces make the map useful without turning it into sci-fi art.
-        using (var gridPen = new Pen(Color.FromArgb(238, 242, 245), 1))
+        using (var gridPen = new Pen(gridColor, 1))
         {
-            for (var x = bounds.Left + 45; x < bounds.Right; x += Math.Max(35, (int)(75 * scaleX)))
+            for (var x = bounds.Left + 45 * scaleX; x < bounds.Right; x += Math.Max(35, 75 * scaleX))
                 g.DrawLine(gridPen, x, bounds.Top + 1, x, bounds.Bottom - 1);
-            for (var y = bounds.Top + 42; y < bounds.Bottom; y += Math.Max(32, (int)(70 * scaleY)))
+            for (var y = bounds.Top + 42 * scaleY; y < bounds.Bottom; y += Math.Max(32, 70 * scaleY))
                 g.DrawLine(gridPen, bounds.Left + 1, y, bounds.Right - 1, y);
         }
-        using (var tracePen = new Pen(Color.FromArgb(204, 225, 231), Math.Max(1, 2 * Math.Min(scaleX, scaleY))))
+        using (var tracePen = new Pen(traceColor, Math.Max(1, 2 * fontScale)))
         {
-            g.DrawLine(tracePen, Box(465, 116, 1, 1).Location, Box(700, 116, 1, 1).Location);
-            g.DrawLine(tracePen, Box(375, 190, 1, 1).Location, Box(530, 265, 1, 1).Location);
-            g.DrawLine(tracePen, Box(530, 355, 1, 1).Location, Box(530, 365, 1, 1).Location);
-            g.DrawLine(tracePen, Box(610, 310, 1, 1).Location, Box(710, 310, 1, 1).Location);
+            g.DrawLine(tracePen, Box(495, 125, 1, 1).Location, Box(690, 125, 1, 1).Location);
+            g.DrawLine(tracePen, Box(390, 200, 1, 1).Location, Box(545, 270, 1, 1).Location);
+            g.DrawLine(tracePen, Box(550, 365, 1, 1).Location, Box(550, 382, 1, 1).Location);
+            g.DrawLine(tracePen, Box(625, 320, 1, 1).Location, Box(700, 320, 1, 1).Location);
         }
 
-        using var labelFont = new Font("Segoe UI", Math.Max(8.5f, 9 * Math.Min(scaleX, scaleY)));
-        using var smallFont = new Font("Segoe UI", Math.Max(7.5f, 8 * Math.Min(scaleX, scaleY)));
-        using var titleFont = new Font("Segoe UI Semibold", Math.Max(9.5f, 10.5f * Math.Min(scaleX, scaleY)));
+        using var labelFont = new Font("Segoe UI", Math.Max(8.5f, 9 * fontScale));
+        using var smallFont = new Font("Segoe UI", Math.Max(7.5f, 8 * fontScale));
+        using var titleFont = new Font("Segoe UI Semibold", Math.Max(9.5f, 10.5f * fontScale));
 
-        DrawBox(g, Box(25, 20, 210, 80), Color.FromArgb(236, 239, 243), Color.FromArgb(167, 178, 189),
-            "REAR I/O", "display • USB • LAN • audio", labelFont, smallFont);
+        var ioRect = Box(25, 22, 220, 92);
+        DrawBox(g, ioRect,
+            AppTheme.IsDark ? Color.FromArgb(38, 49, 60) : Color.FromArgb(236, 239, 243),
+            AppTheme.IsDark ? Color.FromArgb(99, 118, 134) : Color.FromArgb(167, 178, 189),
+            "REAR I/O", "display · USB · LAN · audio", labelFont, smallFont);
+        AddRegion(ioRect, "rear-io", "rear-io");
 
         var cpu = scan.Cpu;
-        DrawBox(g, Box(285, 45, 180, 145), AppTheme.AccentSoft, AppTheme.Accent,
-            ShortCpu(cpu.Name), $"{cpu.Cores} cores / {cpu.Threads} threads", titleFont, labelFont);
+        var cpuRect = Box(280, 45, 215, 165);
+        var cpuLive = _telemetry is null ? $"{cpu.Cores} cores · {cpu.Threads} threads" :
+            $"{cpu.Cores} cores · {cpu.Threads} threads · {_telemetry.CpuUsagePercent:0}% live";
+        DrawBox(g, cpuRect, AppTheme.AccentSoft, AppTheme.Accent,
+            ShortCpu(cpu.Name), cpuLive, titleFont, labelFont);
+        if (_telemetry is not null) DrawUsageBar(g, cpuRect, _telemetry.CpuUsagePercent, AppTheme.Accent);
+        AddRegion(cpuRect, "cpu", "cpu");
 
-        var dimmCount = Math.Max(scan.Memory.TotalSlots, Math.Max(scan.Memory.Slots.Count, 2));
-        for (var i = 0; i < Math.Min(dimmCount, 8); i++)
+        var dimmCount = Math.Clamp(Math.Max(scan.Memory.TotalSlots, Math.Max(scan.Memory.Slots.Count, 2)), 2, 8);
+        var dimmGroup = Box(670, 12, Math.Min(210, dimmCount * 28 + 70), 205);
+        DrawTextFit(g,
+            _telemetry is null
+                ? $"MEMORY · {scan.Memory.Populated}/{scan.Memory.TotalSlots} · {scan.TotalMemoryGb:0.#} GB"
+                : $"MEMORY · {_telemetry.MemoryUsedGb:0.0}/{scan.TotalMemoryGb:0.#} GB live",
+            titleFont, AppTheme.Muted, Box(655, 8, 225, 26), ContentAlignment.MiddleCenter);
+        AddRegion(dimmGroup, "memory", "memory");
+        for (var i = 0; i < dimmCount; i++)
         {
             var occupied = i < scan.Memory.Slots.Count;
-            var rect = Box(700 + i * 24, 35, 16, 155);
-            DrawThinSlot(g, rect, occupied ? AppTheme.Accent : Color.FromArgb(181, 191, 201),
-                occupied ? $"{scan.Memory.Slots[i].CapacityGb:0}G" : "");
+            var rect = Box(700 + i * 27, 42, 19, 158);
+            DrawThinSlot(g, rect, occupied ? AppTheme.Accent : boardBorder,
+                occupied ? $"{scan.Memory.Slots[i].CapacityGb:0} GB" : "OPEN", smallFont);
+            AddRegion(rect, $"memory-{i}", "memory", i);
         }
-        DrawText(g, $"DIMM  {scan.Memory.Populated}/{scan.Memory.TotalSlots}  {scan.TotalMemoryGb:0.#} GB",
-            titleFont, AppTheme.Muted, Box(660, 6, 210, 22), ContentAlignment.MiddleCenter);
 
-        var nvme = scan.Components.Where(c => c.Category == "storage" &&
-            string.Equals(c.LookupHints.BusType, "NVMe", StringComparison.OrdinalIgnoreCase)).ToList();
+        var storage = scan.Components.Where(c => c.Category == "storage").ToList();
+        var nvme = storage.Where(c => string.Equals(c.LookupHints.BusType, "NVMe", StringComparison.OrdinalIgnoreCase)).ToList();
         for (var i = 0; i < Math.Max(2, nvme.Count); i++)
         {
-            var rect = Box(55, 225 + i * 52, 315, 28);
+            var rect = Box(55, 235 + i * 57, 350, 44);
             if (i < nvme.Count)
-                DrawBox(g, rect, Color.FromArgb(231, 244, 237), AppTheme.Good,
-                    $"M.2 {i + 1}", Ellipsis(nvme[i].Model, 30), labelFont, smallFont);
+            {
+                DrawBox(g, rect,
+                    AppTheme.IsDark ? Color.FromArgb(24, 62, 49) : Color.FromArgb(231, 244, 237),
+                    AppTheme.Good, $"M.2 {i + 1}", nvme[i].Model, labelFont, smallFont);
+                AddRegion(rect, $"nvme-{i}", "nvme", storage.IndexOf(nvme[i]));
+            }
             else
-                DrawDashed(g, rect, AppTheme.Accent, $"M.2 {i + 1} — empty", labelFont);
+            {
+                DrawDashed(g, rect, AppTheme.Accent, $"M.2 {i + 1} · open", labelFont);
+                AddRegion(rect, $"nvme-open-{i}", "nvme-open", i);
+            }
         }
 
         var gpu = scan.Components.FirstOrDefault(c => c.Category == "gpu");
-        var pcieY = 365;
+        var pcieY = 378;
         if (gpu is not null)
         {
-            DrawBox(g, Box(45, pcieY, 500, 42), AppTheme.AccentSoft, AppTheme.Accent,
-                "PCIe x16", Ellipsis(gpu.Model, 44), titleFont, labelFont);
-            pcieY += 62;
+            var gpuRect = Box(45, pcieY, 520, 49);
+            DrawBox(g, gpuRect, AppTheme.AccentSoft, AppTheme.Accent,
+                "PCIe x16 · graphics", gpu.Model, titleFont, labelFont);
+            AddRegion(gpuRect, "gpu", "gpu", scan.Components.IndexOf(gpu));
+            pcieY += 67;
         }
         for (var i = 0; i < (scan.FormFactor == "mini-itx" ? 0 : 2); i++)
         {
-            DrawDashed(g, Box(45, pcieY + i * 38, i == 0 ? 480 : 170, 22),
-                AppTheme.Accent, i == 0 ? "PCIe expansion (estimated)" : "PCIe x1 (estimated)", smallFont);
+            var rect = Box(45, pcieY + i * 43, i == 0 ? 500 : 190, 28);
+            DrawDashed(g, rect, AppTheme.Accent,
+                i == 0 ? "PCIe expansion · estimated open slot" : "PCIe x1 · estimated open slot", smallFont);
+            AddRegion(rect, $"pcie-open-{i}", "pcie-open", i);
         }
 
-        var chipset = scan.Components.FirstOrDefault(c => c.Category == "chipset")?.Model ?? "Chipset";
-        DrawBox(g, Box(470, 265, 140, 90), Color.FromArgb(240, 237, 247), AppTheme.Purple,
-            Ellipsis(chipset.Replace("AMD ", "").Replace("Intel ", ""), 20), "platform controller", titleFont, smallFont);
+        var chipsetComponent = scan.Components.FirstOrDefault(c => c.Category == "chipset");
+        var chipsetName = chipsetComponent?.Model ?? "Chipset";
+        var chipsetRect = Box(470, 272, 165, 100);
+        DrawBox(g, chipsetRect,
+            AppTheme.IsDark ? Color.FromArgb(50, 40, 67) : Color.FromArgb(240, 237, 247),
+            AppTheme.Purple,
+            chipsetName.Replace("AMD ", "").Replace("Intel ", ""), "platform controller", titleFont, smallFont);
+        AddRegion(chipsetRect, "chipset", "chipset",
+            chipsetComponent is null ? -1 : scan.Components.IndexOf(chipsetComponent));
 
-        var sata = scan.Components.Where(c => c.Category == "storage" &&
-            string.Equals(c.LookupHints.BusType, "SATA", StringComparison.OrdinalIgnoreCase)).ToList();
-        DrawText(g, "SATA", titleFont, AppTheme.Muted, Box(720, 240, 120, 22), ContentAlignment.MiddleCenter);
+        var sata = storage.Where(c => string.Equals(c.LookupHints.BusType, "SATA", StringComparison.OrdinalIgnoreCase)).ToList();
+        DrawTextFit(g, "SATA STORAGE", titleFont, AppTheme.Muted, Box(705, 238, 170, 24), ContentAlignment.MiddleCenter);
         for (var i = 0; i < 6; i++)
         {
-            var rect = Box(710, 270 + i * 34, 135, 24);
+            var rect = Box(700, 270 + i * 39, 170, 31);
             if (i < sata.Count)
-                DrawBox(g, rect, Color.FromArgb(250, 241, 229), AppTheme.Warning,
-                    $"{i + 1}", Ellipsis(sata[i].Model, 16), smallFont, smallFont);
+            {
+                DrawPortBox(g, rect, $"{i + 1}", sata[i].Model, smallFont);
+                AddRegion(rect, $"sata-{i}", "sata", storage.IndexOf(sata[i]));
+            }
             else
-                DrawDashed(g, rect, AppTheme.Warning, $"{i + 1} — open", smallFont);
+            {
+                DrawDashed(g, rect, AppTheme.Warning, $"Port {i + 1} · open", smallFont);
+                AddRegion(rect, $"sata-open-{i}", "sata-open", i);
+            }
         }
 
-        DrawText(g,
-            $"{scan.SystemInfo.Baseboard.Manufacturer} {scan.SystemInfo.Baseboard.Product}  •  {scan.FormFactor.ToUpperInvariant()}",
-            titleFont, AppTheme.Muted, Box(20, 575, 850, 28), ContentAlignment.MiddleRight);
+        DrawTextFit(g,
+            $"{scan.SystemInfo.Baseboard.Manufacturer} {scan.SystemInfo.Baseboard.Product}  ·  {scan.FormFactor.ToUpperInvariant()}",
+            titleFont, AppTheme.Muted, Box(20, 582, 850, 25), ContentAlignment.MiddleRight);
+    }
+
+    private void AddRegion(RectangleF bounds, string id, string type, int index = -1) =>
+        _regions.Add(new HitRegion(bounds, id, type, index));
+
+    private void DrawHover(Graphics g)
+    {
+        if (_hoveredId is null) return;
+        var region = _regions.FirstOrDefault(r => r.Id == _hoveredId);
+        if (region is null) return;
+        var rect = RectangleF.Inflate(region.Bounds, 4, 4);
+        using var fill = new SolidBrush(Color.FromArgb(AppTheme.IsDark ? 42 : 24, AppTheme.Accent));
+        using var border = new Pen(AppTheme.Accent, 2.5f);
+        g.FillRoundedRectangle(fill, rect, 8);
+        g.DrawRoundedRectangle(border, rect, 8);
+    }
+
+    private BoardPartDetails CreateDetails(HitRegion region)
+    {
+        if (_snapshot is null) return EmptyDetails(region.Id);
+        var scan = _snapshot;
+        return region.Type switch
+        {
+            "cpu" => CpuDetails(scan, region.Id),
+            "memory" => MemoryDetails(scan, region),
+            "gpu" => ComponentDetails(scan.Components.ElementAtOrDefault(region.Index), region.Id, "Graphics", GpuCapability),
+            "chipset" => ComponentDetails(scan.Components.ElementAtOrDefault(region.Index), region.Id, "Chipset",
+                _ => "Coordinates PCIe, storage, USB, and platform I/O. It affects expansion and connectivity more than raw compute speed."),
+            "nvme" or "sata" => StorageDetails(scan.Components.Where(c => c.Category == "storage").ElementAtOrDefault(region.Index), region),
+            "rear-io" => new BoardPartDetails(region.Id, "CONNECTIVITY", "Rear I/O",
+                $"{scan.UsbDevices.Count(d => d.DeviceClass != "USB")} attached USB devices",
+                "Detected display, USB, network, and audio connectivity.",
+                "Connects external devices. Port speed and display capability depend on the exact motherboard headers and controllers.",
+                PartStatusTone.Good),
+            "nvme-open" => OpenSlot(region, "M.2 slot", "Can accept compatible compact NVMe or SATA storage; exact key and lane support should be checked in the board manual."),
+            "sata-open" => OpenSlot(region, $"SATA port {region.Index + 1}", "Can connect a compatible SATA SSD, hard drive, or optical drive."),
+            "pcie-open" => OpenSlot(region, region.Index == 0 ? "PCIe expansion slot" : "PCIe x1 slot",
+                "Can add compatible expansion hardware such as capture, network, storage, or sound cards. Slot layout is estimated."),
+            _ => EmptyDetails(region.Id)
+        };
+    }
+
+    private BoardPartDetails CpuDetails(ScanManifest scan, string id)
+    {
+        var cpu = scan.Cpu;
+        var usage = _telemetry?.CpuUsagePercent ?? 0;
+        var tone = usage >= 95 ? PartStatusTone.Critical : usage >= 85 ? PartStatusTone.Warning : PartStatusTone.Good;
+        var status = _telemetry is null ? "Detected · live usage starting" : $"Live usage · {usage:0}%";
+        var capability = cpu.Cores switch
+        {
+            >= 16 => "Workstation-class core count for heavy rendering, compiling, simulation, and parallel workloads.",
+            >= 8 => "Strong multi-core capacity for gaming, content creation, streaming, and heavy multitasking.",
+            >= 6 => "Well-balanced capacity for modern gaming, productivity, and everyday creative work.",
+            >= 4 => "Suitable for everyday productivity, media, and moderate multitasking.",
+            _ => "Best suited to light everyday workloads."
+        };
+        return new BoardPartDetails(id, "PROCESSOR", ShortCpu(cpu.Name), status,
+            $"{cpu.Cores} physical cores · {cpu.Threads} logical threads", capability, tone);
+    }
+
+    private BoardPartDetails MemoryDetails(ScanManifest scan, HitRegion region)
+    {
+        var first = scan.Memory.Slots.FirstOrDefault();
+        var used = _telemetry?.MemoryUsedGb;
+        var percent = _telemetry?.MemoryUsagePercent ?? 0;
+        var status = used.HasValue ? $"Live usage · {used:0.0} of {scan.TotalMemoryGb:0.#} GB ({percent:0}%)" : "Detected · live usage starting";
+        var tone = percent >= 92 ? PartStatusTone.Critical : percent >= 80 ? PartStatusTone.Warning : PartStatusTone.Good;
+        var speed = first is null ? "Speed unavailable" : $"{first.SpeedMhz} MT/s active · {first.RatedMhz} MT/s rated";
+        var slot = region.Index >= 0 && region.Index < scan.Memory.Slots.Count
+            ? $" · Slot {region.Index + 1}: {scan.Memory.Slots[region.Index].CapacityGb:0.#} GB"
+            : "";
+        var capability = scan.TotalMemoryGb switch
+        {
+            >= 64 => "High-capacity memory for large creative projects, virtual machines, datasets, and demanding multitasking.",
+            >= 32 => "Comfortable capacity for modern gaming, content creation, development, and heavy multitasking.",
+            >= 16 => "Solid mainstream capacity for gaming, office work, and moderate creative workloads.",
+            _ => "Usable for light workloads; memory-heavy apps may benefit from more capacity."
+        };
+        if (first is not null && first.RatedMhz > first.SpeedMhz + 100)
+            capability += " Modules are currently running below their reported rated speed; firmware memory-profile settings may be worth reviewing.";
+        return new BoardPartDetails(region.Id, "MEMORY", $"System memory{slot}", status,
+            $"{scan.Memory.Populated} of {scan.Memory.TotalSlots} slots populated · {speed}", capability, tone);
+    }
+
+    private BoardPartDetails StorageDetails(HardwareComponent? component, HitRegion region)
+    {
+        if (component is null) return EmptyDetails(region.Id);
+        var volumes = FindVolumes(component).ToList();
+        var total = volumes.Sum(v => v.SizeBytes);
+        var free = volumes.Sum(v => v.FreeBytes);
+        var usedPercent = total <= 0 ? (double?)null : (total - free) * 100d / total;
+        var status = usedPercent.HasValue
+            ? $"Capacity · {usedPercent:0}% used · {FormatBytes(free)} free"
+            : "Detected · no mounted volume matched";
+        var tone = usedPercent >= 95 ? PartStatusTone.Critical : usedPercent >= 85 ? PartStatusTone.Warning : PartStatusTone.Good;
+        var bus = component.LookupHints.BusType ?? "Storage";
+        var media = component.LookupHints.MediaType ?? "drive";
+        var capability = bus.Equals("NVMe", StringComparison.OrdinalIgnoreCase)
+            ? "Low-latency storage suited to the operating system, applications, games, project files, and scratch workloads. Actual speed depends on its PCIe generation and lane width."
+            : media.Contains("HDD", StringComparison.OrdinalIgnoreCase)
+                ? "High-capacity storage suited to archives and bulk data; slower random access than solid-state storage."
+                : "SATA-class storage suited to applications, games, and general data. It is typically slower than NVMe but remains responsive as an SSD.";
+        return new BoardPartDetails(region.Id, bus.ToUpperInvariant(), component.Model, status,
+            $"{media} · {bus} bus" + (total > 0 ? $" · {FormatBytes(total)} mounted" : ""), capability, tone);
+    }
+
+    private BoardPartDetails ComponentDetails(
+        HardwareComponent? component,
+        string id,
+        string category,
+        Func<HardwareComponent, string> capability)
+    {
+        if (component is null) return EmptyDetails(id);
+        var result = _report?.Results.FirstOrDefault(r =>
+            r.ComponentKey.Equals(component.ComponentKey, StringComparison.OrdinalIgnoreCase));
+        var (status, tone) = result?.Status switch
+        {
+            "update-available" => ("Driver update available for review", PartStatusTone.Warning),
+            "current" => ("Driver checked · current", PartStatusTone.Good),
+            "error" => ("Driver check reported an error", PartStatusTone.Critical),
+            "manual-check" => ("Detected · vendor review recommended", PartStatusTone.Info),
+            _ => ("Detected · driver not checked", PartStatusTone.Good)
+        };
+        var version = component.Current.DriverVersion ?? component.Current.Firmware ?? "Version unavailable";
+        return new BoardPartDetails(id, category.ToUpperInvariant(), component.Model, status,
+            $"Installed version · {version}", capability(component), tone);
+    }
+
+    private static BoardPartDetails OpenSlot(HitRegion region, string title, string capability) =>
+        new(region.Id, "EXPANSION", title, "Available · physical layout estimated",
+            "BoardScout inferred this slot from the reported form factor and detected devices.", capability, PartStatusTone.Info);
+
+    private static BoardPartDetails EmptyDetails(string id) =>
+        new(id, "COMPONENT", "Hardware component", "Detected", "Details unavailable.",
+            "Run a fresh inventory scan if the hardware changed.", PartStatusTone.Muted);
+
+    private IEnumerable<VolumeInfo> FindVolumes(HardwareComponent component)
+    {
+        if (_snapshot is null) return [];
+        var model = Normalize(component.Model);
+        return _snapshot.Volumes.Where(v =>
+        {
+            var disk = Normalize(v.DiskModel ?? "");
+            return disk.Length > 0 && (disk.Contains(model) || model.Contains(disk));
+        });
+    }
+
+    private static string GpuCapability(HardwareComponent component)
+    {
+        var model = component.Model;
+        var match = Regex.Match(model, @"(?:RTX|RX)\s*(\d{4})", RegexOptions.IgnoreCase);
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var number))
+        {
+            var tier = model.Contains("RX", StringComparison.OrdinalIgnoreCase)
+                ? (number % 1000) / 100 * 10
+                : number % 100;
+            if (tier >= 80) return "High-end graphics tier for demanding high-resolution gaming, GPU rendering, and accelerated creative or compute workloads.";
+            if (tier >= 70) return "Performance graphics tier for high-refresh gaming, content creation, and GPU-accelerated workloads.";
+            if (tier >= 60) return "Mainstream graphics tier for modern gaming and useful acceleration in creative and compute applications.";
+            return "Entry graphics tier suited to esports, lighter 1080p gaming, media acceleration, and supported GPU compute workloads.";
+        }
+        if (model.Contains("integrated", StringComparison.OrdinalIgnoreCase) ||
+            model.Contains("UHD", StringComparison.OrdinalIgnoreCase))
+            return "Integrated graphics suited to desktop work, media playback, multiple displays, and light 3D workloads.";
+        return "Provides hardware-accelerated graphics, media, and supported compute. Actual performance depends on the GPU configuration, workload, power, and cooling.";
     }
 
     private static string ShortCpu(string value) =>
-        Ellipsis(value.Replace(" with Radeon Graphics", "", StringComparison.OrdinalIgnoreCase)
+        value.Replace(" with Radeon Graphics", "", StringComparison.OrdinalIgnoreCase)
             .Replace("AMD ", "", StringComparison.OrdinalIgnoreCase)
-            .Replace("Intel(R) ", "", StringComparison.OrdinalIgnoreCase), 28);
+            .Replace("Intel(R) ", "", StringComparison.OrdinalIgnoreCase);
 
-    private static string Ellipsis(string? value, int max) =>
-        string.IsNullOrWhiteSpace(value) ? "Unknown" : value.Length <= max ? value : value[..(max - 1)] + "…";
+    private static string Normalize(string value) =>
+        Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9]", "");
+
+    private static string FormatBytes(long bytes)
+    {
+        var value = (double)Math.Max(0, bytes);
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+        return $"{value:0.#} {units[unit]}";
+    }
 
     private static void DrawBox(
         Graphics g, RectangleF rect, Color fill, Color border, string title, string subtitle, Font titleFont, Font subtitleFont)
@@ -150,42 +547,75 @@ public sealed class BoardMapControl : Control
         using var pen = new Pen(border, 1.5f);
         g.FillRoundedRectangle(brush, rect, 7);
         g.DrawRoundedRectangle(pen, rect, 7);
-        var top = new RectangleF(rect.X + 5, rect.Y + 4, rect.Width - 10, rect.Height / 2);
-        var bottom = new RectangleF(rect.X + 5, rect.Y + rect.Height / 2 - 1, rect.Width - 10, rect.Height / 2);
-        DrawText(g, title, titleFont, AppTheme.Text, top, ContentAlignment.MiddleCenter);
-        DrawText(g, subtitle, subtitleFont, AppTheme.Muted, bottom, ContentAlignment.MiddleCenter);
+        var top = new RectangleF(rect.X + 8, rect.Y + 5, rect.Width - 16, rect.Height * 0.46f - 3);
+        var bottom = new RectangleF(rect.X + 8, rect.Y + rect.Height * 0.46f, rect.Width - 16, rect.Height * 0.48f - 5);
+        DrawTextFit(g, title, titleFont, AppTheme.Text, top, ContentAlignment.MiddleCenter);
+        DrawTextFit(g, subtitle, subtitleFont, AppTheme.Muted, bottom, ContentAlignment.MiddleCenter);
+    }
+
+    private static void DrawPortBox(Graphics g, RectangleF rect, string port, string model, Font font)
+    {
+        var fill = AppTheme.IsDark ? Color.FromArgb(65, 48, 25) : Color.FromArgb(250, 241, 229);
+        using var brush = new SolidBrush(fill);
+        using var pen = new Pen(AppTheme.Warning, 1.3f);
+        g.FillRoundedRectangle(brush, rect, 6);
+        g.DrawRoundedRectangle(pen, rect, 6);
+        DrawTextFit(g, port, font, AppTheme.Warning,
+            new RectangleF(rect.X + 5, rect.Y + 3, rect.Width * 0.18f, rect.Height - 6), ContentAlignment.MiddleCenter);
+        DrawTextFit(g, model, font, AppTheme.Text,
+            new RectangleF(rect.X + rect.Width * 0.2f, rect.Y + 3, rect.Width * 0.76f, rect.Height - 6), ContentAlignment.MiddleLeft);
     }
 
     private static void DrawDashed(Graphics g, RectangleF rect, Color color, string text, Font font)
     {
         using var pen = new Pen(color, 1.3f) { DashStyle = DashStyle.Dash };
         g.DrawRoundedRectangle(pen, rect, 5);
-        DrawText(g, text, font, color, rect, ContentAlignment.MiddleCenter);
+        DrawTextFit(g, text, font, color, RectangleF.Inflate(rect, -5, -3), ContentAlignment.MiddleCenter);
     }
 
-    private static void DrawThinSlot(Graphics g, RectangleF rect, Color color, string text)
+    private static void DrawThinSlot(Graphics g, RectangleF rect, Color color, string text, Font font)
     {
-        using var brush = new SolidBrush(Color.FromArgb(
-            238 + color.R / 16, 238 + color.G / 16, 238 + color.B / 16));
-        using var pen = new Pen(color, 1.1f);
+        var fill = AppTheme.IsDark
+            ? Color.FromArgb(28, 45, 55)
+            : Color.FromArgb(245, 249, 251);
+        using var brush = new SolidBrush(fill);
+        using var pen = new Pen(color, 1.2f);
         g.FillRectangle(brush, rect);
-        g.DrawRectangle(pen, rect);
-        if (text.Length > 0)
-        {
-            using var font = new Font("Segoe UI Semibold", 7);
-            DrawText(g, text, font, AppTheme.Text, rect, ContentAlignment.MiddleCenter);
-        }
+        g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+        DrawVerticalText(g, text, font, AppTheme.Text, rect);
+    }
+
+    private static void DrawUsageBar(Graphics g, RectangleF host, double percent, Color color)
+    {
+        var track = new RectangleF(host.X + 10, host.Bottom - 10, host.Width - 20, 4);
+        using var trackBrush = new SolidBrush(Color.FromArgb(AppTheme.IsDark ? 70 : 34, color));
+        using var valueBrush = new SolidBrush(color);
+        g.FillRoundedRectangle(trackBrush, track, 2);
+        g.FillRoundedRectangle(valueBrush,
+            new RectangleF(track.X, track.Y, track.Width * (float)Math.Clamp(percent / 100d, 0, 1), track.Height), 2);
+    }
+
+    private static void DrawVerticalText(Graphics g, string text, Font font, Color color, RectangleF bounds)
+    {
+        var state = g.Save();
+        g.TranslateTransform(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        g.RotateTransform(-90);
+        DrawTextFit(g, text, font, color,
+            new RectangleF(-bounds.Height / 2 + 4, -bounds.Width / 2, bounds.Height - 8, bounds.Width),
+            ContentAlignment.MiddleCenter);
+        g.Restore(state);
     }
 
     private static void DrawCentered(Graphics g, string text, Rectangle bounds, Color color, float size)
     {
         using var font = new Font("Segoe UI", size);
-        DrawText(g, text, font, color, bounds, ContentAlignment.MiddleCenter);
+        DrawTextFit(g, text, font, color, bounds, ContentAlignment.MiddleCenter);
     }
 
-    private static void DrawText(Graphics g, string text, Font font, Color color, RectangleF bounds, ContentAlignment align)
+    private static void DrawTextFit(
+        Graphics g, string text, Font font, Color color, RectangleF bounds, ContentAlignment align)
     {
-        using var brush = new SolidBrush(color);
+        if (string.IsNullOrWhiteSpace(text) || bounds.Width <= 1 || bounds.Height <= 1) return;
         using var format = new StringFormat
         {
             Alignment = align is ContentAlignment.MiddleLeft ? StringAlignment.Near :
@@ -194,7 +624,14 @@ public sealed class BoardMapControl : Control
             Trimming = StringTrimming.EllipsisCharacter,
             FormatFlags = StringFormatFlags.NoWrap
         };
-        g.DrawString(text, font, brush, bounds, format);
+        var measured = g.MeasureString(text, font, int.MaxValue, format);
+        var ratio = Math.Min(1f, Math.Min(bounds.Width / Math.Max(1, measured.Width), bounds.Height / Math.Max(1, measured.Height)));
+        var size = Math.Max(6.25f, font.Size * ratio);
+        using var fitted = Math.Abs(size - font.Size) < 0.05f
+            ? (Font)font.Clone()
+            : new Font(font.FontFamily, size, font.Style, GraphicsUnit.Point);
+        using var brush = new SolidBrush(color);
+        g.DrawString(text, fitted, brush, bounds, format);
     }
 }
 
@@ -208,7 +645,8 @@ internal static class GraphicsExtensions
 
     public static void FillRoundedRectangle(this Graphics graphics, Brush brush, RectangleF bounds, float radius)
     {
-        using var path = Rounded(bounds, radius);
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+        using var path = Rounded(bounds, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
         graphics.FillPath(brush, path);
     }
 
@@ -220,7 +658,8 @@ internal static class GraphicsExtensions
 
     public static void DrawRoundedRectangle(this Graphics graphics, Pen pen, RectangleF bounds, float radius)
     {
-        using var path = Rounded(bounds, radius);
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+        using var path = Rounded(bounds, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
         graphics.DrawPath(pen, path);
     }
 
