@@ -107,8 +107,16 @@ public sealed class BoardMapControl : Control
             return;
         }
 
-        var width = viewport.Width * _zoom;
-        var height = viewport.Height * _zoom;
+        const float designAspect = 1120f / 720f;
+        var fittedWidth = viewport.Width;
+        var fittedHeight = fittedWidth / designAspect;
+        if (fittedHeight > viewport.Height)
+        {
+            fittedHeight = viewport.Height;
+            fittedWidth = fittedHeight * designAspect;
+        }
+        var width = fittedWidth * _zoom;
+        var height = fittedHeight * _zoom;
         var board = new RectangleF(
             viewport.Left + (viewport.Width - width) / 2 + _pan.X,
             viewport.Top + (viewport.Height - height) / 2 + _pan.Y,
@@ -232,40 +240,48 @@ public sealed class BoardMapControl : Control
         g.FillRoundedRectangle(boardBrush, bounds, 12);
         g.DrawRoundedRectangle(boardPen, bounds, 12);
 
-        var scaleX = bounds.Width / 900f;
-        var scaleY = bounds.Height / 620f;
+        var scaleX = bounds.Width / 1120f;
+        var scaleY = bounds.Height / 720f;
         var fontScale = Math.Min(scaleX, scaleY);
         RectangleF Box(float x, float y, float w, float h) =>
             new(bounds.Left + x * scaleX, bounds.Top + y * scaleY, w * scaleX, h * scaleY);
 
         using (var gridPen = new Pen(gridColor, 1))
         {
-            for (var x = bounds.Left + 45 * scaleX; x < bounds.Right; x += Math.Max(35, 75 * scaleX))
+            for (var x = bounds.Left + 40 * scaleX; x < bounds.Right; x += Math.Max(35, 70 * scaleX))
                 g.DrawLine(gridPen, x, bounds.Top + 1, x, bounds.Bottom - 1);
-            for (var y = bounds.Top + 42 * scaleY; y < bounds.Bottom; y += Math.Max(32, 70 * scaleY))
+            for (var y = bounds.Top + 40 * scaleY; y < bounds.Bottom; y += Math.Max(32, 70 * scaleY))
                 g.DrawLine(gridPen, bounds.Left + 1, y, bounds.Right - 1, y);
         }
         using (var tracePen = new Pen(traceColor, Math.Max(1, 2 * fontScale)))
         {
-            g.DrawLine(tracePen, Box(495, 125, 1, 1).Location, Box(690, 125, 1, 1).Location);
-            g.DrawLine(tracePen, Box(390, 200, 1, 1).Location, Box(545, 270, 1, 1).Location);
-            g.DrawLine(tracePen, Box(550, 365, 1, 1).Location, Box(550, 382, 1, 1).Location);
-            g.DrawLine(tracePen, Box(625, 320, 1, 1).Location, Box(700, 320, 1, 1).Location);
+            g.DrawLine(tracePen, Box(540, 155, 1, 1).Location, Box(825, 155, 1, 1).Location);
+            g.DrawLine(tracePen, Box(450, 230, 1, 1).Location, Box(655, 390, 1, 1).Location);
+            g.DrawLine(tracePen, Box(665, 450, 1, 1).Location, Box(835, 450, 1, 1).Location);
+            g.DrawLine(tracePen, Box(330, 500, 1, 1).Location, Box(590, 440, 1, 1).Location);
         }
 
         using var labelFont = new Font("Segoe UI", Math.Max(8.5f, 9 * fontScale));
         using var smallFont = new Font("Segoe UI", Math.Max(7.5f, 8 * fontScale));
         using var titleFont = new Font("Segoe UI Semibold", Math.Max(9.5f, 10.5f * fontScale));
 
-        var ioRect = Box(25, 22, 220, 92);
+        DrawTextFit(g, "BOARD LAYOUT · VERIFIED CONNECTORS", smallFont, AppTheme.Accent,
+            Box(24, 10, 350, 22), ContentAlignment.MiddleLeft);
+        DrawTextFit(g, $"{scan.SystemInfo.Baseboard.Product} · {scan.FormFactor.ToUpperInvariant()}", titleFont,
+            AppTheme.Muted, Box(700, 10, 390, 24), ContentAlignment.MiddleRight);
+
+        var ioRect = Box(25, 42, 245, 112);
         DrawBox(g, ioRect,
             AppTheme.IsDark ? Color.FromArgb(38, 49, 60) : Color.FromArgb(236, 239, 243),
             AppTheme.IsDark ? Color.FromArgb(99, 118, 134) : Color.FromArgb(167, 178, 189),
-            "REAR I/O", "display · USB · LAN · audio", labelFont, smallFont);
+            "REAR I/O", "DP · HDMI · USB-C · USB-A · 2.5G LAN · audio", labelFont, smallFont);
         AddRegion(ioRect, "rear-io", "rear-io");
 
+        DrawHeatsink(g, Box(285, 42, 250, 35), boardBorder, traceColor);
+        DrawHeatsink(g, Box(275, 72, 36, 165), boardBorder, traceColor);
+
         var cpu = scan.Cpu;
-        var cpuRect = Box(280, 45, 215, 165);
+        var cpuRect = Box(330, 82, 225, 166);
         var cpuLive = _telemetry is null ? $"{cpu.Cores} cores · {cpu.Threads} threads" :
             $"{cpu.Cores} cores · {cpu.Threads} threads · {_telemetry.CpuUsagePercent:0}% live";
         DrawBox(g, cpuRect, AppTheme.AccentSoft, AppTheme.Accent,
@@ -274,17 +290,17 @@ public sealed class BoardMapControl : Control
         AddRegion(cpuRect, "cpu", "cpu");
 
         var dimmCount = Math.Clamp(Math.Max(scan.Memory.TotalSlots, Math.Max(scan.Memory.Slots.Count, 2)), 2, 8);
-        var dimmGroup = Box(670, 12, Math.Min(210, dimmCount * 28 + 70), 205);
+        var dimmGroup = Box(800, 45, Math.Min(245, dimmCount * 36 + 80), 215);
         DrawTextFit(g,
             _telemetry is null
                 ? $"MEMORY · {scan.Memory.Populated}/{scan.Memory.TotalSlots} · {scan.TotalMemoryGb:0.#} GB"
                 : $"MEMORY · {_telemetry.MemoryUsedGb:0.0}/{scan.TotalMemoryGb:0.#} GB live",
-            titleFont, AppTheme.Muted, Box(655, 8, 225, 26), ContentAlignment.MiddleCenter);
+            titleFont, AppTheme.Muted, Box(785, 38, 285, 26), ContentAlignment.MiddleCenter);
         AddRegion(dimmGroup, "memory", "memory");
         for (var i = 0; i < dimmCount; i++)
         {
             var occupied = i < scan.Memory.Slots.Count;
-            var rect = Box(700 + i * 27, 42, 19, 158);
+            var rect = Box(830 + i * 34, 76, 25, 166);
             DrawThinSlot(g, rect, occupied ? AppTheme.Accent : boardBorder,
                 occupied ? $"{scan.Memory.Slots[i].CapacityGb:0} GB" : "OPEN", smallFont);
             AddRegion(rect, $"memory-{i}", "memory", i);
@@ -294,42 +310,54 @@ public sealed class BoardMapControl : Control
         var nvme = storage.Where(c => string.Equals(c.LookupHints.BusType, "NVMe", StringComparison.OrdinalIgnoreCase)).ToList();
         for (var i = 0; i < Math.Max(2, nvme.Count); i++)
         {
-            var rect = Box(55, 235 + i * 57, 350, 44);
+            var rect = i == 0 ? Box(120, 280, 410, 49) : Box(285, 530, 365, 48);
+            var slotName = i == 0 ? "M2_1 · KEY M · PCIe 3.0 x4" : "M2_2 · KEY M · PCIe 3.0 x2";
             if (i < nvme.Count)
             {
                 DrawBox(g, rect,
                     AppTheme.IsDark ? Color.FromArgb(24, 62, 49) : Color.FromArgb(231, 244, 237),
-                    AppTheme.Good, $"M.2 {i + 1}", nvme[i].Model, labelFont, smallFont);
+                    AppTheme.Good, slotName, nvme[i].Model, labelFont, smallFont);
                 AddRegion(rect, $"nvme-{i}", "nvme", storage.IndexOf(nvme[i]));
             }
             else
             {
-                DrawDashed(g, rect, AppTheme.Accent, $"M.2 {i + 1} · open", labelFont);
+                DrawDashed(g, rect, AppTheme.Accent, $"{slotName} · OPEN", labelFont);
                 AddRegion(rect, $"nvme-open-{i}", "nvme-open", i);
             }
         }
 
         var gpu = scan.Components.FirstOrDefault(c => c.Category == "gpu");
-        var pcieY = 378;
+        var pcieY = 350;
         if (gpu is not null)
         {
-            var gpuRect = Box(45, pcieY, 520, 49);
+            var gpuRect = Box(55, pcieY, 570, 52);
             DrawBox(g, gpuRect, AppTheme.AccentSoft, AppTheme.Accent,
-                "PCIe x16 · graphics", gpu.Model, titleFont, labelFont);
+                "PCIE1 · PCIe 3.0 x16 · GRAPHICS", gpu.Model, titleFont, labelFont);
             AddRegion(gpuRect, "gpu", "gpu", scan.Components.IndexOf(gpu));
-            pcieY += 67;
+            pcieY += 78;
         }
-        for (var i = 0; i < (scan.FormFactor == "mini-itx" ? 0 : 2); i++)
+        if (scan.FormFactor != "mini-itx")
         {
-            var rect = Box(45, pcieY + i * 43, i == 0 ? 500 : 190, 28);
-            DrawDashed(g, rect, AppTheme.Accent,
-                i == 0 ? "PCIe expansion · estimated open slot" : "PCIe x1 · estimated open slot", smallFont);
-            AddRegion(rect, $"pcie-open-{i}", "pcie-open", i);
+            var x1Rect = Box(55, pcieY, 245, 32);
+            DrawDashed(g, x1Rect, AppTheme.Purple, "PCIE2 · PCIe 3.0 x1 · OPEN", smallFont);
+            AddRegion(x1Rect, "pcie-open-x1", "pcie-open", 0);
+
+            var x4Rect = Box(55, 595, 570, 38);
+            DrawDashed(g, x4Rect, AppTheme.Accent, "PCIE3 · PCIe 3.0 x4 in x16 body · BEST NVMe EXPANSION", labelFont);
+            AddRegion(x4Rect, "pcie-open-x4", "pcie-open", 1);
         }
+
+        var wifi = FindWifi(scan);
+        var wifiRect = Box(55, 485, 205, 78);
+        DrawBox(g, wifiRect,
+            AppTheme.IsDark ? Color.FromArgb(24, 52, 74) : Color.FromArgb(229, 241, 250),
+            AppTheme.Accent,
+            "M2_3 · KEY E · WiFi/BT", wifi?.Model ?? "Type 2230 socket · open", labelFont, smallFont);
+        AddRegion(wifiRect, "wifi-key-e", "wifi-slot", wifi is null ? -1 : scan.Components.IndexOf(wifi));
 
         var chipsetComponent = scan.Components.FirstOrDefault(c => c.Category == "chipset");
         var chipsetName = chipsetComponent?.Model ?? "Chipset";
-        var chipsetRect = Box(470, 272, 165, 100);
+        var chipsetRect = Box(590, 385, 175, 118);
         DrawBox(g, chipsetRect,
             AppTheme.IsDark ? Color.FromArgb(50, 40, 67) : Color.FromArgb(240, 237, 247),
             AppTheme.Purple,
@@ -338,10 +366,10 @@ public sealed class BoardMapControl : Control
             chipsetComponent is null ? -1 : scan.Components.IndexOf(chipsetComponent));
 
         var sata = storage.Where(c => string.Equals(c.LookupHints.BusType, "SATA", StringComparison.OrdinalIgnoreCase)).ToList();
-        DrawTextFit(g, "SATA STORAGE", titleFont, AppTheme.Muted, Box(705, 238, 170, 24), ContentAlignment.MiddleCenter);
+        DrawTextFit(g, "SATA3 · 6 Gb/s", titleFont, AppTheme.Muted, Box(845, 285, 225, 24), ContentAlignment.MiddleCenter);
         for (var i = 0; i < 6; i++)
         {
-            var rect = Box(700, 270 + i * 39, 170, 31);
+            var rect = Box(850, 315 + i * 42, 220, 34);
             var disabledByM2 = IsB550MSteelLegend(scan) && nvme.Count >= 2 && i >= 4;
             if (disabledByM2)
             {
@@ -360,10 +388,12 @@ public sealed class BoardMapControl : Control
             }
         }
 
-        var boardIdentityRect = Box(525, 570, 345, 37);
-        DrawTextFit(g,
-            $"{scan.SystemInfo.Baseboard.Manufacturer} {scan.SystemInfo.Baseboard.Product}  ·  {scan.FormFactor.ToUpperInvariant()}",
-            titleFont, AppTheme.Muted, boardIdentityRect, ContentAlignment.MiddleRight);
+        DrawHeaderGroup(g, Box(700, 585, 365, 65), smallFont);
+        DrawFanGroup(g, Box(655, 90, 115, 175), smallFont);
+
+        var boardIdentityRect = Box(710, 665, 380, 30);
+        DrawTextFit(g, "M2_3 is WiFi/BT only · it cannot accept an NVMe SSD", titleFont,
+            AppTheme.Accent, boardIdentityRect, ContentAlignment.MiddleRight);
         AddRegion(boardIdentityRect, "motherboard", "motherboard");
     }
 
@@ -396,6 +426,7 @@ public sealed class BoardMapControl : Control
             "motherboard" => ComponentDetails(scan.Components.FirstOrDefault(c => c.Category == "bios"), region.Id,
                 "Motherboard firmware",
                 _ => "BIOS firmware initializes the board, CPU, memory, storage, security, and boot process. Update only for a needed fix, compatibility change, or security release."),
+            "wifi-slot" => WifiDetails(scan, region),
             "nvme" or "sata" => StorageDetails(scan.Components.Where(c => c.Category == "storage").ElementAtOrDefault(region.Index), region),
             "rear-io" => new BoardPartDetails(region.Id, "CONNECTIVITY", "Rear I/O",
                 $"{scan.UsbDevices.Count(d => d.DeviceClass != "USB")} attached USB devices",
@@ -511,15 +542,45 @@ public sealed class BoardMapControl : Control
 
     private static BoardPartDetails PcieSlotDetails(ScanManifest scan, HitRegion region)
     {
-        if (IsB550MSteelLegend(scan) && region.Index == 0)
+        if (IsB550MSteelLegend(scan) && region.Index == 1)
             return new BoardPartDetails(region.Id, "EXPANSION", "PCIe 3.0 x4 slot (PCIE3)",
                 "Appears available · verify physical clearance",
                 "This is the lower full-length slot. It is electrically PCIe 3.0 x4 with the installed Ryzen 7 5700G.",
                 "A single-drive PCIe-to-M.2 NVMe adapter is a good fit. Cheap passive multi-drive cards may require lane bifurcation the board does not advertise.",
                 PartStatusTone.Info);
+        if (IsB550MSteelLegend(scan))
+            return new BoardPartDetails(region.Id, "EXPANSION", "PCIe 3.0 x1 slot (PCIE2)",
+                "Appears available · chipset connected",
+                "This short slot supplies one PCIe 3.0 lane.",
+                "Suitable for sound, USB, capture, or network cards. It is too narrow to make a good NVMe storage slot.",
+                PartStatusTone.Info);
         return OpenSlot(region, region.Index == 0 ? "PCIe expansion slot" : "PCIe x1 slot",
             "Can add compatible expansion hardware such as capture, network, storage, or sound cards. Slot layout is estimated.");
     }
+
+    private BoardPartDetails WifiDetails(ScanManifest scan, HitRegion region)
+    {
+        var component = region.Index >= 0 ? scan.Components.ElementAtOrDefault(region.Index) : null;
+        if (component is null)
+            return new BoardPartDetails(region.Id, "WIRELESS SLOT", "M2_3 · M.2 Key-E",
+                "Available · type 2230 WiFi/BT only",
+                "This socket is electrically and mechanically different from an M.2 Key-M storage socket.",
+                "Accepts a compatible WiFi/Bluetooth module. It cannot accept an NVMe or SATA SSD.",
+                PartStatusTone.Info);
+        var result = _report?.Results.FirstOrDefault(r =>
+            r.ComponentKey.Equals(component.ComponentKey, StringComparison.OrdinalIgnoreCase));
+        var status = result?.Status == "update-available" ? "Wireless driver update available" :
+            result?.Status == "current" ? "Installed · driver current" : "Installed · driver not checked";
+        var tone = result?.Status == "update-available" ? PartStatusTone.Warning : PartStatusTone.Good;
+        return new BoardPartDetails(region.Id, "WIRELESS SLOT", component.Model, status,
+            $"M2_3 · M.2 Key-E type 2230 · driver {component.Current.DriverVersion ?? "unknown"}",
+            "WiFi uses PCIe while Bluetooth uses an internal USB connection. Removing this card does not create an NVMe storage slot.",
+            tone, result?.DownloadUrl ?? result?.Best.DownloadUrl);
+    }
+
+    private static HardwareComponent? FindWifi(ScanManifest scan) =>
+        scan.Components.FirstOrDefault(c => c.Category.Equals("network", StringComparison.OrdinalIgnoreCase) &&
+            Regex.IsMatch(c.Model, @"Wi-?Fi|Wireless|AX\d{3}", RegexOptions.IgnoreCase));
 
     private static bool IsB550MSteelLegend(ScanManifest scan) =>
         scan.SystemInfo.Baseboard.Product.Contains("B550M Steel Legend", StringComparison.OrdinalIgnoreCase);
@@ -570,6 +631,54 @@ public sealed class BoardMapControl : Control
         var unit = 0;
         while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
         return $"{value:0.#} {units[unit]}";
+    }
+
+    private static void DrawHeatsink(Graphics g, RectangleF rect, Color border, Color groove)
+    {
+        using var fill = new LinearGradientBrush(rect,
+            AppTheme.IsDark ? Color.FromArgb(83, 94, 105) : Color.FromArgb(220, 226, 232),
+            AppTheme.IsDark ? Color.FromArgb(42, 51, 60) : Color.FromArgb(177, 187, 197),
+            LinearGradientMode.Horizontal);
+        using var outline = new Pen(border, 1.1f);
+        using var line = new Pen(groove, 0.8f);
+        g.FillRoundedRectangle(fill, rect, 4);
+        g.DrawRoundedRectangle(outline, rect, 4);
+        for (var x = rect.Left + 8; x < rect.Right - 4; x += 10)
+            g.DrawLine(line, x, rect.Top + 3, x, rect.Bottom - 3);
+    }
+
+    private static void DrawFanGroup(Graphics g, RectangleF rect, Font font)
+    {
+        DrawTextFit(g, "FAN HEADERS", font, AppTheme.Muted,
+            new RectangleF(rect.X, rect.Y, rect.Width, 22), ContentAlignment.MiddleCenter);
+        string[] labels = ["CPU_FAN", "CPU/WP", "CHA_1", "CHA_2", "CHA_3", "CHA_4"];
+        for (var i = 0; i < labels.Length; i++)
+        {
+            var box = new RectangleF(rect.X + 8, rect.Y + 25 + i * 23, rect.Width - 16, 18);
+            using var pen = new Pen(AppTheme.Good, 1);
+            using var brush = new SolidBrush(Color.FromArgb(AppTheme.IsDark ? 55 : 24, AppTheme.Good));
+            g.FillRoundedRectangle(brush, box, 3);
+            g.DrawRoundedRectangle(pen, box, 3);
+            DrawTextFit(g, labels[i], font, AppTheme.Good, box, ContentAlignment.MiddleCenter);
+        }
+    }
+
+    private static void DrawHeaderGroup(Graphics g, RectangleF rect, Font font)
+    {
+        DrawTextFit(g, "INTERNAL HEADERS", font, AppTheme.Muted,
+            new RectangleF(rect.X, rect.Y, rect.Width, 20), ContentAlignment.MiddleLeft);
+        string[] labels = ["USB3", "USB2", "F_AUDIO", "PANEL", "RGB", "ARGB"];
+        var width = (rect.Width - 15) / 3;
+        for (var i = 0; i < labels.Length; i++)
+        {
+            var col = i % 3;
+            var row = i / 3;
+            var box = new RectangleF(rect.X + col * (width + 5), rect.Y + 24 + row * 21, width, 16);
+            var color = labels[i] is "RGB" or "ARGB" ? AppTheme.Purple : AppTheme.Good;
+            using var pen = new Pen(color, 1) { DashStyle = DashStyle.Dash };
+            g.DrawRoundedRectangle(pen, box, 3);
+            DrawTextFit(g, labels[i], font, color, box, ContentAlignment.MiddleCenter);
+        }
     }
 
     private static void DrawBox(

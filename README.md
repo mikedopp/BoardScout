@@ -23,11 +23,21 @@ You can also run the published executable directly:
   capability estimate.
 - Supported board layouts explain lane sharing and disabled ports instead of
   presenting every connector as simultaneously available.
+- The B550M Steel Legend layout identifies M2_3 as the installed AX210's M.2
+  Key-E WiFi/Bluetooth socket, separate from the Key-M NVMe sockets.
 - CPU and physical-memory utilization update locally once per second. Storage
   blocks show mounted-capacity usage; GPU usage is not claimed when Windows
   does not expose a reliable counter.
 - Use the map buttons or mouse wheel to zoom from 100% to 250%. Drag the map to
   pan while zoomed, and click the percentage button to reset the view.
+
+## Bandwidth topology
+
+The Topology screen separates CPU-direct PCIe lanes from chipset-connected
+devices. It shows the installed GPU, both NVMe drives, AX210 wireless card,
+onboard LAN, SATA lane sharing, USB controllers, and the open PCIE2/PCIE3 slots.
+Hover a node to see what the connection is suited for and which bandwidth is
+shared.
 
 ## Efficient workflow
 
@@ -61,7 +71,7 @@ Build the self-contained application and distribution zip:
 Outputs:
 
 - build\portable\win-x64\BoardScout.exe
-- build\BoardScout-0.2.0-win-x64.zip
+- build\BoardScout-0.3.0-win-x64.zip
 
 The portable folder includes the bundled DriverScout scripts and offline PCI/USB
 ID databases. Zip that folder, move it to another Windows 10/11 PC, extract it,

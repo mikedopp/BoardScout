@@ -10,6 +10,7 @@ public sealed class MainForm : Form
     private readonly SystemTelemetryService _telemetryService = new();
     private readonly System.Windows.Forms.Timer _telemetryTimer = new() { Interval = 1000 };
     private readonly BoardMapControl _boardMap = new() { Dock = DockStyle.Fill };
+    private readonly TopologyMapControl _topologyMap = new() { Dock = DockStyle.Fill };
     private readonly Label _title = new();
     private readonly Label _subtitle = new();
     private readonly FlowLayoutPanel _metrics = new();
@@ -108,6 +109,7 @@ public sealed class MainForm : Form
         _tabs.DrawItem += DrawTab;
 
         _tabs.TabPages.Add(BuildOverviewTab());
+        _tabs.TabPages.Add(BuildTopologyTab());
         _tabs.TabPages.Add(BuildDriversTab());
         _tabs.TabPages.Add(BuildStorageTab());
         _tabs.TabPages.Add(BuildSuggestionsTab());
@@ -302,6 +304,22 @@ public sealed class MainForm : Form
         _boardToolbar.Controls.Add(hint);
         _boardToolbar.Controls.Add(title);
         _boardToolbar.Controls.Add(zoom);
+    }
+
+    private TabPage BuildTopologyTab()
+    {
+        var page = NewPage("Topology");
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = AppTheme.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(4),
+            Tag = "surface"
+        };
+        card.Controls.Add(_topologyMap);
+        page.Controls.Add(card);
+        return page;
     }
 
     private void BuildInspector()
@@ -652,6 +670,7 @@ public sealed class MainForm : Form
         _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {cpu.Name}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
         _boardMap.SetSnapshot(_scan);
         _boardMap.SetDriverReport(_report);
+        _topologyMap.SetSnapshot(_scan);
         BindMetrics();
         BindQuickFacts();
         BindDrivers();
@@ -923,6 +942,7 @@ public sealed class MainForm : Form
         AddFact("Safe by design", "Never installs drivers automatically", AppTheme.Good);
         _boardMap.SetSnapshot(null);
         _boardMap.SetDriverReport(null);
+        _topologyMap.SetSnapshot(null);
     }
 
     private void LoadThemePreference()
@@ -976,6 +996,7 @@ public sealed class MainForm : Form
         }
         _themeButton.Text = AppTheme.IsDark ? "Light mode" : "Dark mode";
         _boardMap.RefreshTheme();
+        _topologyMap.RefreshTheme();
         AppTheme.ApplyWindowTheme(this);
         _tabs.Invalidate();
 
