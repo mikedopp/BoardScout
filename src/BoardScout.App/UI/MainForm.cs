@@ -11,7 +11,7 @@ public sealed class MainForm : Form
     private readonly Label _title = new();
     private readonly Label _subtitle = new();
     private readonly FlowLayoutPanel _metrics = new();
-    private readonly ListBox _quickFacts = new();
+    private readonly FlowLayoutPanel _quickFacts = new();
     private readonly DataGridView _drivers = new();
     private readonly DataGridView _storage = new();
     private readonly DataGridView _suggestions = new();
@@ -33,13 +33,13 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "BoardScout";
-        Icon = SystemIcons.Application;
+        Icon = AppTheme.CreateAppIcon();
         MinimumSize = new Size(980, 680);
         Size = new Size(1320, 880);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = AppTheme.Background;
         ForeColor = AppTheme.Text;
-        Font = new Font("Segoe UI", 9);
+        Font = new Font("Segoe UI", 9.25f);
 
         BuildUi();
         _service.OutputReceived += ServiceOnOutputReceived;
@@ -56,10 +56,10 @@ public sealed class MainForm : Form
         Controls.Add(header);
 
         _tabs.Dock = DockStyle.Fill;
-        _tabs.Padding = new Point(18, 7);
+        _tabs.Padding = new Point(16, 8);
         _tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
         _tabs.SizeMode = TabSizeMode.Fixed;
-        _tabs.ItemSize = new Size(150, 34);
+        _tabs.ItemSize = new Size(136, 38);
         _tabs.DrawItem += DrawTab;
 
         _tabs.TabPages.Add(BuildOverviewTab());
@@ -80,26 +80,27 @@ public sealed class MainForm : Form
         var header = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 150,
-            BackColor = AppTheme.Background,
-            Padding = new Padding(22, 18, 22, 12)
+            Height = 124,
+            BackColor = AppTheme.Surface,
+            Padding = new Padding(24, 16, 24, 10)
         };
 
         var textPanel = new Panel { Dock = DockStyle.Fill };
         _title.Text = "BoardScout";
-        _title.Font = new Font("Segoe UI Semibold", 22);
+        _title.Font = new Font("Segoe UI Semibold", 21);
         _title.ForeColor = AppTheme.Text;
         _title.AutoSize = true;
-        _title.Location = new Point(0, 2);
+        _title.Location = new Point(0, 0);
 
         _subtitle.Text = "Portable motherboard, storage, and driver intelligence";
         _subtitle.ForeColor = AppTheme.Muted;
         _subtitle.AutoSize = true;
-        _subtitle.Location = new Point(3, 43);
+        _subtitle.Location = new Point(2, 38);
 
-        _metrics.AutoSize = true;
+        _metrics.AutoSize = false;
+        _metrics.Size = new Size(500, 40);
         _metrics.WrapContents = false;
-        _metrics.Location = new Point(0, 75);
+        _metrics.Location = new Point(0, 66);
         _metrics.BackColor = Color.Transparent;
         textPanel.Controls.Add(_title);
         textPanel.Controls.Add(_subtitle);
@@ -108,20 +109,20 @@ public sealed class MainForm : Form
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 595,
+            Width = 610,
             FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = true,
-            Padding = new Padding(0, 3, 0, 0),
+            WrapContents = false,
+            Padding = new Padding(0, 4, 0, 0),
             BackColor = Color.Transparent
         };
 
-        ConfigureButton(_scanButton, "Scan Hardware", async (_, _) => await RunScanAsync(), primary: true);
-        ConfigureButton(_updatesButton, "Check Drivers", async (_, _) => await RunDriverCheckAsync());
-        ConfigureButton(_loadButton, "Load Scan", async (_, _) => await LoadScanFromFileAsync());
-        ConfigureButton(_exportButton, "Export Scan", (_, _) => ExportScan());
+        ConfigureButton(_scanButton, "Scan now", async (_, _) => await RunScanAsync(), primary: true);
+        ConfigureButton(_updatesButton, "Check drivers", async (_, _) => await RunDriverCheckAsync());
+        ConfigureButton(_loadButton, "Import", async (_, _) => await LoadScanFromFileAsync());
+        ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
         var dataButton = new Button();
-        ConfigureButton(dataButton, "Open Data", (_, _) => _service.OpenDataFolder());
+        ConfigureButton(dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
 
         _cancelButton.Visible = false;
         _updatesButton.Enabled = false;
@@ -130,6 +131,7 @@ public sealed class MainForm : Form
 
         header.Controls.Add(textPanel);
         header.Controls.Add(actions);
+        header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = AppTheme.Border });
         return header;
     }
 
@@ -141,31 +143,45 @@ public sealed class MainForm : Form
             Orientation = Orientation.Vertical,
             Size = new Size(1200, 600),
             Dock = DockStyle.Fill,
-            BackColor = AppTheme.Border,
+            BackColor = AppTheme.Background,
+            SplitterWidth = 12,
             Panel1MinSize = 520,
             Panel2MinSize = 250
         };
         split.SplitterDistance = 880;
 
-        split.Panel1.BackColor = AppTheme.Surface;
-        split.Panel1.Padding = new Padding(8);
-        split.Panel1.Controls.Add(_boardMap);
+        split.Panel1.BackColor = AppTheme.Background;
+        var boardCard = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = AppTheme.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(4)
+        };
+        boardCard.Controls.Add(_boardMap);
+        split.Panel1.Controls.Add(boardCard);
 
-        var right = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.Surface, Padding = new Padding(16) };
+        var right = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = AppTheme.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(18, 16, 18, 16)
+        };
         var heading = new Label
         {
             Dock = DockStyle.Top,
-            Height = 34,
-            Text = "QUICK FACTS",
-            Font = new Font("Segoe UI Semibold", 10),
-            ForeColor = AppTheme.Muted
+            Height = 38,
+            Text = "System details",
+            Font = new Font("Segoe UI Semibold", 12),
+            ForeColor = AppTheme.Text
         };
         _quickFacts.Dock = DockStyle.Fill;
         _quickFacts.BackColor = AppTheme.Surface;
-        _quickFacts.ForeColor = AppTheme.Text;
-        _quickFacts.BorderStyle = BorderStyle.None;
-        _quickFacts.Font = new Font("Segoe UI", 10);
-        _quickFacts.ItemHeight = 28;
+        _quickFacts.FlowDirection = FlowDirection.TopDown;
+        _quickFacts.WrapContents = false;
+        _quickFacts.AutoScroll = true;
+        _quickFacts.Padding = new Padding(0, 2, 0, 0);
         right.Controls.Add(_quickFacts);
         right.Controls.Add(heading);
         split.Panel2.Controls.Add(right);
@@ -220,9 +236,9 @@ public sealed class MainForm : Form
         _log.Multiline = true;
         _log.ReadOnly = true;
         _log.ScrollBars = ScrollBars.Both;
-        _log.BackColor = Color.FromArgb(5, 10, 14);
-        _log.ForeColor = Color.FromArgb(173, 207, 185);
-        _log.BorderStyle = BorderStyle.None;
+        _log.BackColor = Color.FromArgb(250, 251, 252);
+        _log.ForeColor = Color.FromArgb(45, 63, 74);
+        _log.BorderStyle = BorderStyle.FixedSingle;
         _log.Font = new Font("Cascadia Mono", 9);
         page.Controls.Add(_log);
         return page;
@@ -235,6 +251,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Bottom,
             Height = 30,
             BackColor = AppTheme.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
             Padding = new Padding(14, 6, 14, 0)
         };
         _status.Dock = DockStyle.Fill;
@@ -278,11 +295,16 @@ public sealed class MainForm : Form
     private void DrawTab(object? sender, DrawItemEventArgs e)
     {
         var selected = e.Index == _tabs.SelectedIndex;
-        using var brush = new SolidBrush(selected ? AppTheme.SurfaceRaised : AppTheme.Background);
+        using var brush = new SolidBrush(selected ? AppTheme.Surface : AppTheme.Background);
         e.Graphics.FillRectangle(brush, e.Bounds);
         TextRenderer.DrawText(e.Graphics, _tabs.TabPages[e.Index].Text, Font, e.Bounds,
-            selected ? AppTheme.Accent : AppTheme.Muted,
+            selected ? AppTheme.Text : AppTheme.Muted,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        if (selected)
+        {
+            using var underline = new SolidBrush(AppTheme.Accent);
+            e.Graphics.FillRectangle(underline, e.Bounds.Left + 18, e.Bounds.Bottom - 3, e.Bounds.Width - 36, 3);
+        }
     }
 
     private async Task LoadCachedDataAsync()
@@ -414,7 +436,7 @@ public sealed class MainForm : Form
         if (_scan is null) return;
         var board = _scan.SystemInfo.Baseboard;
         var cpu = _scan.Cpu;
-        _title.Text = $"{board.Manufacturer}  {board.Product}".Trim();
+        _title.Text = $"{board.Manufacturer} {board.Product}".Trim();
         _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {cpu.Name}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
         _boardMap.SetSnapshot(_scan);
         BindMetrics();
@@ -442,51 +464,103 @@ public sealed class MainForm : Form
     {
         var panel = new Panel
         {
-            Width = 105,
-            Height = 46,
+            Width = 114,
+            Height = 38,
             BackColor = AppTheme.Surface,
-            Margin = new Padding(0, 0, 7, 0)
+            Margin = new Padding(0, 0, 8, 0)
         };
+        panel.Controls.Add(new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 1,
+            BackColor = AppTheme.Border
+        });
         panel.Controls.Add(new Label
         {
             Text = label,
             ForeColor = AppTheme.Muted,
-            Font = new Font("Segoe UI", 7),
+            Font = new Font("Segoe UI", 7.5f),
             AutoSize = false,
-            TextAlign = ContentAlignment.TopCenter,
-            Dock = DockStyle.Bottom,
-            Height = 17
+            Location = new Point(1, 20),
+            Size = new Size(96, 14),
+            TextAlign = ContentAlignment.MiddleLeft
         });
         panel.Controls.Add(new Label
         {
             Text = value,
             ForeColor = AppTheme.Text,
-            Font = new Font("Segoe UI Semibold", 13),
+            Font = new Font("Segoe UI Semibold", 10.5f),
             AutoSize = false,
-            TextAlign = ContentAlignment.BottomCenter,
-            Dock = DockStyle.Fill
+            Location = new Point(0, 2),
+            Size = new Size(98, 20),
+            TextAlign = ContentAlignment.MiddleLeft
         });
         return panel;
     }
 
     private void BindQuickFacts()
     {
-        _quickFacts.Items.Clear();
+        _quickFacts.Controls.Clear();
         if (_scan is null) return;
         var memory = _scan.Memory.Slots.FirstOrDefault();
-        _quickFacts.Items.Add($"BIOS       {_scan.SystemInfo.Bios.Version}  ({_scan.SystemInfo.Bios.ReleaseDate})");
-        _quickFacts.Items.Add($"Memory     {_scan.TotalMemoryGb:0.#} GB in {_scan.Memory.Populated}/{_scan.Memory.TotalSlots} slots");
-        if (memory is not null) _quickFacts.Items.Add($"RAM speed  {memory.SpeedMhz} / {memory.RatedMhz} MT/s");
-        _quickFacts.Items.Add($"Storage    {_scan.Volumes.Count} mounted volumes");
-        _quickFacts.Items.Add($"USB        {_scan.UsbDevices.Count(d => d.DeviceClass != "USB")} attached devices");
-        _quickFacts.Items.Add($"Problems   {_scan.ProblemDevices.Count(d => d.ErrorCode != 0)} Device Manager errors");
-        _quickFacts.Items.Add($"Last scan  {_scan.Scan.TimestampUtc?.ToLocalTime():g}");
-        _quickFacts.Items.Add("");
-        _quickFacts.Items.Add("Efficiency model");
-        _quickFacts.Items.Add("• Cached startup: instant");
-        _quickFacts.Items.Add("• Inventory scan: local only");
-        _quickFacts.Items.Add("• Driver check: on demand");
-        _quickFacts.Items.Add("• Updates: review only");
+        AddFact("BIOS", $"{_scan.SystemInfo.Bios.Version} · {_scan.SystemInfo.Bios.ReleaseDate}");
+        AddFact("Memory", $"{_scan.TotalMemoryGb:0.#} GB · {_scan.Memory.Populated} of {_scan.Memory.TotalSlots} slots");
+        if (memory is not null) AddFact("Memory speed", $"{memory.SpeedMhz} / {memory.RatedMhz} MT/s");
+        AddFact("Storage", $"{_scan.Volumes.Count} mounted volumes");
+        AddFact("USB", $"{_scan.UsbDevices.Count(d => d.DeviceClass != "USB")} attached devices");
+        var problems = _scan.ProblemDevices.Count(d => d.ErrorCode != 0);
+        AddFact("Device health", problems == 0 ? "No reported errors" : $"{problems} error{(problems == 1 ? "" : "s")}",
+            problems == 0 ? AppTheme.Good : AppTheme.Critical);
+        AddFact("Last inventory", $"{_scan.Scan.TimestampUtc?.ToLocalTime():g}");
+        AddFactSection("How BoardScout works");
+        AddFact("Startup", "Uses the latest cached inventory");
+        AddFact("Hardware scan", "Local and on demand");
+        AddFact("Driver check", "Review only — nothing is installed");
+    }
+
+    private void AddFact(string label, string value, Color? valueColor = null)
+    {
+        var width = Math.Max(220, _quickFacts.ClientSize.Width - 4);
+        var row = new Panel
+        {
+            Width = width,
+            Height = 43,
+            BackColor = AppTheme.Surface,
+            Margin = new Padding(0)
+        };
+        row.Controls.Add(new Label
+        {
+            Text = label,
+            ForeColor = AppTheme.Muted,
+            Font = new Font("Segoe UI", 8),
+            Location = new Point(0, 2),
+            Size = new Size(width, 16)
+        });
+        row.Controls.Add(new Label
+        {
+            Text = value,
+            ForeColor = valueColor ?? AppTheme.Text,
+            Font = new Font("Segoe UI Semibold", 9.5f),
+            Location = new Point(0, 18),
+            Size = new Size(width, 21),
+            AutoEllipsis = true
+        });
+        _quickFacts.Controls.Add(row);
+    }
+
+    private void AddFactSection(string text)
+    {
+        var width = Math.Max(220, _quickFacts.ClientSize.Width - 4);
+        _quickFacts.Controls.Add(new Label
+        {
+            Text = text,
+            ForeColor = AppTheme.Text,
+            Font = new Font("Segoe UI Semibold", 10),
+            Width = width,
+            Height = 36,
+            Padding = new Padding(0, 12, 0, 0),
+            Margin = new Padding(0, 6, 0, 0)
+        });
     }
 
     private void BindDrivers()
@@ -598,10 +672,10 @@ public sealed class MainForm : Form
         _subtitle.Text = "No cached scan yet — run Scan Hardware or load an existing DriverScout JSON file.";
         _metrics.Controls.Clear();
         _metrics.Controls.Add(Metric("0", "SCANS"));
-        _quickFacts.Items.Clear();
-        _quickFacts.Items.Add("Portable and install-free");
-        _quickFacts.Items.Add("Uses built-in Windows PowerShell");
-        _quickFacts.Items.Add("Never installs drivers automatically");
+        _quickFacts.Controls.Clear();
+        AddFact("Portable", "Runs without an installer");
+        AddFact("Inventory", "Uses built-in Windows tools");
+        AddFact("Safe by design", "Never installs drivers automatically", AppTheme.Good);
         _boardMap.SetSnapshot(null);
     }
 
