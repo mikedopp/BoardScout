@@ -27,13 +27,11 @@ public sealed class MainForm : Form
     private readonly Button _exportButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _dataButton = new();
-    private readonly Button _themeButton = new();
     private readonly Button _zoomOutButton = new();
     private readonly Button _zoomResetButton = new();
     private readonly Button _zoomInButton = new();
-    private readonly TabControl _tabs = new();
-    private readonly Panel _tabHeaderFill = new();
-    private readonly Panel _tabPageTopFill = new();
+    private readonly ContentTabControl _tabs = new();
+    private readonly SidebarNavigationControl _navigation = new();
     private readonly List<(Button Button, bool Primary)> _themedButtons = [];
 
     private readonly Panel _header = new();
@@ -56,15 +54,13 @@ public sealed class MainForm : Form
     private string? _scanPath;
     private CancellationTokenSource? _operationCts;
     private BoardPartDetails? _currentPartDetails;
-    private readonly string _themePath;
 
     public MainForm()
     {
-        _themePath = Path.Combine(_service.DataRoot, "theme.txt");
-        LoadThemePreference();
+        AppTheme.SetDarkMode(true);
         Text = "BoardScout";
         Icon = AppTheme.CreateAppIcon();
-        MinimumSize = new Size(1300, 760);
+        MinimumSize = new Size(1440, 780);
         Size = new Size(1540, 960);
         WindowState = FormWindowState.Maximized;
         StartPosition = FormStartPosition.CenterScreen;
@@ -95,18 +91,12 @@ public sealed class MainForm : Form
     {
         BuildHeader();
         Controls.Add(_tabs);
+        Controls.Add(_navigation);
         Controls.Add(_progress);
         Controls.Add(BuildStatusBar());
         Controls.Add(_header);
-        Controls.Add(_tabHeaderFill);
-        Controls.Add(_tabPageTopFill);
 
         _tabs.Dock = DockStyle.Fill;
-        _tabs.Padding = new Point(16, 8);
-        _tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
-        _tabs.SizeMode = TabSizeMode.Fixed;
-        _tabs.ItemSize = new Size(136, 38);
-        _tabs.DrawItem += DrawTab;
 
         _tabs.TabPages.Add(BuildOverviewTab());
         _tabs.TabPages.Add(BuildTopologyTab());
@@ -114,19 +104,16 @@ public sealed class MainForm : Form
         _tabs.TabPages.Add(BuildStorageTab());
         _tabs.TabPages.Add(BuildSuggestionsTab());
         _tabs.TabPages.Add(BuildLogTab());
-
-        _tabHeaderFill.Height = _tabs.ItemSize.Height + 2;
-        _tabHeaderFill.BackColor = AppTheme.Background;
-        _tabHeaderFill.Tag = "background";
-        _tabHeaderFill.Enabled = false;
-        _tabPageTopFill.Height = 13;
-        _tabPageTopFill.BackColor = AppTheme.Background;
-        _tabPageTopFill.Tag = "background";
-        _tabPageTopFill.Enabled = false;
-        Layout += (_, _) => LayoutTabHeaderFill();
-        LayoutTabHeaderFill();
-        _tabHeaderFill.BringToFront();
-        _tabPageTopFill.BringToFront();
+        _navigation.SelectedIndexChanged += (_, _) =>
+        {
+            if (_tabs.SelectedIndex != _navigation.SelectedIndex)
+                _tabs.SelectedIndex = _navigation.SelectedIndex;
+        };
+        _tabs.SelectedIndexChanged += (_, _) =>
+        {
+            if (_navigation.SelectedIndex != _tabs.SelectedIndex)
+                _navigation.SelectedIndex = _tabs.SelectedIndex;
+        };
 
         _progress.Dock = DockStyle.Bottom;
         _progress.Height = 3;
@@ -171,7 +158,7 @@ public sealed class MainForm : Form
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 720,
+            Width = 620,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             Padding = new Padding(0, 4, 0, 0),
@@ -184,12 +171,11 @@ public sealed class MainForm : Form
         ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
         ConfigureButton(_dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
-        ConfigureButton(_themeButton, "Dark mode", (_, _) => ToggleTheme());
 
         _cancelButton.Visible = false;
         _updatesButton.Enabled = false;
         _exportButton.Enabled = false;
-        actions.Controls.AddRange([_themeButton, _dataButton, _exportButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
+        actions.Controls.AddRange([_dataButton, _exportButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
 
         _header.Controls.Add(textPanel);
         _header.Controls.Add(actions);
@@ -393,14 +379,6 @@ public sealed class MainForm : Form
             label.Width = width;
     }
 
-    private void LayoutTabHeaderFill()
-    {
-        if (_tabs.Width <= 0) return;
-        var left = _tabs.Left + _tabs.ItemSize.Width * _tabs.TabCount + 8;
-        _tabHeaderFill.SetBounds(left, _tabs.Top + 1, Math.Max(0, _tabs.Right - left), _tabs.ItemSize.Height + 1);
-        _tabPageTopFill.SetBounds(_tabs.Left, _tabs.Top + _tabs.ItemSize.Height + 1, _tabs.Width, 13);
-    }
-
     private TabPage BuildDriversTab()
     {
         var page = NewPage("Drivers");
@@ -519,21 +497,6 @@ public sealed class MainForm : Form
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = name, Width = width, MinimumWidth = 60 });
         grid.Columns[^1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         AppTheme.StyleGrid(grid);
-    }
-
-    private void DrawTab(object? sender, DrawItemEventArgs e)
-    {
-        var selected = e.Index == _tabs.SelectedIndex;
-        using var brush = new SolidBrush(selected ? AppTheme.Surface : AppTheme.Background);
-        e.Graphics.FillRectangle(brush, e.Bounds);
-        TextRenderer.DrawText(e.Graphics, _tabs.TabPages[e.Index].Text, Font, e.Bounds,
-            selected ? AppTheme.Text : AppTheme.Muted,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-        if (selected)
-        {
-            using var underline = new SolidBrush(AppTheme.Accent);
-            e.Graphics.FillRectangle(underline, e.Bounds.Left + 18, e.Bounds.Bottom - 3, e.Bounds.Width - 36, 3);
-        }
     }
 
     private async Task LoadCachedDataAsync()
@@ -945,33 +908,6 @@ public sealed class MainForm : Form
         _topologyMap.SetSnapshot(null);
     }
 
-    private void LoadThemePreference()
-    {
-        try
-        {
-            AppTheme.SetDarkMode(File.Exists(_themePath) &&
-                                 File.ReadAllText(_themePath).Trim().Equals("dark", StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            AppTheme.SetDarkMode(false);
-        }
-    }
-
-    private void ToggleTheme()
-    {
-        AppTheme.SetDarkMode(!AppTheme.IsDark);
-        try
-        {
-            File.WriteAllText(_themePath, AppTheme.IsDark ? "dark" : "light");
-        }
-        catch (Exception ex)
-        {
-            AppendLog("THEME: Could not save preference: " + ex.Message);
-        }
-        ApplyTheme();
-    }
-
     private void ApplyTheme()
     {
         BackColor = AppTheme.Background;
@@ -994,9 +930,9 @@ public sealed class MainForm : Form
             column.ActiveLinkColor = AppTheme.Good;
             column.VisitedLinkColor = AppTheme.Accent;
         }
-        _themeButton.Text = AppTheme.IsDark ? "Light mode" : "Dark mode";
         _boardMap.RefreshTheme();
         _topologyMap.RefreshTheme();
+        _navigation.RefreshTheme();
         AppTheme.ApplyWindowTheme(this);
         _tabs.Invalidate();
 

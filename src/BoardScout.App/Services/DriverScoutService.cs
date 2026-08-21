@@ -122,7 +122,7 @@ public sealed class DriverScoutService
         }
 
         if (process.ExitCode != 0)
-            throw new InvalidOperationException($"DriverScout exited with code {process.ExitCode}. See the Scan Log tab for details.");
+            throw new InvalidOperationException($"DriverScout exited with code {process.ExitCode}. Open Scan Log for details.");
     }
 
     private void EnsureToolExists(string file)

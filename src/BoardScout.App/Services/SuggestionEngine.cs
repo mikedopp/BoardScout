@@ -120,7 +120,7 @@ public static class SuggestionEngine
                     SuggestionSeverity.Improvement,
                     $"Driver update available: {result.Model}",
                     $"Installed {result.Best.InstalledVersion ?? "unknown"}; latest {result.Best.LatestVersion ?? result.Best.LatestDate ?? "available"} from {result.Best.Source}.",
-                    "Review the vendor link in the Drivers tab. BoardScout never installs updates automatically.",
+                    "Open Drivers and review the vendor link. BoardScout never installs updates automatically.",
                     "Drivers"));
             }
             return;

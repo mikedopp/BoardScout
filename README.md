@@ -16,8 +16,8 @@ You can also run the published executable directly:
 
 ## Interactive motherboard map
 
-- BoardScout opens in a large workspace and supports persistent light and dark
-  modes.
+- BoardScout opens in a large, dark workspace with pill-shaped navigation on
+  the left. Each destination explains what it is for before you open it.
 - Hover over detected CPU, memory, graphics, storage, chipset, I/O, or expansion
   areas to see health, driver or capacity status, and a plain-language
   capability estimate.
@@ -71,7 +71,7 @@ Build the self-contained application and distribution zip:
 Outputs:
 
 - build\portable\win-x64\BoardScout.exe
-- build\BoardScout-0.3.0-win-x64.zip
+- build\BoardScout-0.4.0-win-x64.zip
 
 The portable folder includes the bundled DriverScout scripts and offline PCI/USB
 ID databases. Zip that folder, move it to another Windows 10/11 PC, extract it,
