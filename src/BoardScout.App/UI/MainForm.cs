@@ -694,16 +694,27 @@ public sealed class MainForm : Form
 
     private void ExportScan()
     {
-        if (_scanPath is null) return;
+        if (_scanPath is null || _scan is null) return;
         using var dialog = new SaveFileDialog
         {
-            Filter = "JSON file (*.json)|*.json",
-            FileName = Path.GetFileName(_scanPath),
+            Filter = "Spec sheet (*.html)|*.html|JSON file (*.json)|*.json",
+            FilterIndex = 1,
+            FileName = $"{_scan.Scan.Hostname}-specsheet",
             Title = "Export hardware scan"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        File.Copy(_scanPath, dialog.FileName, overwrite: true);
-        _status.Text = $"Exported scan to {dialog.FileName}.";
+
+        if (dialog.FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        {
+            var html = SpecSheetGenerator.Generate(_scan, _report);
+            File.WriteAllText(dialog.FileName, html, System.Text.Encoding.UTF8);
+            Process.Start(new ProcessStartInfo(dialog.FileName) { UseShellExecute = true });
+        }
+        else
+        {
+            File.Copy(_scanPath, dialog.FileName, overwrite: true);
+        }
+        _status.Text = $"Exported to {dialog.FileName}.";
     }
 
     private async Task RunOperationAsync(string message, Func<CancellationToken, Task> operation)

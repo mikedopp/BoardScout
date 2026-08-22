@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-08-22
+
+### Added
+- **Spec sheet HTML export**: Export → Spec sheet (.html) generates a self-contained shareable hardware summary with stats bar, component cards, storage table with color-coded usage, USB device chips, collapsible raw JSON, and print-friendly light theme
+- Export dialog now defaults to spec sheet HTML (also still offers JSON)
+- Spec sheet auto-opens in default browser after export
+
 ## 0.5.0 — 2026-08-22
 
 ### Added
