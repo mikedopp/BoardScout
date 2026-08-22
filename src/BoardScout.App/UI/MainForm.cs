@@ -7,6 +7,7 @@ namespace BoardScout.UI;
 public sealed class MainForm : Form
 {
     private readonly DriverScoutService _service = new();
+    private readonly DriverDownloadService _downloadService;
     private readonly SystemTelemetryService _telemetryService = new();
     private readonly System.Windows.Forms.Timer _telemetryTimer = new() { Interval = 1000 };
     private readonly BoardMapControl _boardMap = new() { Dock = DockStyle.Fill };
@@ -31,6 +32,7 @@ public sealed class MainForm : Form
     private readonly Button _loadButton = new();
     private readonly Button _exportButton = new();
     private readonly Button _cancelButton = new();
+    private readonly Button _downloadButton = new();
     private readonly Button _dataButton = new();
     private readonly Button _zoomOutButton = new();
     private readonly Button _zoomResetButton = new();
@@ -62,6 +64,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
+        _downloadService = new DriverDownloadService(_service.DataRoot);
         AppTheme.SetDarkMode(true);
         Text = "BoardScout";
         Icon = AppTheme.CreateAppIcon();
@@ -177,12 +180,14 @@ public sealed class MainForm : Form
         ConfigureButton(_loadButton, "Import", async (_, _) => await LoadScanFromFileAsync());
         ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
+        ConfigureButton(_downloadButton, "Download drivers", async (_, _) => await DownloadDriversAsync());
         ConfigureButton(_dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
 
         _cancelButton.Visible = false;
         _updatesButton.Enabled = false;
+        _downloadButton.Enabled = false;
         _exportButton.Enabled = false;
-        actions.Controls.AddRange([_dataButton, _exportButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
+        actions.Controls.AddRange([_dataButton, _exportButton, _downloadButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
 
         _header.Controls.Add(textPanel);
         _header.Controls.Add(actions);
@@ -598,7 +603,69 @@ public sealed class MainForm : Form
             BindDrivers();
             BindSuggestions();
             var updates = _report.Results.Count(r => r.Status == "update-available");
+            _downloadButton.Enabled = true;
             _status.Text = $"Driver check complete — {updates} update{(updates == 1 ? "" : "s")} available for review.";
+        });
+    }
+
+    private async Task DownloadDriversAsync()
+    {
+        if (_report is null) return;
+
+        var candidates = _report.Results
+            .Where(r => !string.IsNullOrWhiteSpace(r.DownloadUrl ?? r.Best.DownloadUrl))
+            .Select(r => (r.Model, Url: r.DownloadUrl ?? r.Best.DownloadUrl!))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            _status.Text = "No download URLs available. Run Check Drivers first.";
+            return;
+        }
+
+        await RunOperationAsync($"Downloading {candidates.Count} driver package(s)…", async token =>
+        {
+            int downloaded = 0, opened = 0, failed = 0;
+            var progress = new Progress<(long bytes, long? total)>(p =>
+            {
+                if (p.total.HasValue && p.total > 0)
+                    _status.Text = $"Downloading… {p.bytes * 100 / p.total.Value}% ({FormatBytes(p.bytes)} / {FormatBytes(p.total.Value)})";
+                else
+                    _status.Text = $"Downloading… {FormatBytes(p.bytes)}";
+            });
+
+            foreach (var (model, url) in candidates)
+            {
+                token.ThrowIfCancellationRequested();
+                _status.Text = $"Checking {model}…";
+                AppendLog($"[{DateTime.Now:T}] Downloading: {model} → {url}");
+                var result = await _downloadService.DownloadAsync(url, model, progress, token);
+
+                if (result.Downloaded)
+                {
+                    downloaded++;
+                    AppendLog($"  Saved: {Path.GetFileName(result.LocalPath)}");
+                }
+                else if (result.OpenedBrowser)
+                {
+                    opened++;
+                    AppendLog($"  Opened in browser (landing page)");
+                }
+                else
+                {
+                    failed++;
+                    AppendLog($"  Failed: {result.Error}");
+                }
+            }
+
+            var parts = new List<string>();
+            if (downloaded > 0) parts.Add($"{downloaded} downloaded");
+            if (opened > 0) parts.Add($"{opened} opened in browser");
+            if (failed > 0) parts.Add($"{failed} failed");
+            _status.Text = $"Driver downloads complete — {string.Join(", ", parts)}.";
+
+            if (downloaded > 0)
+                _downloadService.OpenDownloadFolder();
         });
     }
 
@@ -686,6 +753,7 @@ public sealed class MainForm : Form
         BindStorage();
         BindSuggestions();
         _updatesButton.Enabled = true;
+        _downloadButton.Enabled = _report is not null;
         _exportButton.Enabled = true;
     }
 
@@ -988,6 +1056,7 @@ public sealed class MainForm : Form
     {
         _scanButton.Enabled = !busy;
         _updatesButton.Enabled = !busy && _scan is not null;
+        _downloadButton.Enabled = !busy && _report is not null;
         _loadButton.Enabled = !busy;
         _exportButton.Enabled = !busy && _scan is not null;
         _cancelButton.Visible = busy;
