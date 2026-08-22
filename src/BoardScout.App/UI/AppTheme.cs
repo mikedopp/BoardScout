@@ -7,18 +7,20 @@ internal static class AppTheme
 {
     public static bool IsDark { get; private set; }
 
-    public static Color Background => IsDark ? Color.FromArgb(14, 20, 27) : Color.FromArgb(244, 246, 248);
-    public static Color Surface => IsDark ? Color.FromArgb(21, 29, 38) : Color.White;
-    public static Color SurfaceRaised => IsDark ? Color.FromArgb(27, 37, 48) : Color.FromArgb(248, 250, 252);
-    public static Color Border => IsDark ? Color.FromArgb(52, 66, 80) : Color.FromArgb(218, 224, 231);
-    public static Color Text => IsDark ? Color.FromArgb(237, 242, 247) : Color.FromArgb(27, 38, 49);
-    public static Color Muted => IsDark ? Color.FromArgb(158, 174, 189) : Color.FromArgb(98, 113, 128);
-    public static Color Accent => IsDark ? Color.FromArgb(73, 174, 205) : Color.FromArgb(25, 105, 132);
-    public static Color AccentSoft => IsDark ? Color.FromArgb(25, 62, 74) : Color.FromArgb(228, 241, 245);
-    public static Color Good => IsDark ? Color.FromArgb(76, 196, 139) : Color.FromArgb(35, 123, 87);
-    public static Color Warning => IsDark ? Color.FromArgb(242, 174, 82) : Color.FromArgb(174, 99, 20);
-    public static Color Critical => IsDark ? Color.FromArgb(244, 111, 121) : Color.FromArgb(184, 55, 67);
-    public static Color Purple => IsDark ? Color.FromArgb(177, 148, 236) : Color.FromArgb(103, 82, 157);
+    public static Color Background => IsDark ? Color.FromArgb(6, 11, 16) : Color.FromArgb(240, 243, 247);
+    public static Color Surface => IsDark ? Color.FromArgb(12, 22, 32) : Color.White;
+    public static Color SurfaceRaised => IsDark ? Color.FromArgb(17, 30, 44) : Color.FromArgb(246, 248, 251);
+    public static Color Border => IsDark ? Color.FromArgb(22, 32, 48) : Color.FromArgb(216, 224, 234);
+    public static Color Text => IsDark ? Color.FromArgb(232, 237, 244) : Color.FromArgb(17, 26, 40);
+    public static Color Muted => IsDark ? Color.FromArgb(138, 155, 178) : Color.FromArgb(74, 90, 114);
+    public static Color Accent => IsDark ? Color.FromArgb(61, 158, 255) : Color.FromArgb(26, 111, 212);
+    public static Color AccentSoft => IsDark ? Color.FromArgb(16, 40, 65) : Color.FromArgb(228, 239, 251);
+    public static Color Good => IsDark ? Color.FromArgb(16, 185, 129) : Color.FromArgb(13, 148, 101);
+    public static Color Warning => IsDark ? Color.FromArgb(245, 158, 11) : Color.FromArgb(194, 120, 10);
+    public static Color Critical => IsDark ? Color.FromArgb(239, 68, 68) : Color.FromArgb(212, 32, 32);
+    public static Color Purple => IsDark ? Color.FromArgb(167, 139, 250) : Color.FromArgb(109, 40, 217);
+    public static Color Teal => IsDark ? Color.FromArgb(45, 212, 191) : Color.FromArgb(13, 126, 114);
+    public static Color Orange => IsDark ? Color.FromArgb(251, 146, 60) : Color.FromArgb(194, 80, 16);
 
     public static void SetDarkMode(bool enabled) => IsDark = enabled;
 

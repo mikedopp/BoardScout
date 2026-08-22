@@ -28,7 +28,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ToolVersion  = '0.1.0'
+$ToolVersion  = '1.0.0'
 $SchemaVersion = '2.0'
 
 # ---------- helpers -------------------------------------------------------

@@ -10,7 +10,12 @@ public sealed class MainForm : Form
     private readonly SystemTelemetryService _telemetryService = new();
     private readonly System.Windows.Forms.Timer _telemetryTimer = new() { Interval = 1000 };
     private readonly BoardMapControl _boardMap = new() { Dock = DockStyle.Fill };
-    private readonly TopologyMapControl _topologyMap = new() { Dock = DockStyle.Fill };
+    private Microsoft.Web.WebView2.WinForms.WebView2? _topologyWebView;
+    private bool _topologyReady;
+    private string? _pendingScanJson;
+    private readonly Label _tempLabel = new();
+    private readonly Label _fanLabel = new();
+    private readonly Label _networkLabel = new();
     private readonly Label _title = new();
     private readonly Label _subtitle = new();
     private readonly FlowLayoutPanel _metrics = new();
@@ -84,6 +89,8 @@ public sealed class MainForm : Form
         {
             _operationCts?.Cancel();
             _telemetryTimer.Stop();
+            _telemetryService.Dispose();
+            _topologyWebView?.Dispose();
         };
     }
 
@@ -147,7 +154,7 @@ public sealed class MainForm : Form
         _subtitle.Tag = "muted";
 
         _metrics.AutoSize = false;
-        _metrics.Size = new Size(520, 50);
+        _metrics.Size = new Size(910, 50);
         _metrics.WrapContents = false;
         _metrics.Location = new Point(0, 70);
         _metrics.BackColor = Color.Transparent;
@@ -300,10 +307,49 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             BackColor = AppTheme.Surface,
             BorderStyle = BorderStyle.FixedSingle,
-            Padding = new Padding(4),
+            Padding = new Padding(0),
             Tag = "surface"
         };
-        card.Controls.Add(_topologyMap);
+
+        try
+        {
+            _topologyWebView = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
+            _topologyWebView.CoreWebView2InitializationCompleted += (_, e) =>
+            {
+                if (!e.IsSuccess) return;
+                _topologyWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                _topologyWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                _topologyWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                var htmlPath = Path.Combine(AppContext.BaseDirectory, "Assets", "topology.html");
+                if (File.Exists(htmlPath))
+                {
+                    _topologyWebView.CoreWebView2.Navigate(new Uri(htmlPath).AbsoluteUri);
+                    _topologyWebView.CoreWebView2.NavigationCompleted += (_, _) =>
+                    {
+                        _topologyReady = true;
+                        if (_pendingScanJson is not null)
+                        {
+                            _topologyWebView.CoreWebView2.PostWebMessageAsJson(_pendingScanJson);
+                            _pendingScanJson = null;
+                        }
+                    };
+                }
+            };
+            _ = _topologyWebView.EnsureCoreWebView2Async();
+            card.Controls.Add(_topologyWebView);
+        }
+        catch
+        {
+            card.Controls.Add(new Label
+            {
+                Text = "WebView2 runtime not available — install the Evergreen Runtime from microsoft.com",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = AppTheme.Muted,
+                Tag = "muted"
+            });
+        }
+
         page.Controls.Add(card);
         return page;
     }
@@ -633,7 +679,7 @@ public sealed class MainForm : Form
         _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {cpu.Name}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
         _boardMap.SetSnapshot(_scan);
         _boardMap.SetDriverReport(_report);
-        _topologyMap.SetSnapshot(_scan);
+        SendScanToTopology();
         BindMetrics();
         BindQuickFacts();
         BindDrivers();
@@ -641,6 +687,20 @@ public sealed class MainForm : Form
         BindSuggestions();
         _updatesButton.Enabled = true;
         _exportButton.Enabled = true;
+    }
+
+    private void SendScanToTopology()
+    {
+        if (_scanPath is null) return;
+        try
+        {
+            var json = File.ReadAllText(_scanPath);
+            if (_topologyReady && _topologyWebView?.CoreWebView2 is not null)
+                _topologyWebView.CoreWebView2.PostWebMessageAsJson(json);
+            else
+                _pendingScanJson = json;
+        }
+        catch { }
     }
 
     private void BindMetrics()
@@ -653,6 +713,9 @@ public sealed class MainForm : Form
         _metrics.Controls.Add(Metric($"{_scan.Components.Count}", "COMPONENTS"));
         _metrics.Controls.Add(Metric($"{usedTb:0.0} TB", "DATA USED"));
         _metrics.Controls.Add(Metric(updateCount?.ToString() ?? "—", "UPDATES"));
+        _metrics.Controls.Add(MetricLive("—", "TEMP", _tempLabel));
+        _metrics.Controls.Add(MetricLive("—", "FANS", _fanLabel));
+        _metrics.Controls.Add(MetricLive("—", "NET", _networkLabel));
     }
 
     private static Control Metric(string value, string label)
@@ -694,6 +757,46 @@ public sealed class MainForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Tag = "text"
         });
+        return panel;
+    }
+
+    private static Control MetricLive(string initialValue, string label, Label valueLabel)
+    {
+        var panel = new Panel
+        {
+            Width = 122,
+            Height = 46,
+            BackColor = AppTheme.Surface,
+            Margin = new Padding(0, 0, 8, 0),
+            Tag = "surface"
+        };
+        panel.Controls.Add(new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 1,
+            BackColor = AppTheme.Border,
+            Tag = "border"
+        });
+        panel.Controls.Add(new Label
+        {
+            Text = label,
+            ForeColor = AppTheme.Muted,
+            Font = new Font("Segoe UI", 7.5f),
+            AutoSize = false,
+            Location = new Point(1, 26),
+            Size = new Size(108, 17),
+            TextAlign = ContentAlignment.TopLeft,
+            Tag = "muted"
+        });
+        valueLabel.Text = initialValue;
+        valueLabel.ForeColor = AppTheme.Text;
+        valueLabel.Font = new Font("Segoe UI Semibold", 11.5f);
+        valueLabel.AutoSize = false;
+        valueLabel.Location = new Point(0, 2);
+        valueLabel.Size = new Size(108, 24);
+        valueLabel.TextAlign = ContentAlignment.MiddleLeft;
+        valueLabel.Tag = "text";
+        panel.Controls.Add(valueLabel);
         return panel;
     }
 
@@ -905,7 +1008,6 @@ public sealed class MainForm : Form
         AddFact("Safe by design", "Never installs drivers automatically", AppTheme.Good);
         _boardMap.SetSnapshot(null);
         _boardMap.SetDriverReport(null);
-        _topologyMap.SetSnapshot(null);
     }
 
     private void ApplyTheme()
@@ -931,7 +1033,6 @@ public sealed class MainForm : Form
             column.VisitedLinkColor = AppTheme.Accent;
         }
         _boardMap.RefreshTheme();
-        _topologyMap.RefreshTheme();
         _navigation.RefreshTheme();
         AppTheme.ApplyWindowTheme(this);
         _tabs.Invalidate();
@@ -1045,13 +1146,38 @@ public sealed class MainForm : Form
         if (WindowState == FormWindowState.Minimized) return;
         try
         {
-            _boardMap.SetTelemetry(_telemetryService.Sample());
+            var telemetry = _telemetryService.Sample();
+            _boardMap.SetTelemetry(telemetry);
+
+            if (telemetry.CpuTemperatureCelsius is { } temp)
+            {
+                _tempLabel.Text = $"{temp:0}°C";
+                _tempLabel.ForeColor = temp >= 90 ? AppTheme.Critical : temp >= 75 ? AppTheme.Warning : AppTheme.Text;
+            }
+
+            var fans = _telemetryService.LastFanReadings;
+            _fanLabel.Text = fans.Count > 0
+                ? string.Join(" ", fans.Select(f => $"{f.Rpm}"))
+                : "N/A";
+
+            var netDown = telemetry.NetworkReceivedBytesPerSec;
+            var netUp = telemetry.NetworkSentBytesPerSec;
+            _networkLabel.Text = $"{FormatRate(netDown)}↓";
+            _networkLabel.ForeColor = netDown > 100_000_000 ? AppTheme.Warning : AppTheme.Text;
         }
         catch (Exception ex)
         {
             _telemetryTimer.Stop();
             AppendLog("TELEMETRY: " + ex.Message);
         }
+    }
+
+    private static string FormatRate(double bytesPerSec)
+    {
+        if (bytesPerSec >= 1_073_741_824) return $"{bytesPerSec / 1_073_741_824:0.0} GB/s";
+        if (bytesPerSec >= 1_048_576) return $"{bytesPerSec / 1_048_576:0.0} MB/s";
+        if (bytesPerSec >= 1024) return $"{bytesPerSec / 1024:0} KB/s";
+        return $"{bytesPerSec:0} B/s";
     }
 
     private void ServiceOnOutputReceived(object? sender, string line)

@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'src\BoardScout.App\BoardScout.App.csproj'
 $output = Join-Path $PSScriptRoot "build\portable\$Runtime"
-$archive = Join-Path $PSScriptRoot "build\BoardScout-0.4.0-$Runtime.zip"
+$archive = Join-Path $PSScriptRoot "build\BoardScout-0.5.0-$Runtime.zip"
 
 $portableRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'build\portable'))
 $resolvedOutput = [IO.Path]::GetFullPath($output)
