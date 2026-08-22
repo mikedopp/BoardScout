@@ -1229,19 +1229,36 @@ public sealed class MainForm : Form
             var telemetry = _telemetryService.Sample();
             _boardMap.SetTelemetry(telemetry);
 
-            if (telemetry.CpuTemperatureCelsius is { } temp)
+            if (telemetry.Thermals.Count > 0)
             {
-                _tempLabel.Text = $"{temp:0}°C";
-                _tempLabel.ForeColor = temp >= 90 ? AppTheme.Critical : temp >= 75 ? AppTheme.Warning : AppTheme.Text;
+                var cpuTemp = telemetry.Thermals.FirstOrDefault(t => t.Zone == "CPU");
+                var gpuTemp = telemetry.Thermals.FirstOrDefault(t => t.Zone == "GPU");
+                var vrmTemp = telemetry.Thermals.FirstOrDefault(t => t.Zone == "VRM");
+                var parts = new List<string>();
+                if (cpuTemp is not null) parts.Add($"CPU {cpuTemp.TemperatureCelsius:0}°");
+                if (gpuTemp is not null) parts.Add($"GPU {gpuTemp.TemperatureCelsius:0}°");
+                if (vrmTemp is not null) parts.Add($"VRM {vrmTemp.TemperatureCelsius:0}°");
+                if (parts.Count == 0) parts.Add($"{telemetry.Thermals[0].TemperatureCelsius:0}°C");
+                _tempLabel.Text = string.Join(" · ", parts);
+                var hottest = telemetry.Thermals.Max(t => t.TemperatureCelsius);
+                _tempLabel.ForeColor = hottest >= 90 ? AppTheme.Critical : hottest >= 75 ? AppTheme.Warning : AppTheme.Text;
             }
 
             var fans = _telemetryService.LastFanReadings;
-            _fanLabel.Text = fans.Count > 0
-                ? string.Join(" ", fans.Select(f => $"{f.Rpm}"))
-                : "N/A";
+            if (fans.Count > 0)
+            {
+                var activeFans = fans.Where(f => f.Rpm > 0).ToList();
+                _fanLabel.Text = activeFans.Count > 0
+                    ? string.Join(" · ", activeFans.Select(f => $"{f.Name} {f.Rpm}"))
+                    : "Fans idle";
+                _fanLabel.ForeColor = activeFans.Count == 0 ? AppTheme.Warning : AppTheme.Text;
+            }
+            else
+            {
+                _fanLabel.Text = "N/A";
+            }
 
             var netDown = telemetry.NetworkReceivedBytesPerSec;
-            var netUp = telemetry.NetworkSentBytesPerSec;
             _networkLabel.Text = $"{FormatRate(netDown)}↓";
             _networkLabel.ForeColor = netDown > 100_000_000 ? AppTheme.Warning : AppTheme.Text;
         }

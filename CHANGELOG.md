@@ -6,6 +6,15 @@
 - **Spec sheet HTML export**: Export → Spec sheet (.html) generates a self-contained shareable hardware summary with stats bar, component cards, storage table with color-coded usage, USB device chips, collapsible raw JSON, and print-friendly light theme
 - Export dialog now defaults to spec sheet HTML (also still offers JSON)
 - Spec sheet auto-opens in default browser after export
+- **Real sensor readings via LibreHardwareMonitorLib**: CPU package temp, GPU temp, VRM temp, and per-fan RPMs from the Super I/O chip (Nuvoton NCT6779D on ASRock B550M) — replaces empty WMI MSAcpi/Win32_Fan queries
+- Header bar TEMP now shows multi-zone: "CPU 52° · GPU 41° · VRM 38°"
+- Header bar FANS shows named fans with RPM: "CPU Fan 1120 · Chassis Fan #1 780"
+
+### Changed
+- System.Management bumped from 8.0.0 to 10.0.2 (LibreHardwareMonitorLib dependency)
+
+### Dependencies
+- LibreHardwareMonitorLib 0.9.6 (MIT) — direct Super I/O, SMBus, GPU sensor access
 
 ## 0.5.0 — 2026-08-22
 

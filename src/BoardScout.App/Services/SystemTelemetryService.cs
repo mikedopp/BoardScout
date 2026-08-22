@@ -1,7 +1,7 @@
-using System.Management;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using BoardScout.Models;
+using LibreHardwareMonitor.Hardware;
 
 namespace BoardScout.Services;
 
@@ -19,10 +19,8 @@ internal sealed class SystemTelemetryService : IDisposable
     private DateTime _previousSampleTime = DateTime.UtcNow;
     private bool _hasPrevious;
 
-    private ManagementObjectSearcher? _thermalSearcher;
-    private ManagementObjectSearcher? _fanSearcher;
-    private bool _thermalFailed;
-    private bool _fanFailed;
+    private Computer? _computer;
+    private bool _lhmFailed;
 
     public IReadOnlyList<FanReading> LastFanReadings { get; private set; } = [];
 
@@ -34,8 +32,7 @@ internal sealed class SystemTelemetryService : IDisposable
 
         var cpuUsage = SampleCpu();
         var (memTotal, memAvailable) = SampleMemory();
-        var thermals = SampleThermals();
-        var fans = SampleFans();
+        var (thermals, fans) = SampleSensors();
         LastFanReadings = fans;
         var (diskRead, diskWrite) = SampleDiskIo(elapsed);
         var (netSent, netReceived) = SampleNetwork(elapsed);
@@ -48,6 +45,116 @@ internal sealed class SystemTelemetryService : IDisposable
             diskRead, diskWrite,
             netSent, netReceived,
             DateTimeOffset.Now);
+    }
+
+    private (List<ThermalReading> Thermals, List<FanReading> Fans) SampleSensors()
+    {
+        if (_lhmFailed) return ([], []);
+
+        try
+        {
+            if (_computer is null)
+            {
+                _computer = new Computer
+                {
+                    IsCpuEnabled = true,
+                    IsMotherboardEnabled = true,
+                    IsGpuEnabled = true
+                };
+                _computer.Open();
+            }
+
+            var thermals = new List<ThermalReading>();
+            var fans = new List<FanReading>();
+
+            foreach (var hardware in _computer.Hardware)
+            {
+                hardware.Update();
+                foreach (var sub in hardware.SubHardware)
+                    sub.Update();
+
+                CollectSensors(hardware, thermals, fans);
+                foreach (var sub in hardware.SubHardware)
+                    CollectSensors(sub, thermals, fans);
+            }
+
+            return (thermals, fans);
+        }
+        catch
+        {
+            _lhmFailed = true;
+            return ([], []);
+        }
+    }
+
+    private static void CollectSensors(IHardware hw, List<ThermalReading> thermals, List<FanReading> fans)
+    {
+        foreach (var sensor in hw.Sensors)
+        {
+            if (sensor.Value is null) continue;
+
+            switch (sensor.SensorType)
+            {
+                case SensorType.Temperature:
+                {
+                    var temp = sensor.Value.Value;
+                    if (temp is <= 0 or > 150) break;
+                    var zone = ClassifyThermalZone(hw, sensor);
+                    if (!thermals.Exists(t => t.Zone == zone))
+                        thermals.Add(new ThermalReading(zone, Math.Round(temp, 1)));
+                    break;
+                }
+                case SensorType.Fan:
+                {
+                    var rpm = (int)sensor.Value.Value;
+                    var name = ClassifyFan(hw, sensor);
+                    fans.Add(new FanReading(name, rpm, rpm > 0));
+                    break;
+                }
+            }
+        }
+    }
+
+    private static string ClassifyThermalZone(IHardware hw, ISensor sensor)
+    {
+        var name = sensor.Name;
+        if (hw.HardwareType is HardwareType.Cpu)
+        {
+            if (name.Contains("Package", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Tctl", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Tdie", StringComparison.OrdinalIgnoreCase))
+                return "CPU";
+            if (name.Contains("CCD", StringComparison.OrdinalIgnoreCase))
+                return name;
+            return $"CPU {name}";
+        }
+        if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
+            return "GPU";
+        if (name.Contains("VRM", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("Voltage Regulator", StringComparison.OrdinalIgnoreCase))
+            return "VRM";
+        if (name.Contains("Chipset", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("PCH", StringComparison.OrdinalIgnoreCase))
+            return "Chipset";
+        if (name.Contains("System", StringComparison.OrdinalIgnoreCase))
+            return "System";
+        return name;
+    }
+
+    private static string ClassifyFan(IHardware hw, ISensor sensor)
+    {
+        var name = sensor.Name;
+        if (name.Contains("CPU", StringComparison.OrdinalIgnoreCase))
+            return "CPU Fan";
+        if (name.Contains("Chassis", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("System", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("Case", StringComparison.OrdinalIgnoreCase))
+            return name;
+        if (name.StartsWith("Fan #", StringComparison.OrdinalIgnoreCase))
+            return name;
+        if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
+            return "GPU Fan";
+        return name;
     }
 
     private double SampleCpu()
@@ -78,65 +185,6 @@ internal sealed class SystemTelemetryService : IDisposable
         var memory = new MemoryStatusEx { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
         GlobalMemoryStatusEx(ref memory);
         return (memory.TotalPhysical, memory.AvailablePhysical);
-    }
-
-    private List<ThermalReading> SampleThermals()
-    {
-        if (_thermalFailed) return [];
-
-        try
-        {
-            _thermalSearcher ??= new ManagementObjectSearcher(
-                @"root\WMI",
-                "SELECT * FROM MSAcpi_ThermalZoneTemperature");
-
-            var readings = new List<ThermalReading>();
-            foreach (ManagementObject obj in _thermalSearcher.Get())
-            {
-                var name = obj["InstanceName"]?.ToString() ?? "Zone";
-                var tempKelvinTenths = Convert.ToDouble(obj["CurrentTemperature"]);
-                var celsius = (tempKelvinTenths / 10.0) - 273.15;
-                if (celsius is > -40 and < 150)
-                {
-                    var zoneName = name.Contains("CPU", StringComparison.OrdinalIgnoreCase) ? "CPU"
-                        : name.Contains("GPU", StringComparison.OrdinalIgnoreCase) ? "GPU"
-                        : $"Zone {readings.Count + 1}";
-                    readings.Add(new ThermalReading(zoneName, Math.Round(celsius, 1)));
-                }
-            }
-            return readings;
-        }
-        catch
-        {
-            _thermalFailed = true;
-            return [];
-        }
-    }
-
-    private List<FanReading> SampleFans()
-    {
-        if (_fanFailed) return [];
-
-        try
-        {
-            _fanSearcher ??= new ManagementObjectSearcher(
-                "SELECT * FROM Win32_Fan");
-
-            var readings = new List<FanReading>();
-            foreach (ManagementObject obj in _fanSearcher.Get())
-            {
-                var name = obj["Name"]?.ToString() ?? $"Fan {readings.Count + 1}";
-                var rpm = Convert.ToInt32(obj["DesiredSpeed"]);
-                var active = obj["ActiveCooling"] is true;
-                readings.Add(new FanReading(name, rpm, active));
-            }
-            return readings;
-        }
-        catch
-        {
-            _fanFailed = true;
-            return [];
-        }
     }
 
     private (double ReadBytesPerSec, double WriteBytesPerSec) SampleDiskIo(double elapsed)
@@ -189,11 +237,13 @@ internal sealed class SystemTelemetryService : IDisposable
         return (0, 0);
     }
 
-
     public void Dispose()
     {
-        _thermalSearcher?.Dispose();
-        _fanSearcher?.Dispose();
+        if (_computer is not null)
+        {
+            _computer.Close();
+            _computer = null;
+        }
     }
 
     private static ulong ToUInt64(FileTime value) => ((ulong)value.High << 32) | value.Low;
