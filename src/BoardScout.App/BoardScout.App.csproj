@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BoardScout</AssemblyName>
     <RootNamespace>BoardScout</RootNamespace>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Product>BoardScout</Product>
     <Description>Portable motherboard, storage, and driver health dashboard.</Description>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>

@@ -37,6 +37,7 @@ public sealed class MainForm : Form
     private readonly Button _zoomOutButton = new();
     private readonly Button _zoomResetButton = new();
     private readonly Button _zoomInButton = new();
+    private readonly VersionButton _versionButton = new();
     private readonly ContentTabControl _tabs = new();
     private readonly SidebarNavigationControl _navigation = new();
     private readonly List<(Button Button, bool Primary)> _themedButtons = [];
@@ -161,6 +162,9 @@ public sealed class MainForm : Form
         _metrics.WrapContents = false;
         _metrics.Location = new Point(0, 70);
         _metrics.BackColor = Color.Transparent;
+        _title.Resize += (_, _) => _versionButton.Location = new Point(_title.Right + 10, _title.Top + (_title.Height - _versionButton.Height) / 2);
+        _versionButton.Location = new Point(_title.PreferredSize.Width + 10, 6);
+        textPanel.Controls.Add(_versionButton);
         textPanel.Controls.Add(_title);
         textPanel.Controls.Add(_subtitle);
         textPanel.Controls.Add(_metrics);
@@ -697,14 +701,20 @@ public sealed class MainForm : Form
         if (_scanPath is null || _scan is null) return;
         using var dialog = new SaveFileDialog
         {
-            Filter = "Spec sheet (*.html)|*.html|JSON file (*.json)|*.json",
+            Filter = "Spec sheet (*.html)|*.html|Upgrade planner (*.html)|*.html|JSON file (*.json)|*.json",
             FilterIndex = 1,
             FileName = $"{_scan.Scan.Hostname}-specsheet",
             Title = "Export hardware scan"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        if (dialog.FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        if (dialog.FilterIndex == 2)
+        {
+            var html = UpgradePlannerService.GenerateReport(_scan);
+            File.WriteAllText(dialog.FileName, html, System.Text.Encoding.UTF8);
+            Process.Start(new ProcessStartInfo(dialog.FileName) { UseShellExecute = true });
+        }
+        else if (dialog.FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
         {
             var html = SpecSheetGenerator.Generate(_scan, _report);
             File.WriteAllText(dialog.FileName, html, System.Text.Encoding.UTF8);
@@ -893,6 +903,21 @@ public sealed class MainForm : Form
         AddFact("Device health", problems == 0 ? "No reported errors" : $"{problems} error{(problems == 1 ? "" : "s")}",
             problems == 0 ? AppTheme.Good : AppTheme.Critical);
         AddFact("Last inventory", $"{_scan.Scan.TimestampUtc?.ToLocalTime():g}");
+        var ages = UpgradePlannerService.GetComponentAges(_scan);
+        if (ages.Count > 0)
+        {
+            AddFactSection("Component ages");
+            foreach (var age in ages)
+            {
+                if (age.AgeYears == 0)
+                {
+                    AddFact(age.Category, age.Name);
+                    continue;
+                }
+                var color = age.AgeYears switch { >= 5 => AppTheme.Critical, >= 3 => AppTheme.Warning, _ => AppTheme.Good };
+                AddFact(age.Category, $"{age.AgeYears} yr — {age.Generation} ({age.Released})", color);
+            }
+        }
         AddFactSection("How BoardScout works");
         AddFact("Startup", "Uses the latest cached inventory");
         AddFact("Hardware scan", "Local and on demand");

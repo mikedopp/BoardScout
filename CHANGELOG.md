@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 — 2026-08-22
+
+### Added
+- **Version button**: animated Google chasing-colors button in the header showing the current version; click to see runtime info, dependencies, and requirements
+- **Component ages**: System details panel now shows release date and age for CPU, motherboard, and GPU with color-coded severity (green < 3yr, amber 3-5yr, red 5yr+)
+- **Upgrade planner export**: Export → Upgrade planner generates a self-contained HTML report showing component ages, best compatible upgrades for the detected motherboard/socket, estimated pricing, and a "pimped out" dream build summary
+- **Legal files**: MIT LICENSE, THIRD-PARTY-NOTICES.md with dependency licenses and trademark attributions
+
+### Dependencies
+- No new dependencies
+
 ## 0.6.0 — 2026-08-22
 
 ### Added

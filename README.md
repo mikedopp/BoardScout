@@ -91,3 +91,27 @@ directory. If it is read-only, BoardScout falls back to
 
 DriverScout is bundled under its own MIT license. See
 src\BoardScout.App\DriverScout\LICENSE and THIRD-PARTY-NOTICES.md.
+
+## Screenshot
+
+![BoardScout](screenshot.png)
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Third-party notices
+
+See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for dependency licenses
+and trademark attributions.
+
+## Legal
+
+BoardScout reads hardware identifiers reported by the operating system and
+hardware firmware for diagnostic and informational purposes only. No
+proprietary firmware, drivers, or copyrighted vendor materials are bundled
+with or distributed by this software.
+
+All product names, logos, and brands are property of their respective owners.
+Use of these names does not imply affiliation with or endorsement by the
+trademark holder. See THIRD-PARTY-NOTICES.md for the full trademark list.
