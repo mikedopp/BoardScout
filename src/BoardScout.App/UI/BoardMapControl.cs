@@ -234,11 +234,10 @@ public sealed class BoardMapControl : Control
         var boardFill = AppTheme.IsDark ? Color.FromArgb(18, 29, 38) : Color.FromArgb(251, 252, 253);
         var boardBorder = AppTheme.IsDark ? Color.FromArgb(58, 78, 92) : Color.FromArgb(196, 207, 218);
         var gridColor = AppTheme.IsDark ? Color.FromArgb(31, 46, 57) : Color.FromArgb(238, 242, 245);
-        var traceColor = AppTheme.IsDark ? Color.FromArgb(37, 83, 98) : Color.FromArgb(204, 225, 231);
         using var boardBrush = new SolidBrush(boardFill);
         using var boardPen = new Pen(boardBorder, 1.5f);
-        g.FillRoundedRectangle(boardBrush, bounds, 12);
-        g.DrawRoundedRectangle(boardPen, bounds, 12);
+        g.FillRoundedRectangle(boardBrush, bounds, 14);
+        g.DrawRoundedRectangle(boardPen, bounds, 14);
 
         var scaleX = bounds.Width / 1120f;
         var scaleY = bounds.Height / 720f;
@@ -246,24 +245,13 @@ public sealed class BoardMapControl : Control
         RectangleF Box(float x, float y, float w, float h) =>
             new(bounds.Left + x * scaleX, bounds.Top + y * scaleY, w * scaleX, h * scaleY);
 
-        using (var gridPen = new Pen(gridColor, 1))
-        {
-            for (var x = bounds.Left + 40 * scaleX; x < bounds.Right; x += Math.Max(35, 70 * scaleX))
-                g.DrawLine(gridPen, x, bounds.Top + 1, x, bounds.Bottom - 1);
-            for (var y = bounds.Top + 40 * scaleY; y < bounds.Bottom; y += Math.Max(32, 70 * scaleY))
-                g.DrawLine(gridPen, bounds.Left + 1, y, bounds.Right - 1, y);
-        }
-        using (var tracePen = new Pen(traceColor, Math.Max(1, 2 * fontScale)))
-        {
-            g.DrawLine(tracePen, Box(540, 155, 1, 1).Location, Box(825, 155, 1, 1).Location);
-            g.DrawLine(tracePen, Box(450, 230, 1, 1).Location, Box(655, 390, 1, 1).Location);
-            g.DrawLine(tracePen, Box(665, 450, 1, 1).Location, Box(835, 450, 1, 1).Location);
-            g.DrawLine(tracePen, Box(330, 500, 1, 1).Location, Box(590, 440, 1, 1).Location);
-        }
+        using var labelFont = new Font("Segoe UI", Math.Max(9.5f, 10 * fontScale));
+        using var smallFont = new Font("Segoe UI", Math.Max(8.5f, 9 * fontScale));
+        using var titleFont = new Font("Segoe UI Semibold", Math.Max(10.5f, 11.5f * fontScale));
+        using var traceFont = new Font("Segoe UI", Math.Max(7.5f, 8 * fontScale));
 
-        using var labelFont = new Font("Segoe UI", Math.Max(8.5f, 9 * fontScale));
-        using var smallFont = new Font("Segoe UI", Math.Max(7.5f, 8 * fontScale));
-        using var titleFont = new Font("Segoe UI Semibold", Math.Max(9.5f, 10.5f * fontScale));
+        DrawDotPattern(g, bounds, scaleX, scaleY, gridColor);
+        DrawCircuitTraces(g, bounds, scaleX, scaleY, fontScale, traceFont);
 
         DrawTextFit(g, "BOARD LAYOUT · VERIFIED CONNECTORS", smallFont, AppTheme.Accent,
             Box(24, 10, 350, 22), ContentAlignment.MiddleLeft);
@@ -277,8 +265,9 @@ public sealed class BoardMapControl : Control
             "REAR I/O", "DP · HDMI · USB-C · USB-A · 2.5G LAN · audio", labelFont, smallFont);
         AddRegion(ioRect, "rear-io", "rear-io");
 
-        DrawHeatsink(g, Box(285, 42, 250, 35), boardBorder, traceColor);
-        DrawHeatsink(g, Box(275, 72, 36, 165), boardBorder, traceColor);
+        var heatsinkGroove = AppTheme.IsDark ? Color.FromArgb(37, 83, 98) : Color.FromArgb(204, 225, 231);
+        DrawHeatsink(g, Box(285, 42, 250, 35), boardBorder, heatsinkGroove);
+        DrawHeatsink(g, Box(275, 72, 36, 165), boardBorder, heatsinkGroove);
 
         var cpu = scan.Cpu;
         var cpuRect = Box(330, 82, 225, 166);
@@ -633,6 +622,115 @@ public sealed class BoardMapControl : Control
         return $"{value:0.#} {units[unit]}";
     }
 
+    private static void DrawDotPattern(Graphics g, RectangleF bounds, float scaleX, float scaleY, Color baseColor)
+    {
+        var spacing = Math.Max(24, 42 * Math.Min(scaleX, scaleY));
+        var dotSize = Math.Max(1.2f, 2f * Math.Min(scaleX, scaleY));
+        using var brush = new SolidBrush(Color.FromArgb(AppTheme.IsDark ? 28 : 40, baseColor));
+        for (var x = bounds.Left + spacing; x < bounds.Right - 8; x += spacing)
+            for (var y = bounds.Top + spacing; y < bounds.Bottom - 8; y += spacing)
+                g.FillEllipse(brush, x - dotSize / 2, y - dotSize / 2, dotSize, dotSize);
+    }
+
+    private static void DrawCircuitTraces(Graphics g, RectangleF bounds, float scaleX, float scaleY, float fontScale, Font labelFont)
+    {
+        PointF Pt(float x, float y) => new(bounds.Left + x * scaleX, bounds.Top + y * scaleY);
+
+        var cpuDirect = AppTheme.IsDark ? Color.FromArgb(50, 160, 235) : Color.FromArgb(26, 120, 218);
+        var uplinkColor = AppTheme.IsDark ? Color.FromArgb(45, 195, 180) : Color.FromArgb(13, 140, 128);
+        var chipsetColor = AppTheme.IsDark ? Color.FromArgb(150, 120, 230) : Color.FromArgb(120, 60, 220);
+        var sataColor = AppTheme.IsDark ? Color.FromArgb(230, 140, 50) : Color.FromArgb(194, 100, 16);
+
+        var w = fontScale;
+
+        DrawGlowTrace(g, [Pt(555, 140), Pt(795, 140)],
+            cpuDirect, 3f * w, "DDR4-3200", labelFont);
+
+        DrawGlowTrace(g, [Pt(442, 248), Pt(442, 350)],
+            cpuDirect, 3.5f * w, "PCIe ×16", labelFont);
+
+        DrawGlowTrace(g, [Pt(380, 248), Pt(380, 268), Pt(325, 268), Pt(325, 280)],
+            cpuDirect, 2.5f * w, "PCIe ×4", labelFont);
+
+        DrawGlowTrace(g, [Pt(520, 248), Pt(520, 340), Pt(677, 340), Pt(677, 385)],
+            uplinkColor, 2.5f * w, "×4 uplink", labelFont);
+
+        DrawGlowTrace(g, [Pt(765, 425), Pt(815, 425), Pt(815, 350), Pt(850, 350)],
+            sataColor, 1.8f * w, "SATA 6Gb/s", labelFont);
+
+        DrawGlowTrace(g, [Pt(640, 503), Pt(640, 540), Pt(467, 540), Pt(467, 530)],
+            chipsetColor, 2f * w, "PCIe ×2", labelFont);
+
+        DrawGlowTrace(g, [Pt(590, 444), Pt(300, 444)],
+            chipsetColor, 1.5f * w, "PCIe ×1", labelFont);
+
+        DrawGlowTrace(g, [Pt(620, 503), Pt(620, 583), Pt(340, 583), Pt(340, 595)],
+            chipsetColor, 2.5f * w, "PCIe ×4", labelFont);
+
+        DrawGlowTrace(g, [Pt(720, 503), Pt(720, 578), Pt(865, 578), Pt(865, 600)],
+            chipsetColor, 1.5f * w, "USB 3.2", labelFont);
+    }
+
+    private static void DrawGlowTrace(Graphics g, PointF[] points, Color color, float width, string? label, Font labelFont)
+    {
+        if (points.Length < 2) return;
+
+        using var path = new GraphicsPath();
+        path.AddLines(points);
+
+        using (var pen = new Pen(Color.FromArgb(12, color), width * 5)
+            { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawPath(pen, path);
+
+        using (var pen = new Pen(Color.FromArgb(35, color), width * 2.5f)
+            { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawPath(pen, path);
+
+        using (var pen = new Pen(Color.FromArgb(190, color), width)
+            { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawPath(pen, path);
+
+        if (!string.IsNullOrEmpty(label))
+            DrawTraceLabel(g, points, label, color, labelFont);
+    }
+
+    private static void DrawTraceLabel(Graphics g, PointF[] points, string text, Color color, Font font)
+    {
+        var maxLen = 0f;
+        var midPt = PointF.Empty;
+        for (var i = 0; i < points.Length - 1; i++)
+        {
+            var dx = points[i + 1].X - points[i].X;
+            var dy = points[i + 1].Y - points[i].Y;
+            var len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len > maxLen)
+            {
+                maxLen = len;
+                midPt = new PointF(
+                    (points[i].X + points[i + 1].X) / 2,
+                    (points[i].Y + points[i + 1].Y) / 2);
+            }
+        }
+
+        if (maxLen < 40) return;
+
+        var size = g.MeasureString(text, font);
+        var pill = new RectangleF(
+            midPt.X - size.Width / 2 - 5,
+            midPt.Y - size.Height / 2 - 2,
+            size.Width + 10,
+            size.Height + 4);
+
+        using var bg = new SolidBrush(Color.FromArgb(210, AppTheme.Surface));
+        using var border = new Pen(Color.FromArgb(60, color), 0.8f);
+        g.FillRoundedRectangle(bg, pill, 4);
+        g.DrawRoundedRectangle(border, pill, 4);
+
+        using var brush = new SolidBrush(Color.FromArgb(200, color));
+        using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString(text, font, brush, midPt, format);
+    }
+
     private static void DrawHeatsink(Graphics g, RectangleF rect, Color border, Color groove)
     {
         using var fill = new LinearGradientBrush(rect,
@@ -686,8 +784,8 @@ public sealed class BoardMapControl : Control
     {
         using var brush = new SolidBrush(fill);
         using var pen = new Pen(border, 1.5f);
-        g.FillRoundedRectangle(brush, rect, 7);
-        g.DrawRoundedRectangle(pen, rect, 7);
+        g.FillRoundedRectangle(brush, rect, 12);
+        g.DrawRoundedRectangle(pen, rect, 12);
         var top = new RectangleF(rect.X + 8, rect.Y + 5, rect.Width - 16, rect.Height * 0.46f - 3);
         var bottom = new RectangleF(rect.X + 8, rect.Y + rect.Height * 0.46f, rect.Width - 16, rect.Height * 0.48f - 5);
         DrawTextFit(g, title, titleFont, AppTheme.Text, top, ContentAlignment.MiddleCenter);
@@ -699,8 +797,8 @@ public sealed class BoardMapControl : Control
         var fill = AppTheme.IsDark ? Color.FromArgb(65, 48, 25) : Color.FromArgb(250, 241, 229);
         using var brush = new SolidBrush(fill);
         using var pen = new Pen(AppTheme.Warning, 1.3f);
-        g.FillRoundedRectangle(brush, rect, 6);
-        g.DrawRoundedRectangle(pen, rect, 6);
+        g.FillRoundedRectangle(brush, rect, 10);
+        g.DrawRoundedRectangle(pen, rect, 10);
         DrawTextFit(g, port, font, AppTheme.Warning,
             new RectangleF(rect.X + 5, rect.Y + 3, rect.Width * 0.18f, rect.Height - 6), ContentAlignment.MiddleCenter);
         DrawTextFit(g, model, font, AppTheme.Text,
@@ -710,7 +808,7 @@ public sealed class BoardMapControl : Control
     private static void DrawDashed(Graphics g, RectangleF rect, Color color, string text, Font font)
     {
         using var pen = new Pen(color, 1.3f) { DashStyle = DashStyle.Dash };
-        g.DrawRoundedRectangle(pen, rect, 5);
+        g.DrawRoundedRectangle(pen, rect, 8);
         DrawTextFit(g, text, font, color, RectangleF.Inflate(rect, -5, -3), ContentAlignment.MiddleCenter);
     }
 
