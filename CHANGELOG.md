@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0 — 2026-08-23
+
+### Changed
+- **PCB-style circuit traces**: 9 Manhattan-routed traces replace plain lines on the board map — color-coded by bus type (blue=CPU-direct, teal=uplink, purple=chipset, orange=SATA) with 3-pass glow rendering and speed labels (DDR4-3200, PCIe×16, etc.)
+- **Dot pattern background**: replaces grid lines with subtle dot matrix for a cleaner PCB aesthetic
+- **Anti-aliased rounded toolbar buttons**: custom-painted `RoundedButton` control with GDI+ anti-aliased rendering replaces jagged Region-clipped buttons; hover and press states from theme colors
+- **Larger board map typography**: label/small/title font minimums bumped by 1pt for readability at all zoom levels
+- **Larger corner radii**: component boxes, dashed outlines, and port boxes all use softer rounding (7→12, 5→8, 6→10)
+- **BoardScout brand mark** in Pimp My Build report footer
+
+### Fixed
+- DDR4-3200 trace label no longer overlaps fan header area (rerouted above at y=65)
+
 ## 0.8.0 — 2026-08-22
 
 ### Added
