@@ -635,63 +635,140 @@ public sealed class BoardMapControl : Control
     private static void DrawCircuitTraces(Graphics g, RectangleF bounds, float scaleX, float scaleY, float fontScale, Font labelFont)
     {
         PointF Pt(float x, float y) => new(bounds.Left + x * scaleX, bounds.Top + y * scaleY);
+        float Sx(float v) => v * scaleX;
+        float Sy(float v) => v * scaleY;
 
         var cpuDirect = AppTheme.IsDark ? Color.FromArgb(50, 160, 235) : Color.FromArgb(26, 120, 218);
         var uplinkColor = AppTheme.IsDark ? Color.FromArgb(45, 195, 180) : Color.FromArgb(13, 140, 128);
         var chipsetColor = AppTheme.IsDark ? Color.FromArgb(150, 120, 230) : Color.FromArgb(120, 60, 220);
         var sataColor = AppTheme.IsDark ? Color.FromArgb(230, 140, 50) : Color.FromArgb(194, 100, 16);
 
-        var w = fontScale;
+        var s = Math.Min(scaleX, scaleY);
 
-        DrawGlowTrace(g, [Pt(555, 100), Pt(555, 65), Pt(825, 65)],
-            cpuDirect, 3f * w, "DDR4-3200", labelFont);
+        // DDR4-3200: CPU → memory (wide bus, 4 lanes)
+        DrawRibbonTrace(g, ChamferPath([Pt(558, 100), Pt(558, 62), Pt(825, 62)], Sx(18)),
+            cpuDirect, 4, Sy(3.2f), s, "DDR4-3200", labelFont);
 
-        DrawGlowTrace(g, [Pt(442, 248), Pt(442, 350)],
-            cpuDirect, 3.5f * w, "PCIe ×16", labelFont);
+        // PCIe ×16: CPU → GPU (fattest ribbon, 8 lanes)
+        DrawRibbonTrace(g, [Pt(442, 250), Pt(442, 350)],
+            cpuDirect, 8, Sy(1.8f), s, "PCIe ×16", labelFont);
 
-        DrawGlowTrace(g, [Pt(380, 248), Pt(380, 268), Pt(325, 268), Pt(325, 280)],
-            cpuDirect, 2.5f * w, "PCIe ×4", labelFont);
+        // PCIe ×4: CPU → M2_1
+        DrawRibbonTrace(g, ChamferPath([Pt(380, 250), Pt(380, 272), Pt(325, 272), Pt(325, 280)], Sx(12)),
+            cpuDirect, 4, Sy(2.2f), s, "PCIe ×4", labelFont);
 
-        DrawGlowTrace(g, [Pt(520, 248), Pt(520, 340), Pt(677, 340), Pt(677, 385)],
-            uplinkColor, 2.5f * w, "×4 uplink", labelFont);
+        // ×4 uplink: CPU → chipset
+        DrawRibbonTrace(g, ChamferPath([Pt(522, 250), Pt(522, 338), Pt(677, 338), Pt(677, 385)], Sx(16)),
+            uplinkColor, 4, Sy(2.4f), s, "×4 uplink", labelFont);
 
-        DrawGlowTrace(g, [Pt(765, 425), Pt(815, 425), Pt(815, 350), Pt(850, 350)],
-            sataColor, 1.8f * w, "SATA 6Gb/s", labelFont);
+        // SATA 6Gb/s: chipset → SATA ports
+        DrawRibbonTrace(g, ChamferPath([Pt(765, 430), Pt(818, 430), Pt(818, 348), Pt(850, 348)], Sx(12)),
+            sataColor, 2, Sy(2.8f), s, "SATA 6Gb/s", labelFont);
 
-        DrawGlowTrace(g, [Pt(640, 503), Pt(640, 540), Pt(467, 540), Pt(467, 530)],
-            chipsetColor, 2f * w, "PCIe ×2", labelFont);
+        // PCIe ×2: chipset → M2_2
+        DrawRibbonTrace(g, ChamferPath([Pt(638, 503), Pt(638, 542), Pt(465, 542), Pt(465, 530)], Sx(14)),
+            chipsetColor, 2, Sy(2.6f), s, "PCIe ×2", labelFont);
 
-        DrawGlowTrace(g, [Pt(590, 444), Pt(300, 444)],
-            chipsetColor, 1.5f * w, "PCIe ×1", labelFont);
+        // PCIe ×1: chipset → PCIE2
+        DrawRibbonTrace(g, [Pt(590, 444), Pt(300, 444)],
+            chipsetColor, 1, Sy(2.0f), s, "PCIe ×1", labelFont);
 
-        DrawGlowTrace(g, [Pt(620, 503), Pt(620, 583), Pt(340, 583), Pt(340, 595)],
-            chipsetColor, 2.5f * w, "PCIe ×4", labelFont);
+        // PCIe ×4: chipset → PCIE3
+        DrawRibbonTrace(g, ChamferPath([Pt(618, 503), Pt(618, 580), Pt(338, 580), Pt(338, 595)], Sx(14)),
+            chipsetColor, 4, Sy(2.2f), s, "PCIe ×4", labelFont);
 
-        DrawGlowTrace(g, [Pt(720, 503), Pt(720, 578), Pt(865, 578), Pt(865, 600)],
-            chipsetColor, 1.5f * w, "USB 3.2", labelFont);
+        // USB 3.2: chipset → internal headers
+        DrawRibbonTrace(g, ChamferPath([Pt(722, 503), Pt(722, 575), Pt(868, 575), Pt(868, 600)], Sx(12)),
+            chipsetColor, 2, Sy(2.2f), s, "USB 3.2", labelFont);
     }
 
-    private static void DrawGlowTrace(Graphics g, PointF[] points, Color color, float width, string? label, Font labelFont)
+    private static PointF[] ChamferPath(PointF[] corners, float chamfer)
+    {
+        if (corners.Length < 3) return corners;
+        var result = new List<PointF> { corners[0] };
+        for (var i = 1; i < corners.Length - 1; i++)
+        {
+            var prev = corners[i - 1];
+            var curr = corners[i];
+            var next = corners[i + 1];
+
+            var d1 = Distance(prev, curr);
+            var d2 = Distance(curr, next);
+            var c = Math.Min(chamfer, Math.Min(d1, d2) * 0.45f);
+
+            result.Add(Lerp(curr, prev, c / d1));
+            result.Add(Lerp(curr, next, c / d2));
+        }
+        result.Add(corners[^1]);
+        return result.ToArray();
+    }
+
+    private static float Distance(PointF a, PointF b) =>
+        MathF.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
+
+    private static PointF Lerp(PointF from, PointF to, float t) =>
+        new(from.X + (to.X - from.X) * t, from.Y + (to.Y - from.Y) * t);
+
+    private static void DrawRibbonTrace(Graphics g, PointF[] points, Color color, int laneCount,
+        float laneSpacing, float scale, string? label, Font labelFont)
     {
         if (points.Length < 2) return;
 
-        using var path = new GraphicsPath();
-        path.AddLines(points);
+        var totalWidth = (laneCount - 1) * laneSpacing;
+        var traceWidth = Math.Max(0.8f, 1.2f * scale);
 
-        using (var pen = new Pen(Color.FromArgb(12, color), width * 5)
-            { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
-            g.DrawPath(pen, path);
+        for (var lane = 0; lane < laneCount; lane++)
+        {
+            var offset = -totalWidth / 2 + lane * laneSpacing;
+            var offsetPoints = OffsetPath(points, offset);
 
-        using (var pen = new Pen(Color.FromArgb(35, color), width * 2.5f)
-            { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
-            g.DrawPath(pen, path);
+            using var path = new GraphicsPath();
+            path.AddLines(offsetPoints);
 
-        using (var pen = new Pen(Color.FromArgb(190, color), width)
-            { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
-            g.DrawPath(pen, path);
+            using var glow = new Pen(Color.FromArgb(16, color), traceWidth * 6)
+                { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawPath(glow, path);
+
+            using var mid = new Pen(Color.FromArgb(40, color), traceWidth * 3)
+                { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawPath(mid, path);
+
+            var alpha = AppTheme.IsDark ? 160 : 200;
+            using var core = new Pen(Color.FromArgb(alpha, color), traceWidth)
+                { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawPath(core, path);
+        }
 
         if (!string.IsNullOrEmpty(label))
             DrawTraceLabel(g, points, label, color, labelFont);
+    }
+
+    private static PointF[] OffsetPath(PointF[] points, float offset)
+    {
+        if (Math.Abs(offset) < 0.01f) return points;
+        var result = new PointF[points.Length];
+        for (var i = 0; i < points.Length; i++)
+        {
+            float nx = 0, ny = 0;
+            var count = 0;
+            if (i > 0)
+            {
+                var dx = points[i].X - points[i - 1].X;
+                var dy = points[i].Y - points[i - 1].Y;
+                var len = MathF.Sqrt(dx * dx + dy * dy);
+                if (len > 0.01f) { nx += -dy / len; ny += dx / len; count++; }
+            }
+            if (i < points.Length - 1)
+            {
+                var dx = points[i + 1].X - points[i].X;
+                var dy = points[i + 1].Y - points[i].Y;
+                var len = MathF.Sqrt(dx * dx + dy * dy);
+                if (len > 0.01f) { nx += -dy / len; ny += dx / len; count++; }
+            }
+            if (count > 0) { nx /= count; ny /= count; }
+            result[i] = new PointF(points[i].X + nx * offset, points[i].Y + ny * offset);
+        }
+        return result;
     }
 
     private static void DrawTraceLabel(Graphics g, PointF[] points, string text, Color color, Font font)
@@ -716,17 +793,17 @@ public sealed class BoardMapControl : Control
 
         var size = g.MeasureString(text, font);
         var pill = new RectangleF(
-            midPt.X - size.Width / 2 - 5,
+            midPt.X - size.Width / 2 - 6,
             midPt.Y - size.Height / 2 - 2,
-            size.Width + 10,
+            size.Width + 12,
             size.Height + 4);
 
-        using var bg = new SolidBrush(Color.FromArgb(210, AppTheme.Surface));
-        using var border = new Pen(Color.FromArgb(60, color), 0.8f);
+        using var bg = new SolidBrush(Color.FromArgb(220, AppTheme.Surface));
+        using var border = new Pen(Color.FromArgb(70, color), 0.8f);
         g.FillRoundedRectangle(bg, pill, 4);
         g.DrawRoundedRectangle(border, pill, 4);
 
-        using var brush = new SolidBrush(Color.FromArgb(200, color));
+        using var brush = new SolidBrush(Color.FromArgb(210, color));
         using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         g.DrawString(text, font, brush, midPt, format);
     }

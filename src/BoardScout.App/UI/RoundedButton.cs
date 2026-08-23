@@ -10,7 +10,7 @@ internal sealed class RoundedButton : Button
     public RoundedButton()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                 ControlStyles.OptimizedDoubleBuffer, true);
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
     }
@@ -22,23 +22,26 @@ internal sealed class RoundedButton : Button
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         g.Clear(Parent?.BackColor ?? AppTheme.Background);
 
-        var rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-        using var path = CreateRoundedPath(rect, 10);
+        var rect = new RectangleF(1f, 1f, Width - 2f, Height - 2f);
+        var radius = rect.Height / 2f;
+        using var path = CreateRoundedPath(rect, radius);
 
         var bgColor = !Enabled ? Color.FromArgb(60, BackColor)
                     : _pressing ? FlatAppearance.MouseDownBackColor
                     : _hovering ? FlatAppearance.MouseOverBackColor
                     : BackColor;
-        var borderAlpha = Enabled ? 255 : 60;
 
         using var fill = new SolidBrush(bgColor);
-        using var border = new Pen(Color.FromArgb(borderAlpha, FlatAppearance.BorderColor), 1.2f);
         g.FillPath(fill, path);
+
+        var borderColor = Enabled ? FlatAppearance.BorderColor : Color.FromArgb(60, FlatAppearance.BorderColor);
+        using var border = new Pen(borderColor, 1.4f);
         g.DrawPath(border, path);
 
         var fgColor = Enabled ? ForeColor : Color.FromArgb(100, ForeColor);
-        TextRenderer.DrawText(g, Text, Font, ClientRectangle, fgColor,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+        using var textBrush = new SolidBrush(fgColor);
+        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString(Text, Font, textBrush, new RectangleF(0, 0, Width, Height), sf);
     }
 
     protected override void OnMouseEnter(EventArgs e) { _hovering = true; Invalidate(); base.OnMouseEnter(e); }
