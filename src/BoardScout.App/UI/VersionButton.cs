@@ -5,16 +5,17 @@ namespace BoardScout.UI;
 
 internal sealed class VersionButton : Control
 {
-    private static readonly Color[] ChasingColors =
+    private static readonly Color[] Chase =
     [
-        Color.FromArgb(66, 133, 244),   // Google blue
-        Color.FromArgb(219, 68, 55),    // Google red
-        Color.FromArgb(244, 180, 0),    // Google yellow
-        Color.FromArgb(15, 157, 88)     // Google green
+        Color.FromArgb(0x42, 0x85, 0xF4), // blue
+        Color.FromArgb(0xEA, 0x43, 0x35), // red
+        Color.FromArgb(0xFB, 0xBC, 0x05), // yellow
+        Color.FromArgb(0x34, 0xA8, 0x53), // green
+        Color.FromArgb(0x42, 0x85, 0xF4)  // back to blue for seamless loop
     ];
 
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 50 };
-    private int _colorIndex;
+    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 33 };
+    private float _angle;
     private Panel? _popout;
     private bool _popoutVisible;
 
@@ -26,10 +27,10 @@ internal sealed class VersionButton : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
-        Size = new Size(100, 28);
+        Size = new Size(100, 30);
         Cursor = Cursors.Hand;
-        Font = new Font("Segoe UI Semibold", 8.5f);
-        _timer.Tick += (_, _) => { _colorIndex = (_colorIndex + 1) % (ChasingColors.Length * 30); Invalidate(); };
+        Font = new Font("Cascadia Mono, Consolas", 9f);
+        _timer.Tick += (_, _) => { _angle = (_angle + 4f) % 360f; Invalidate(); };
         _timer.Start();
     }
 
@@ -39,52 +40,44 @@ internal sealed class VersionButton : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-        var baseIdx = _colorIndex / 30;
-        var t = (_colorIndex % 30) / 30f;
+        var outer = new Rectangle(0, 0, Width - 1, Height - 1);
+        var outerPath = RoundedRect(outer, 14);
 
-        var topColor = Lerp(ChasingColors[baseIdx % 4], ChasingColors[(baseIdx + 1) % 4], t);
-        var rightColor = Lerp(ChasingColors[(baseIdx + 1) % 4], ChasingColors[(baseIdx + 2) % 4], t);
-        var bottomColor = Lerp(ChasingColors[(baseIdx + 2) % 4], ChasingColors[(baseIdx + 3) % 4], t);
-        var leftColor = Lerp(ChasingColors[(baseIdx + 3) % 4], ChasingColors[(baseIdx + 4) % 4], t);
+        var cx = Width / 2f;
+        var cy = Height / 2f;
+        var radius = Math.Max(Width, Height);
+        var rad = _angle * MathF.PI / 180f;
+        var dx = MathF.Cos(rad) * radius;
+        var dy = MathF.Sin(rad) * radius;
+
+        using var gradBrush = new LinearGradientBrush(
+            new PointF(cx - dx, cy - dy),
+            new PointF(cx + dx, cy + dy),
+            Chase[0], Chase[^1]);
+
+        var blend = new ColorBlend(Chase.Length);
+        for (var i = 0; i < Chase.Length; i++)
+        {
+            blend.Colors[i] = Chase[i];
+            blend.Positions[i] = i / (float)(Chase.Length - 1);
+        }
+        gradBrush.InterpolationColors = blend;
+
+        using var pen = new Pen(gradBrush, 2.5f);
+        g.DrawPath(pen, outerPath);
 
         var inner = new Rectangle(3, 3, Width - 7, Height - 7);
         var innerPath = RoundedRect(inner, 11);
-        using var fillBrush = new SolidBrush(AppTheme.Surface);
-        g.FillPath(fillBrush, innerPath);
-
-        var r = 14;
-        using var topPen = new Pen(topColor, 2.5f);
-        using var rightPen = new Pen(rightColor, 2.5f);
-        using var bottomPen = new Pen(bottomColor, 2.5f);
-        using var leftPen = new Pen(leftColor, 2.5f);
-
-        g.DrawArc(topPen, 0, 0, r * 2, r * 2, 180, 45);
-        g.DrawArc(leftPen, 0, 0, r * 2, r * 2, 225, 45);
-        g.DrawLine(topPen, r, 0, Width - 1 - r, 0);
-        g.DrawArc(topPen, Width - 1 - r * 2, 0, r * 2, r * 2, 270, 45);
-        g.DrawArc(rightPen, Width - 1 - r * 2, 0, r * 2, r * 2, 315, 45);
-        g.DrawLine(rightPen, Width - 1, r, Width - 1, Height - 1 - r);
-        g.DrawArc(rightPen, Width - 1 - r * 2, Height - 1 - r * 2, r * 2, r * 2, 0, 45);
-        g.DrawArc(bottomPen, Width - 1 - r * 2, Height - 1 - r * 2, r * 2, r * 2, 45, 45);
-        g.DrawLine(bottomPen, Width - 1 - r, Height - 1, r, Height - 1);
-        g.DrawArc(bottomPen, 0, Height - 1 - r * 2, r * 2, r * 2, 90, 45);
-        g.DrawArc(leftPen, 0, Height - 1 - r * 2, r * 2, r * 2, 135, 45);
-        g.DrawLine(leftPen, 0, Height - 1 - r, 0, r);
+        using var fill = new SolidBrush(AppTheme.Surface);
+        g.FillPath(fill, innerPath);
 
         var text = $"v{AppVersion}";
-        var textColor = Lerp(ChasingColors[baseIdx % 4], ChasingColors[(baseIdx + 1) % 4], t);
-        using var textBrush = new SolidBrush(textColor);
         var textSize = g.MeasureString(text, Font);
         var x = (Width - textSize.Width) / 2;
         var y = (Height - textSize.Height) / 2;
+        using var textBrush = new SolidBrush(Color.FromArgb(168, 205, 231));
         g.DrawString(text, Font, textBrush, x, y);
     }
-
-    private static Color Lerp(Color a, Color b, float t) =>
-        Color.FromArgb(
-            (int)(a.R + (b.R - a.R) * t),
-            (int)(a.G + (b.G - a.G) * t),
-            (int)(a.B + (b.B - a.B) * t));
 
     protected override void OnClick(EventArgs e)
     {
@@ -109,7 +102,7 @@ internal sealed class VersionButton : Control
 
         _popout = new Panel
         {
-            Size = new Size(380, 260),
+            Size = new Size(380, 280),
             BackColor = AppTheme.Surface,
             BorderStyle = BorderStyle.FixedSingle,
             Tag = "surface"
@@ -135,14 +128,18 @@ internal sealed class VersionButton : Control
         AddDetail(content, $"OS: {Environment.OSVersion}");
 
         AddSection(content, "Dependencies", AppTheme.Muted);
-        AddDetail(content, "LibreHardwareMonitorLib 0.9.6 (MIT)");
+        AddDetail(content, "LibreHardwareMonitorLib 0.9.6 (MPL-2.0)");
         AddDetail(content, "Microsoft.Web.WebView2 1.0.2903.40");
-        AddDetail(content, "System.Management 10.0.2");
-        AddDetail(content, "D3.js v7 (BSD-3)");
+        AddDetail(content, "System.Management 10.0.2 (MIT)");
+        AddDetail(content, "D3.js v7 (ISC)");
 
         AddSection(content, "Requirements", AppTheme.Muted);
         AddDetail(content, "WebView2 Runtime (Win 10 21H2+)");
-        AddDetail(content, "Admin elevation for sensor access");
+        AddDetail(content, "Admin elevation for full sensor access");
+
+        AddSection(content, "Legal", AppTheme.Muted);
+        AddDetail(content, "MIT License · See THIRD-PARTY-NOTICES.md");
+        AddDetail(content, "All trademarks belong to their respective owners");
 
         _popout.Controls.Add(content);
         form.Controls.Add(_popout);
@@ -170,30 +167,26 @@ internal sealed class VersionButton : Control
 
     private static void AddSection(TableLayoutPanel panel, string text, Color color, bool title = false)
     {
-        var label = new Label
+        panel.Controls.Add(new Label
         {
-            Text = text,
+            Text = title ? text : text.ToUpperInvariant(),
             AutoSize = true,
             ForeColor = color,
             Font = new Font("Segoe UI Semibold", title ? 11f : 8f),
             Padding = new Padding(0, title ? 0 : 8, 0, 2)
-        };
-        if (!title)
-            label.Text = text.ToUpperInvariant();
-        panel.Controls.Add(label);
+        });
     }
 
     private static void AddDetail(TableLayoutPanel panel, string text)
     {
-        var label = new Label
+        panel.Controls.Add(new Label
         {
             Text = text,
             AutoSize = true,
             ForeColor = AppTheme.Muted,
             Font = new Font("Segoe UI", 8.75f),
             Padding = new Padding(0, 1, 0, 1)
-        };
-        panel.Controls.Add(label);
+        });
     }
 
     private static GraphicsPath RoundedRect(Rectangle bounds, int radius)

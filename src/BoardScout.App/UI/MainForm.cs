@@ -33,6 +33,8 @@ public sealed class MainForm : Form
     private readonly Button _exportButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _downloadButton = new();
+    private readonly Button _pimpButton = new();
+    private readonly Button _feedbackButton = new();
     private readonly Button _dataButton = new();
     private readonly Button _zoomOutButton = new();
     private readonly Button _zoomResetButton = new();
@@ -172,7 +174,7 @@ public sealed class MainForm : Form
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 620,
+            Width = 920,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             Padding = new Padding(0, 4, 0, 0),
@@ -185,13 +187,16 @@ public sealed class MainForm : Form
         ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
         ConfigureButton(_downloadButton, "Download drivers", async (_, _) => await DownloadDriversAsync());
+        ConfigureButton(_pimpButton, "Pimp My Build", (_, _) => OpenPimpMyBuild());
+        ConfigureButton(_feedbackButton, "Feedback", (_, _) => OpenFeedback());
         ConfigureButton(_dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
 
         _cancelButton.Visible = false;
         _updatesButton.Enabled = false;
         _downloadButton.Enabled = false;
         _exportButton.Enabled = false;
-        actions.Controls.AddRange([_dataButton, _exportButton, _downloadButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
+        _pimpButton.Enabled = false;
+        actions.Controls.AddRange([_feedbackButton, _dataButton, _exportButton, _pimpButton, _downloadButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
 
         _header.Controls.Add(textPanel);
         _header.Controls.Add(actions);
@@ -776,6 +781,7 @@ public sealed class MainForm : Form
         _updatesButton.Enabled = true;
         _downloadButton.Enabled = _report is not null;
         _exportButton.Enabled = true;
+        _pimpButton.Enabled = true;
     }
 
     private void SendScanToTopology()
@@ -1088,6 +1094,21 @@ public sealed class MainForm : Form
         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
     }
 
+    private void OpenPimpMyBuild()
+    {
+        if (_scan is null) return;
+        var html = UpgradePlannerService.GenerateReport(_scan);
+        var path = Path.Combine(Path.GetTempPath(), $"BoardScout-PimpMyBuild-{DateTime.Now:yyyyMMdd-HHmmss}.html");
+        File.WriteAllText(path, html, System.Text.Encoding.UTF8);
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        _status.Text = "Pimp My Build report opened in browser.";
+    }
+
+    private static void OpenFeedback()
+    {
+        Process.Start(new ProcessStartInfo("https://github.com/mikedopp/BoardScout/issues") { UseShellExecute = true });
+    }
+
     private void SetBusy(bool busy, string message)
     {
         _scanButton.Enabled = !busy;
@@ -1095,6 +1116,7 @@ public sealed class MainForm : Form
         _downloadButton.Enabled = !busy && _report is not null;
         _loadButton.Enabled = !busy;
         _exportButton.Enabled = !busy && _scan is not null;
+        _pimpButton.Enabled = !busy && _scan is not null;
         _cancelButton.Visible = busy;
         _progress.Visible = busy;
         _status.Text = message;

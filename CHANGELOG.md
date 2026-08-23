@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — 2026-08-22
+
+### Added
+- **Pimp My Build button**: visible header button that opens the upgrade planner report directly in the browser — no longer buried in the Export dialog
+- **Feedback button**: header button that opens the GitHub Issues page for bug reports and feature requests
+- **Version button animation rewrite**: replaced segment-based colored border with a SnipDeck-style rotating `LinearGradientBrush` (blue→red→yellow→green sweep, 360° over ~3 seconds) for a smooth Google chasing-colors effect
+
+### Changed
+- Header actions panel widened from 620px to 920px to accommodate new buttons without clipping
+
+### Dependencies
+- No new dependencies
+
 ## 0.7.0 — 2026-08-22
 
 ### Added

@@ -10,7 +10,7 @@ internal sealed class DriverDownloadService
         Timeout = TimeSpan.FromMinutes(10),
         DefaultRequestHeaders =
         {
-            { "User-Agent", "BoardScout/0.7.0" }
+            { "User-Agent", "BoardScout/0.8.0" }
         }
     };
 
