@@ -85,6 +85,7 @@ internal static class AppTheme
         button.AutoSize = true;
         button.Cursor = Cursors.Hand;
         button.Font = new Font("Segoe UI Semibold", 9);
+        ApplyRoundedRegion(button, 10);
     }
 
     public static void StyleFeatureButton(Button button)
@@ -104,6 +105,28 @@ internal static class AppTheme
         button.AutoSize = true;
         button.Cursor = Cursors.Hand;
         button.Font = new Font("Segoe UI Semibold", 9);
+        ApplyRoundedRegion(button, 10);
+    }
+
+    private static void ApplyRoundedRegion(Control control, int radius)
+    {
+        void Update()
+        {
+            if (control.Width <= 0 || control.Height <= 0) return;
+            var path = new GraphicsPath();
+            var d = radius * 2;
+            var r = new Rectangle(0, 0, control.Width, control.Height);
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            control.Region?.Dispose();
+            control.Region = new Region(path);
+            path.Dispose();
+        }
+        Update();
+        control.Resize += (_, _) => Update();
     }
 
     public static void StyleGrid(DataGridView grid)

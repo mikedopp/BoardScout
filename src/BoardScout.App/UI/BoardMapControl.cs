@@ -643,7 +643,7 @@ public sealed class BoardMapControl : Control
 
         var w = fontScale;
 
-        DrawGlowTrace(g, [Pt(555, 140), Pt(795, 140)],
+        DrawGlowTrace(g, [Pt(555, 100), Pt(555, 65), Pt(825, 65)],
             cpuDirect, 3f * w, "DDR4-3200", labelFont);
 
         DrawGlowTrace(g, [Pt(442, 248), Pt(442, 350)],
