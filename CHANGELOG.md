@@ -3,12 +3,15 @@
 ## 0.8.0 — 2026-08-22
 
 ### Added
-- **Pimp My Build button**: visible header button that opens the upgrade planner report directly in the browser — no longer buried in the Export dialog
-- **Feedback button**: header button that opens the GitHub Issues page for bug reports and feature requests
-- **Version button animation rewrite**: replaced segment-based colored border with a SnipDeck-style rotating `LinearGradientBrush` (blue→red→yellow→green sweep, 360° over ~3 seconds) for a smooth Google chasing-colors effect
+- **Pimp My Build button**: green-accent header button opens the upgrade planner report directly in the browser with Amazon and Newegg search links for each recommended component
+- **Minimize to tray**: minimizing the window sends BoardScout to the system tray with a version-labeled icon; double-click or right-click "Open" to restore; right-click "Exit" to close
+- **Version button animation rewrite**: rotating `LinearGradientBrush` (blue→red→yellow→green sweep, ~8 second revolution) matching SnipDeck's GlowEffect approach
+- **Feedback/report links**: "Report issue" link in status bar and version popout opens GitHub Issues
 
 ### Changed
-- Header actions panel widened from 620px to 920px to accommodate new buttons without clipping
+- Header toolbar decluttered from 9 buttons to 6 with separator grouping: primary (Scan now + Pimp My Build), driver workflow (Check drivers + Download), data (Import + Export)
+- "Data folder" and "Report issue" moved to status bar links
+- Pimp My Build uses a distinctive green accent (`StyleFeatureButton`) to stand out from standard buttons
 
 ### Dependencies
 - No new dependencies

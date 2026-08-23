@@ -108,7 +108,7 @@ internal static class UpgradePlannerService
             sb.AppendLine("<p class='disclaimer'>Prices reflect August 2026 US market estimates and may vary. " +
                           "DDR4 and legacy AM4 parts have inflated pricing due to global DRAM shortages and AM4 discontinuation.</p>");
             sb.AppendLine("<table class='upgrade-table'>");
-            sb.AppendLine("<tr><th>Slot</th><th>Current</th><th>Upgrade To</th><th>Why</th><th>Est. Price</th></tr>");
+            sb.AppendLine("<tr><th>Slot</th><th>Current</th><th>Upgrade To</th><th>Why</th><th>Est. Price</th><th>Shop</th></tr>");
 
             decimal totalCost = 0;
             foreach (var u in upgrades)
@@ -120,11 +120,12 @@ internal static class UpgradePlannerService
                 sb.AppendLine($"<td><strong>{Esc(u.Recommended)}</strong></td>");
                 sb.AppendLine($"<td>{Esc(u.Why)}</td>");
                 sb.AppendLine($"<td class='price'>{u.Price}</td>");
+                sb.AppendLine($"<td class='shop'>{BuyLinks(u.Recommended, u.Price)}</td>");
                 sb.AppendLine("</tr>");
                 if (decimal.TryParse(u.Price.Replace("$", "").Replace(",", "").Replace("~", ""), out var p))
                     totalCost += p;
             }
-            sb.AppendLine($"<tr class='total'><td colspan='4'>Estimated Total</td><td class='price'>~${totalCost:N0}</td></tr>");
+            sb.AppendLine($"<tr class='total'><td colspan='4'>Estimated Total</td><td class='price'>~${totalCost:N0}</td><td></td></tr>");
             sb.AppendLine("</table>");
 
             sb.AppendLine("<div class='summary-box'>");
@@ -320,6 +321,15 @@ internal static class UpgradePlannerService
         return (null, "");
     }
 
+    private static string BuyLinks(string product, string price)
+    {
+        if (price == "—" || product.Contains("Already", StringComparison.OrdinalIgnoreCase))
+            return "—";
+        var q = Uri.EscapeDataString(product);
+        return $"<a href='https://www.amazon.com/s?k={q}' target='_blank'>Amazon</a> · " +
+               $"<a href='https://www.newegg.com/p/pl?d={q}' target='_blank'>Newegg</a>";
+    }
+
     private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);
 
     private static string ReportCss() => """
@@ -347,6 +357,9 @@ internal static class UpgradePlannerService
         .tier-luxury td:first-child { border-left: 3px solid #A78BFA; }
         .total td { font-weight: 700; font-size: 15px; border-top: 2px solid #3D9EFF; background: #111C2C; }
         .total .price { color: #3D9EFF; font-size: 15px; }
+        .shop { white-space: nowrap; }
+        .shop a { color: #3D9EFF; text-decoration: none; }
+        .shop a:hover { text-decoration: underline; color: #6BB8FF; }
         .summary-box { background: linear-gradient(135deg, #0C1620 0%, #162040 100%); border: 1px solid #3D9EFF; border-radius: 8px; padding: 20px; margin: 24px 0; }
         .summary-box p { font-size: 14px; color: #8A9BB2; line-height: 1.6; }
         .footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #162030; font-size: 11px; color: #5A6B82; }

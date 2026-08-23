@@ -58,6 +58,7 @@ public sealed class MainForm : Form
     private readonly Label _inspectCapabilityHeading = new();
     private readonly Label _inspectCapability = new();
     private readonly LinkLabel _inspectLink = new();
+    private readonly NotifyIcon _trayIcon = new();
 
     private ScanManifest? _scan;
     private DriverReport? _report;
@@ -80,6 +81,7 @@ public sealed class MainForm : Form
         Font = new Font("Segoe UI", 9.25f);
 
         BuildUi();
+        BuildTrayIcon();
         HandleCreated += (_, _) => AppTheme.ApplyWindowTheme(this);
         _service.OutputReceived += ServiceOnOutputReceived;
         _boardMap.PartHovered += (_, details) => ShowPartDetails(details);
@@ -93,11 +95,47 @@ public sealed class MainForm : Form
         };
         FormClosing += (_, _) =>
         {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
             _operationCts?.Cancel();
             _telemetryTimer.Stop();
             _telemetryService.Dispose();
             _topologyWebView?.Dispose();
         };
+    }
+
+    private void BuildTrayIcon()
+    {
+        _trayIcon.Icon = Icon;
+        _trayIcon.Text = $"BoardScout v{VersionButton.AppVersion}";
+        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add($"BoardScout v{VersionButton.AppVersion}");
+        menu.Items[0]!.Enabled = false;
+        menu.Items[0]!.Font = new Font("Segoe UI Semibold", 9);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Open", null, (_, _) => RestoreFromTray());
+        menu.Items.Add("Exit", null, (_, _) => { _trayIcon.Visible = false; Close(); });
+        _trayIcon.ContextMenuStrip = menu;
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = FormWindowState.Maximized;
+        _trayIcon.Visible = false;
+        Activate();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (WindowState == FormWindowState.Minimized)
+        {
+            _trayIcon.Visible = true;
+            Hide();
+        }
     }
 
     private void BuildUi()
