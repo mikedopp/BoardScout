@@ -30,7 +30,7 @@ internal sealed class VersionButton : Control
         Size = new Size(100, 30);
         Cursor = Cursors.Hand;
         Font = new Font("Cascadia Mono, Consolas", 9f);
-        _timer.Tick += (_, _) => { _angle = (_angle + 4f) % 360f; Invalidate(); };
+        _timer.Tick += (_, _) => { _angle = (_angle + 1.5f) % 360f; Invalidate(); };
         _timer.Start();
     }
 
@@ -140,6 +140,21 @@ internal sealed class VersionButton : Control
         AddSection(content, "Legal", AppTheme.Muted);
         AddDetail(content, "MIT License · See THIRD-PARTY-NOTICES.md");
         AddDetail(content, "All trademarks belong to their respective owners");
+
+        var feedbackLink = new LinkLabel
+        {
+            Text = "Report an issue on GitHub",
+            AutoSize = true,
+            LinkColor = AppTheme.Accent,
+            ActiveLinkColor = AppTheme.Good,
+            VisitedLinkColor = AppTheme.Accent,
+            Font = new Font("Segoe UI Semibold", 8.75f),
+            Padding = new Padding(0, 10, 0, 2)
+        };
+        feedbackLink.LinkClicked += (_, _) =>
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "https://github.com/mikedopp/BoardScout/issues") { UseShellExecute = true });
+        content.Controls.Add(feedbackLink);
 
         _popout.Controls.Add(content);
         form.Controls.Add(_popout);

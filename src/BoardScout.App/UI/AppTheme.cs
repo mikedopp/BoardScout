@@ -87,6 +87,25 @@ internal static class AppTheme
         button.Font = new Font("Segoe UI Semibold", 9);
     }
 
+    public static void StyleFeatureButton(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderColor = Good;
+        button.FlatAppearance.MouseOverBackColor = IsDark
+            ? Color.FromArgb(24, 58, 46) : Color.FromArgb(229, 244, 236);
+        button.FlatAppearance.MouseDownBackColor = IsDark
+            ? Color.FromArgb(14, 44, 34) : Color.FromArgb(210, 236, 222);
+        button.BackColor = IsDark
+            ? Color.FromArgb(14, 38, 30) : Color.FromArgb(240, 250, 245);
+        button.ForeColor = Good;
+        button.Padding = new Padding(12, 2, 12, 2);
+        button.Height = 36;
+        button.AutoSize = true;
+        button.Cursor = Cursors.Hand;
+        button.Font = new Font("Segoe UI Semibold", 9);
+    }
+
     public static void StyleGrid(DataGridView grid)
     {
         grid.BackgroundColor = Surface;

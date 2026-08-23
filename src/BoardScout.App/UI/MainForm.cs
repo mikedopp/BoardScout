@@ -34,8 +34,8 @@ public sealed class MainForm : Form
     private readonly Button _cancelButton = new();
     private readonly Button _downloadButton = new();
     private readonly Button _pimpButton = new();
-    private readonly Button _feedbackButton = new();
-    private readonly Button _dataButton = new();
+    private readonly LinkLabel _feedbackLink = new();
+    private readonly LinkLabel _dataFolderLink = new();
     private readonly Button _zoomOutButton = new();
     private readonly Button _zoomResetButton = new();
     private readonly Button _zoomInButton = new();
@@ -174,7 +174,7 @@ public sealed class MainForm : Form
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 920,
+            Width = 780,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             Padding = new Padding(0, 4, 0, 0),
@@ -182,21 +182,28 @@ public sealed class MainForm : Form
         };
 
         ConfigureButton(_scanButton, "Scan now", async (_, _) => await RunScanAsync(), primary: true);
+        ConfigureButton(_pimpButton, "Pimp My Build", (_, _) => OpenPimpMyBuild());
+        AppTheme.StyleFeatureButton(_pimpButton);
+        _pimpButton.Tag = "featureButton";
         ConfigureButton(_updatesButton, "Check drivers", async (_, _) => await RunDriverCheckAsync());
+        ConfigureButton(_downloadButton, "Download drivers", async (_, _) => await DownloadDriversAsync());
         ConfigureButton(_loadButton, "Import", async (_, _) => await LoadScanFromFileAsync());
         ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
-        ConfigureButton(_downloadButton, "Download drivers", async (_, _) => await DownloadDriversAsync());
-        ConfigureButton(_pimpButton, "Pimp My Build", (_, _) => OpenPimpMyBuild());
-        ConfigureButton(_feedbackButton, "Feedback", (_, _) => OpenFeedback());
-        ConfigureButton(_dataButton, "Data folder", (_, _) => _service.OpenDataFolder());
 
         _cancelButton.Visible = false;
         _updatesButton.Enabled = false;
         _downloadButton.Enabled = false;
         _exportButton.Enabled = false;
         _pimpButton.Enabled = false;
-        actions.Controls.AddRange([_feedbackButton, _dataButton, _exportButton, _pimpButton, _downloadButton, _loadButton, _updatesButton, _scanButton, _cancelButton]);
+
+        actions.Controls.AddRange([
+            _exportButton, _loadButton,
+            ToolbarSep(),
+            _downloadButton, _updatesButton,
+            ToolbarSep(),
+            _pimpButton, _scanButton, _cancelButton
+        ]);
 
         _header.Controls.Add(textPanel);
         _header.Controls.Add(actions);
@@ -509,6 +516,15 @@ public sealed class MainForm : Form
         return page;
     }
 
+    private static Control ToolbarSep() => new Panel
+    {
+        Width = 1,
+        Height = 28,
+        BackColor = AppTheme.Border,
+        Margin = new Padding(6, 4, 6, 0),
+        Tag = "border"
+    };
+
     private Control BuildStatusBar()
     {
         _statusPanel.Dock = DockStyle.Bottom;
@@ -517,11 +533,52 @@ public sealed class MainForm : Form
         _statusPanel.BorderStyle = BorderStyle.FixedSingle;
         _statusPanel.Padding = new Padding(14, 6, 14, 0);
         _statusPanel.Tag = "surface";
+
+        var rightLinks = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            WrapContents = false,
+            FlowDirection = FlowDirection.LeftToRight,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0)
+        };
+
+        _dataFolderLink.Text = "Data folder";
+        _dataFolderLink.AutoSize = true;
+        _dataFolderLink.LinkColor = AppTheme.Muted;
+        _dataFolderLink.ActiveLinkColor = AppTheme.Accent;
+        _dataFolderLink.VisitedLinkColor = AppTheme.Muted;
+        _dataFolderLink.Font = new Font("Segoe UI", 8.25f);
+        _dataFolderLink.Padding = new Padding(0, 0, 8, 0);
+        _dataFolderLink.LinkClicked += (_, _) => _service.OpenDataFolder();
+
+        var sep = new Label
+        {
+            Text = "|",
+            AutoSize = true,
+            ForeColor = AppTheme.Border,
+            Font = new Font("Segoe UI", 8.25f),
+            Padding = new Padding(0, 0, 8, 0)
+        };
+
+        _feedbackLink.Text = "Report issue";
+        _feedbackLink.AutoSize = true;
+        _feedbackLink.LinkColor = AppTheme.Muted;
+        _feedbackLink.ActiveLinkColor = AppTheme.Accent;
+        _feedbackLink.VisitedLinkColor = AppTheme.Muted;
+        _feedbackLink.Font = new Font("Segoe UI", 8.25f);
+        _feedbackLink.LinkClicked += (_, _) => OpenFeedback();
+
+        rightLinks.Controls.AddRange([_dataFolderLink, sep, _feedbackLink]);
+
         _status.Dock = DockStyle.Fill;
         _status.Text = "Ready — cached results load instantly; scan only when hardware changes.";
         _status.ForeColor = AppTheme.Muted;
         _status.Tag = "muted";
+
         _statusPanel.Controls.Add(_status);
+        _statusPanel.Controls.Add(rightLinks);
         return _statusPanel;
     }
 
@@ -1142,7 +1199,13 @@ public sealed class MainForm : Form
         BackColor = AppTheme.Background;
         ForeColor = AppTheme.Text;
         ApplyTaggedTheme(this);
-        foreach (var (button, primary) in _themedButtons) AppTheme.StyleButton(button, primary);
+        foreach (var (button, primary) in _themedButtons)
+        {
+            if (button.Tag as string == "featureButton")
+                AppTheme.StyleFeatureButton(button);
+            else
+                AppTheme.StyleButton(button, primary);
+        }
 
         foreach (var grid in new[] { _drivers, _storage, _suggestions }) AppTheme.StyleGrid(grid);
         _tabs.BackColor = AppTheme.Background;
@@ -1153,6 +1216,10 @@ public sealed class MainForm : Form
         _inspectLink.LinkColor = AppTheme.Accent;
         _inspectLink.ActiveLinkColor = AppTheme.Good;
         _inspectLink.VisitedLinkColor = AppTheme.Accent;
+        _dataFolderLink.LinkColor = AppTheme.Muted;
+        _dataFolderLink.ActiveLinkColor = AppTheme.Accent;
+        _feedbackLink.LinkColor = AppTheme.Muted;
+        _feedbackLink.ActiveLinkColor = AppTheme.Accent;
         foreach (var column in _drivers.Columns.OfType<DataGridViewLinkColumn>())
         {
             column.LinkColor = AppTheme.Accent;
