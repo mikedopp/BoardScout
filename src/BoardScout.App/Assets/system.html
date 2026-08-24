@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+:root {
+    --bg: #0d1117; --surface: #161b22; --raised: #1c2128; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #4285f4; --accent-soft: rgba(66,133,244,.12);
+    --good: #3fb950; --warning: #d29922; --critical: #f85149; --purple: #a371f7;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.5; }
+.container { max-width: 1400px; margin: 0 auto; padding: 24px 28px; }
+.loading { text-align: center; padding: 120px 20px; color: var(--muted); font-size: 15px; }
+.loading .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+section { margin-bottom: 28px; }
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--accent);
+    text-transform: uppercase; margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; }
+
+/* Hero personality card */
+.hero { display: flex; gap: 28px; align-items: flex-start; padding: 28px 32px; }
+.hero-left { flex: 1; }
+.hero-right { flex: 0 0 340px; }
+.verdict { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.verdict-emoji { font-size: 32px; margin-right: 10px; vertical-align: middle; }
+.os-caption { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+.traits { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.trait { background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(66,133,244,.25);
+    border-radius: 20px; padding: 3px 12px; font-size: 12px; font-weight: 500; }
+.patch-health { font-size: 13px; margin-bottom: 8px; }
+.patch-health.good { color: var(--good); }
+.patch-health.warning { color: var(--warning); }
+.patch-health.critical { color: var(--critical); }
+.support-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.support-badge.supported { background: rgba(63,185,80,.15); color: var(--good); border: 1px solid rgba(63,185,80,.3); }
+.support-badge.eol { background: rgba(210,153,34,.15); color: var(--warning); border: 1px solid rgba(210,153,34,.3); }
+.support-badge.unsupported { background: rgba(248,81,73,.15); color: var(--critical); border: 1px solid rgba(248,81,73,.3); }
+.recs { margin-top: 14px; }
+.rec { color: var(--muted); font-size: 13px; padding: 4px 0 4px 18px; position: relative; }
+.rec::before { content: '\25B8'; position: absolute; left: 2px; color: var(--accent); }
+.info-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--muted); }
+.info-value { color: var(--text); font-weight: 500; text-align: right; }
+
+/* Build grid */
+.build-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.build-item { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.build-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
+.build-value { font-size: 14px; font-weight: 600; color: var(--text); word-break: break-word; }
+.disk-bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+.disk-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+
+/* Dotnet pills */
+.dotnet-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.dotnet-pill { background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; }
+.dotnet-name { font-size: 12px; color: var(--muted); }
+.dotnet-ver { font-size: 15px; font-weight: 600; color: var(--purple); }
+
+/* Tables */
+.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 12px; }
+.table-header .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.search { background: var(--raised); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    padding: 6px 12px; font-size: 13px; width: 240px; outline: none; font-family: inherit; }
+.search:focus { border-color: var(--accent); }
+.filter-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.filter-tab { background: var(--raised); border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
+    padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.filter-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+thead th:hover { color: var(--accent); }
+tbody td { padding: 7px 10px; border-bottom: 1px solid rgba(48,54,61,.5); vertical-align: top; }
+tbody tr:hover { background: var(--raised); }
+.status-ready { color: var(--good); }
+.status-disabled { color: var(--muted); }
+.status-running { color: var(--accent); }
+.empty { color: var(--muted); font-style: italic; padding: 20px; text-align: center; }
+
+@media (max-width: 900px) {
+    .hero { flex-direction: column; }
+    .hero-right { flex: auto; width: 100%; }
+    .build-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        Gathering system information&hellip;
+    </div>
+    <div id="app" style="display:none"></div>
+</div>
+<script>
+window.chrome.webview.addEventListener('message', function(e) {
+    document.getElementById('loading').style.display = 'none';
+    var app = document.getElementById('app');
+    app.style.display = 'block';
+    render(app, typeof e.data === 'string' ? JSON.parse(e.data) : e.data);
+});
+
+function h(tag, attrs, children) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k) {
+        if (k === 'className') el.className = attrs[k];
+        else if (k === 'html') el.innerHTML = attrs[k];
+        else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+        else el.setAttribute(k, attrs[k]);
+    });
+    if (typeof children === 'string') el.textContent = children;
+    else if (Array.isArray(children)) children.forEach(function(c) { if (c) el.appendChild(c); });
+    return el;
+}
+
+function render(root, data) {
+    root.innerHTML = '';
+    root.appendChild(renderPersonality(data.os));
+    root.appendChild(renderBuild(data.build));
+    root.appendChild(renderDotNet(data.dotnet));
+    root.appendChild(renderPatches(data.patches));
+    root.appendChild(renderSoftware(data.software));
+    root.appendChild(renderTasks(data.tasks));
+}
+
+function renderPersonality(os) {
+    var sec = h('section', null, [h('div', {className:'section-title'}, 'WHAT YOUR OS SAYS ABOUT YOU')]);
+    var card = h('div', {className:'card hero'});
+
+    var left = h('div', {className:'hero-left'});
+    var emoji = emojiMap(os.verdictEmoji);
+    left.appendChild(h('div', {className:'verdict'}, [h('span', {className:'verdict-emoji', html: emoji}), document.createTextNode(os.verdict)]));
+    left.appendChild(h('div', {className:'os-caption'}, os.caption + ' · Build ' + os.build + ' · ' + os.arch));
+
+    var supportClass = os.supportStatus.toLowerCase().includes('supported') ? 'supported'
+        : os.supportStatus.toLowerCase().includes('end') ? 'eol' : 'unsupported';
+    left.appendChild(h('div', {style:'margin-bottom:14px'}, [h('span', {className:'support-badge '+supportClass}, os.supportStatus)]));
+
+    if (os.traits && os.traits.length) {
+        var traits = h('div', {className:'traits'});
+        os.traits.forEach(function(t) { traits.appendChild(h('span', {className:'trait'}, t)); });
+        left.appendChild(traits);
+    }
+
+    var phClass = os.patchHealth.includes('Current') ? 'good' : os.patchHealth.includes('Slightly') ? 'warning' : 'critical';
+    left.appendChild(h('div', {className:'patch-health '+phClass}, '● ' + os.patchHealth));
+
+    if (os.recommendations && os.recommendations.length) {
+        var recs = h('div', {className:'recs'});
+        os.recommendations.forEach(function(r) { recs.appendChild(h('div', {className:'rec'}, r)); });
+        left.appendChild(recs);
+    }
+
+    var right = h('div', {className:'hero-right'});
+    [['OS', os.caption], ['Version', os.version], ['Build', os.build], ['Architecture', os.arch],
+     ['Installed', os.installDate], ['Last boot', os.lastBoot], ['Uptime', os.uptime]
+    ].forEach(function(pair) {
+        if (!pair[1]) return;
+        var row = h('div', {className:'info-row'}, [h('span', {className:'info-label'}, pair[0]), h('span', {className:'info-value'}, pair[1])]);
+        right.appendChild(row);
+    });
+
+    card.appendChild(left);
+    card.appendChild(right);
+    sec.appendChild(card);
+    return sec;
+}
+
+function renderBuild(build) {
+    var sec = h('section', null, [h('div', {className:'section-title'}, 'YOUR BUILD')]);
+    var grid = h('div', {className:'build-grid'});
+    [['CPU', build.cpu, build.cpuDetail], ['Memory', build.memory], ['GPU', build.gpu],
+     ['Motherboard', build.motherboard], ['BIOS', build.bios], ['TPM', build.tpm], ['Secure Boot', build.secureBoot]
+    ].forEach(function(item) {
+        if (!item[1]) return;
+        var card = h('div', {className:'build-item'}, [
+            h('div', {className:'build-label'}, item[0]),
+            h('div', {className:'build-value'}, item[1])
+        ]);
+        if (item[2]) card.appendChild(h('div', {style:'color:var(--muted);font-size:12px;margin-top:2px'}, item[2]));
+        grid.appendChild(card);
+    });
+
+    if (build.disks && build.disks.length) {
+        build.disks.forEach(function(d) {
+            var color = d.usedPercent >= 95 ? 'var(--critical)' : d.usedPercent >= 85 ? 'var(--warning)' : 'var(--good)';
+            var card = h('div', {className:'build-item'});
+            card.appendChild(h('div', {className:'build-label'}, d.bus + ' · ' + d.size));
+            card.appendChild(h('div', {className:'build-value', style:'font-size:13px'}, d.model));
+            card.appendChild(h('div', {style:'color:var(--muted);font-size:12px;margin-top:2px'}, d.free + ' free · ' + d.usedPercent.toFixed(0) + '% used'));
+            var bar = h('div', {className:'disk-bar'}, [h('div', {className:'disk-fill', style:'width:'+d.usedPercent+'%;background:'+color})]);
+            card.appendChild(bar);
+            grid.appendChild(card);
+        });
+    }
+
+    sec.appendChild(grid);
+    return sec;
+}
+
+function renderDotNet(list) {
+    var sec = h('section', null, [h('div', {className:'section-title'}, '.NET VERSIONS')]);
+    if (!list || !list.length) { sec.appendChild(h('div', {className:'empty'}, 'No .NET runtimes detected')); return sec; }
+    var wrap = h('div', {className:'dotnet-list'});
+    list.forEach(function(d) {
+        wrap.appendChild(h('div', {className:'dotnet-pill'}, [
+            h('div', {className:'dotnet-name'}, d.name),
+            h('div', {className:'dotnet-ver'}, d.version)
+        ]));
+    });
+    sec.appendChild(wrap);
+    return sec;
+}
+
+function renderPatches(list) {
+    return renderTable('INSTALLED PATCHES', list, ['id','description','installedOn','installedBy'],
+        ['KB','Description','Installed','By'], null, 'id');
+}
+
+function renderSoftware(list) {
+    return renderTable('INSTALLED SOFTWARE', list, ['name','version','publisher','size'],
+        ['Name','Version','Publisher','Size'], null, 'name');
+}
+
+function renderTasks(list) {
+    return renderTable('SCHEDULED TASKS', list, ['name','status','category','nextRun'],
+        ['Task','Status','Source','Next Run'], ['All','User','Microsoft','Windows'], 'name');
+}
+
+function renderTable(title, list, keys, headers, filters, searchKey) {
+    var sec = h('section', null, [h('div', {className:'section-title'}, title)]);
+    var card = h('div', {className:'card', style:'padding:16px 20px'});
+
+    var header = h('div', {className:'table-header'});
+    var countLabel = h('span', {className:'count'}, list.length + ' items');
+    var search = h('input', {className:'search', type:'text', placeholder:'Search…'});
+    header.appendChild(countLabel);
+    header.appendChild(search);
+    card.appendChild(header);
+
+    var activeFilter = 'All';
+    var filterBar = null;
+    if (filters) {
+        filterBar = h('div', {className:'filter-tabs'});
+        filters.forEach(function(f) {
+            var btn = h('button', {className:'filter-tab' + (f === 'All' ? ' active' : ''), onClick: function() {
+                activeFilter = f;
+                filterBar.querySelectorAll('.filter-tab').forEach(function(b) { b.className = 'filter-tab'; });
+                btn.className = 'filter-tab active';
+                applyFilter();
+            }}, f);
+            filterBar.appendChild(btn);
+        });
+        card.appendChild(filterBar);
+    }
+
+    var table = h('table');
+    var thead = h('thead');
+    var headRow = h('tr');
+    var sortCol = -1, sortAsc = true;
+    headers.forEach(function(hdr, i) {
+        var th = h('th', {onClick: function() {
+            if (sortCol === i) sortAsc = !sortAsc; else { sortCol = i; sortAsc = true; }
+            applyFilter();
+        }}, hdr);
+        headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var tbody = h('tbody');
+    table.appendChild(tbody);
+    card.appendChild(table);
+    sec.appendChild(card);
+
+    function applyFilter() {
+        var q = search.value.toLowerCase();
+        var filtered = list.filter(function(item) {
+            if (filters && activeFilter !== 'All' && item.category !== activeFilter) return false;
+            if (q && searchKey) return (item[searchKey] || '').toLowerCase().includes(q);
+            if (q) return keys.some(function(k) { return (item[k] || '').toLowerCase().includes(q); });
+            return true;
+        });
+        if (sortCol >= 0) {
+            var key = keys[sortCol];
+            filtered.sort(function(a, b) {
+                var va = (a[key] || '').toLowerCase(), vb = (b[key] || '').toLowerCase();
+                return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+            });
+        }
+        tbody.innerHTML = '';
+        countLabel.textContent = filtered.length + ' of ' + list.length + ' items';
+        if (!filtered.length) {
+            var td = h('td', {colspan: headers.length, className:'empty'}, 'No matching items');
+            tbody.appendChild(h('tr', null, [td]));
+            return;
+        }
+        filtered.forEach(function(item) {
+            var tr = h('tr');
+            keys.forEach(function(k) {
+                var td = h('td', null, item[k] || '—');
+                if (k === 'status') {
+                    var s = (item[k] || '').toLowerCase();
+                    td.className = s === 'ready' ? 'status-ready' : s === 'disabled' ? 'status-disabled'
+                        : s === 'running' ? 'status-running' : '';
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    }
+
+    search.addEventListener('input', applyFilter);
+    applyFilter();
+    return sec;
+}
+
+function emojiMap(key) {
+    var map = { rocket:'🚀', keyboard:'⌨️', shield:'🛡️', wrench:'🔧',
+        sparkles:'✨', hourglass:'⏳', art:'🎨', joystick:'🕹️', computer:'💻' };
+    return map[key] || '💻';
+}
+</script>
+</body>
+</html>

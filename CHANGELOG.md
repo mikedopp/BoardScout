@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0 — 2026-08-24
+
+### Added
+- **System tab**: new sidebar destination with WebView2-rendered dashboard showing OS personality analysis ("What Your OS Says About You"), build summary, .NET versions, installed patches, installed software, and scheduled tasks
+- **OS personality verdicts**: automatic profiling based on OS version, patch discipline, installed software, and task scheduler — assigns a personality title (The Power Developer, The Reliable Holdout, The Battle Station, etc.) with emoji, traits, patch health, and actionable recommendations
+- **Software inventory**: enumerates installed programs from registry (HKLM + WOW6432 + HKCU) with name, version, publisher, install date, and estimated size
+- **Patch inventory**: lists all installed hotfixes from WMI with KB ID, description, install date, and installer
+- **Scheduled task inventory**: parses `schtasks` output with category filtering (All / User / Microsoft / Windows)
+- **.NET runtime detection**: lists CLR version, all installed runtimes via `dotnet --list-runtimes`, and .NET Framework version from registry
+- **TPM and Secure Boot detection**: reads TPM spec version from WMI and Secure Boot state from registry
+- **Search and sort**: all System tab tables support live search filtering and column-click sorting
+
+### Changed
+- **Board map spacing**: redistributed M2_3 WiFi (reduced height, moved up), M2_2 NVMe (moved up closer to chipset), PCIE3 x4, internal headers, and board identity positions for cleaner vertical spacing in the lower section; updated all circuit trace endpoints to match
+- Sidebar navigation now has 7 entries (System added before Scan Log)
+
 ## 0.9.0 — 2026-08-23
 
 ### Changed

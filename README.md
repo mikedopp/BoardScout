@@ -12,7 +12,7 @@ for x64 or ARM64 Windows and builds it first when necessary.
 
 You can also run the published executable directly:
 
-    .\build\portable\win-x64\BoardScout.exe
+    .\release\BoardScout.exe
 
 ## Interactive motherboard map
 
@@ -25,11 +25,30 @@ You can also run the published executable directly:
   presenting every connector as simultaneously available.
 - The B550M Steel Legend layout identifies M2_3 as the installed AX210's M.2
   Key-E WiFi/Bluetooth socket, separate from the Key-M NVMe sockets.
+- PCB-style circuit traces show Manhattan-routed bus connections color-coded by
+  type (blue=CPU-direct, teal=uplink, purple=chipset, orange=SATA) with speed
+  labels (DDR4-3200, PCIe ×16, etc.).
 - CPU and physical-memory utilization update locally once per second. Storage
   blocks show mounted-capacity usage; GPU usage is not claimed when Windows
   does not expose a reliable counter.
 - Use the map buttons or mouse wheel to zoom from 100% to 250%. Drag the map to
   pan while zoomed, and click the percentage button to reset the view.
+
+## System
+
+The System tab profiles your machine and assigns a personality verdict — The
+Power Developer, The Reliable Holdout, The Battle Station, The Working Dev, and
+others — based on OS version, patch discipline, installed software, and .NET
+runtimes. Below the personality card:
+
+- **Your Build** — CPU, memory, GPU, motherboard, BIOS version, TPM, Secure
+  Boot, and every mounted volume with a color-coded usage bar.
+- **.NET Versions** — CLR, all installed runtimes, and .NET Framework version.
+- **Installed Patches** — full hotfix list from WMI with search and sort.
+- **Installed Software** — registry-enumerated programs (HKLM + WOW6432 +
+  HKCU) with name, version, publisher, and size.
+- **Scheduled Tasks** — parsed from `schtasks` with category filter tabs
+  (All / User / Microsoft / Windows).
 
 ## Bandwidth topology
 
@@ -68,10 +87,13 @@ Build the self-contained application and distribution zip:
 
     .\Build-Portable.ps1 -Runtime win-x64
 
+Or publish directly to the `release` folder:
+
+    dotnet publish src\BoardScout.App -c Release -r win-x64
+
 Outputs:
 
-- build\portable\win-x64\BoardScout.exe
-- build\BoardScout-0.4.0-win-x64.zip
+- release\BoardScout.exe
 
 The portable folder includes the bundled DriverScout scripts and offline PCI/USB
 ID databases. Zip that folder, move it to another Windows 10/11 PC, extract it,
@@ -84,17 +106,20 @@ directory. If it is read-only, BoardScout falls back to
 ## Source layout
 
 - src\BoardScout.App — .NET 8 WinForms application
+- src\BoardScout.App\Assets — WebView2 HTML templates (topology.html, system.html)
 - src\BoardScout.App\DriverScout — bundled DriverScout engine and notices
-- src\BoardScout.App\Services — scanning, driver checks, caching, suggestions
+- src\BoardScout.App\Services — scanning, driver checks, system info, caching
 - src\BoardScout.App\UI — native motherboard view and application screens
 - Build-Portable.ps1 — self-contained publisher and zip packager
 
 DriverScout is bundled under its own MIT license. See
 src\BoardScout.App\DriverScout\LICENSE and THIRD-PARTY-NOTICES.md.
 
-## Screenshot
+## Screenshots
 
-![BoardScout](screenshot.png)
+![BoardScout Overview](screenshot.png)
+
+![System Tab](screenshot-system.png)
 
 ## License
 

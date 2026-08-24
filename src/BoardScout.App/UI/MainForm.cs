@@ -12,8 +12,11 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _telemetryTimer = new() { Interval = 1000 };
     private readonly BoardMapControl _boardMap = new() { Dock = DockStyle.Fill };
     private Microsoft.Web.WebView2.WinForms.WebView2? _topologyWebView;
+    private Microsoft.Web.WebView2.WinForms.WebView2? _systemWebView;
     private bool _topologyReady;
+    private bool _systemReady;
     private string? _pendingScanJson;
+    private string? _pendingSystemJson;
     private readonly Label _tempLabel = new();
     private readonly Label _fanLabel = new();
     private readonly Label _networkLabel = new();
@@ -90,6 +93,7 @@ public sealed class MainForm : Form
         Shown += async (_, _) =>
         {
             await LoadCachedDataAsync();
+            if (_scan is null) _ = LoadSystemInfoAsync();
             SampleTelemetry();
             _telemetryTimer.Start();
         };
@@ -101,6 +105,7 @@ public sealed class MainForm : Form
             _telemetryTimer.Stop();
             _telemetryService.Dispose();
             _topologyWebView?.Dispose();
+            _systemWebView?.Dispose();
         };
     }
 
@@ -154,6 +159,7 @@ public sealed class MainForm : Form
         _tabs.TabPages.Add(BuildDriversTab());
         _tabs.TabPages.Add(BuildStorageTab());
         _tabs.TabPages.Add(BuildSuggestionsTab());
+        _tabs.TabPages.Add(BuildSystemTab());
         _tabs.TabPages.Add(BuildLogTab());
         _navigation.SelectedIndexChanged += (_, _) =>
         {
@@ -554,6 +560,77 @@ public sealed class MainForm : Form
         return page;
     }
 
+    private TabPage BuildSystemTab()
+    {
+        var page = NewPage("System");
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = AppTheme.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(0),
+            Tag = "surface"
+        };
+
+        try
+        {
+            _systemWebView = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
+            _systemWebView.CoreWebView2InitializationCompleted += (_, e) =>
+            {
+                if (!e.IsSuccess) return;
+                _systemWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                _systemWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                _systemWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                var htmlPath = Path.Combine(AppContext.BaseDirectory, "Assets", "system.html");
+                if (File.Exists(htmlPath))
+                {
+                    _systemWebView.CoreWebView2.Navigate(new Uri(htmlPath).AbsoluteUri);
+                    _systemWebView.CoreWebView2.NavigationCompleted += (_, _) =>
+                    {
+                        _systemReady = true;
+                        if (_pendingSystemJson is not null)
+                        {
+                            _systemWebView.CoreWebView2.PostWebMessageAsJson(_pendingSystemJson);
+                            _pendingSystemJson = null;
+                        }
+                    };
+                }
+            };
+            _ = _systemWebView.EnsureCoreWebView2Async();
+            card.Controls.Add(_systemWebView);
+        }
+        catch
+        {
+            card.Controls.Add(new Label
+            {
+                Text = "WebView2 Runtime is needed for the System view.\nInstall it from Microsoft or run the installer from evergreen.",
+                Dock = DockStyle.Fill,
+                ForeColor = AppTheme.Muted,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Tag = "muted"
+            });
+        }
+
+        page.Controls.Add(card);
+        return page;
+    }
+
+    private async Task LoadSystemInfoAsync()
+    {
+        try
+        {
+            var json = await SystemInfoService.GatherJsonAsync(_scan);
+            if (_systemReady && _systemWebView?.CoreWebView2 is not null)
+                _systemWebView.CoreWebView2.PostWebMessageAsJson(json);
+            else
+                _pendingSystemJson = json;
+        }
+        catch (Exception ex)
+        {
+            AppendLog("SYSTEM INFO: " + ex.Message);
+        }
+    }
+
     private static Control ToolbarSep() => new Panel
     {
         Width = 1,
@@ -873,6 +950,7 @@ public sealed class MainForm : Form
         BindDrivers();
         BindStorage();
         BindSuggestions();
+        _ = LoadSystemInfoAsync();
         _updatesButton.Enabled = true;
         _downloadButton.Enabled = _report is not null;
         _exportButton.Enabled = true;

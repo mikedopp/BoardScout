@@ -299,7 +299,7 @@ public sealed class BoardMapControl : Control
         var nvme = storage.Where(c => string.Equals(c.LookupHints.BusType, "NVMe", StringComparison.OrdinalIgnoreCase)).ToList();
         for (var i = 0; i < Math.Max(2, nvme.Count); i++)
         {
-            var rect = i == 0 ? Box(120, 280, 410, 49) : Box(285, 530, 365, 48);
+            var rect = i == 0 ? Box(120, 280, 410, 49) : Box(285, 510, 365, 48);
             var slotName = i == 0 ? "M2_1 · KEY M · PCIe 3.0 x4" : "M2_2 · KEY M · PCIe 3.0 x2";
             if (i < nvme.Count)
             {
@@ -331,13 +331,13 @@ public sealed class BoardMapControl : Control
             DrawDashed(g, x1Rect, AppTheme.Purple, "PCIE2 · PCIe 3.0 x1 · OPEN", smallFont);
             AddRegion(x1Rect, "pcie-open-x1", "pcie-open", 0);
 
-            var x4Rect = Box(55, 595, 570, 38);
+            var x4Rect = Box(55, 600, 570, 38);
             DrawDashed(g, x4Rect, AppTheme.Accent, "PCIE3 · PCIe 3.0 x4 in x16 body · BEST NVMe EXPANSION", labelFont);
             AddRegion(x4Rect, "pcie-open-x4", "pcie-open", 1);
         }
 
         var wifi = FindWifi(scan);
-        var wifiRect = Box(55, 485, 205, 78);
+        var wifiRect = Box(55, 478, 205, 52);
         DrawBox(g, wifiRect,
             AppTheme.IsDark ? Color.FromArgb(24, 52, 74) : Color.FromArgb(229, 241, 250),
             AppTheme.Accent,
@@ -377,10 +377,10 @@ public sealed class BoardMapControl : Control
             }
         }
 
-        DrawHeaderGroup(g, Box(700, 585, 365, 65), smallFont);
+        DrawHeaderGroup(g, Box(700, 600, 365, 58), smallFont);
         DrawFanGroup(g, Box(655, 90, 115, 175), smallFont);
 
-        var boardIdentityRect = Box(710, 665, 380, 30);
+        var boardIdentityRect = Box(710, 672, 380, 30);
         DrawTextFit(g, "M2_3 is WiFi/BT only · it cannot accept an NVMe SSD", titleFont,
             AppTheme.Accent, boardIdentityRect, ContentAlignment.MiddleRight);
         AddRegion(boardIdentityRect, "motherboard", "motherboard");
@@ -666,7 +666,7 @@ public sealed class BoardMapControl : Control
             sataColor, 2, Sy(2.8f), s, "SATA 6Gb/s", labelFont);
 
         // PCIe ×2: chipset → M2_2
-        DrawRibbonTrace(g, ChamferPath([Pt(638, 503), Pt(638, 542), Pt(465, 542), Pt(465, 530)], Sx(14)),
+        DrawRibbonTrace(g, ChamferPath([Pt(638, 503), Pt(638, 520), Pt(465, 520), Pt(465, 510)], Sx(14)),
             chipsetColor, 2, Sy(2.6f), s, "PCIe ×2", labelFont);
 
         // PCIe ×1: chipset → PCIE2
@@ -674,11 +674,11 @@ public sealed class BoardMapControl : Control
             chipsetColor, 1, Sy(2.0f), s, "PCIe ×1", labelFont);
 
         // PCIe ×4: chipset → PCIE3
-        DrawRibbonTrace(g, ChamferPath([Pt(618, 503), Pt(618, 580), Pt(338, 580), Pt(338, 595)], Sx(14)),
+        DrawRibbonTrace(g, ChamferPath([Pt(618, 503), Pt(618, 576), Pt(338, 576), Pt(338, 600)], Sx(14)),
             chipsetColor, 4, Sy(2.2f), s, "PCIe ×4", labelFont);
 
         // USB 3.2: chipset → internal headers
-        DrawRibbonTrace(g, ChamferPath([Pt(722, 503), Pt(722, 575), Pt(868, 575), Pt(868, 600)], Sx(12)),
+        DrawRibbonTrace(g, ChamferPath([Pt(722, 503), Pt(722, 576), Pt(868, 576), Pt(868, 600)], Sx(12)),
             chipsetColor, 2, Sy(2.2f), s, "USB 3.2", labelFont);
     }
 
