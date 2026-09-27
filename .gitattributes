@@ -1,0 +1,2 @@
+# Vendored web libraries stay byte-identical to their npm packages (THIRD-PARTY-NOTICES lists their SHA-256).
+src/BoardScout.App/Assets/vendor/** -text
