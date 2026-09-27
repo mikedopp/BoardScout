@@ -161,7 +161,7 @@ internal static class NetworkProbe
     }
 
     // A plain DNS PTR query. Dns.GetHostEntry falls back to NetBIOS and waits ~1.5 s on hosts without a name.
-    private static Task<string?> ReverseLookupAsync(IPAddress address) => Task.Run(() =>
+    internal static Task<string?> ReverseLookupAsync(IPAddress address) => Task.Run(() =>
     {
         if (address.AddressFamily != AddressFamily.InterNetwork) return null;
         var octets = address.GetAddressBytes();

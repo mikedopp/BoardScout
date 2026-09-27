@@ -49,3 +49,17 @@ unreachable. At runtime the tool prefers a fresh copy in `cache/` (auto-updated)
 and falls back to the vendored `data/` snapshot. To refresh the snapshot, run
 `Get-DriverRundown.ps1 -RefreshDb` and copy the updated files from `cache/` into
 `data/`.
+
+---
+
+## oui.tsv — IEEE Registration Authority MA-L public listing
+
+- **File:** `data/oui.tsv`
+- **Source:** https://standards-oui.ieee.org/oui/oui.csv (IEEE Registration Authority public listing of
+  MAC Address Block Large assignments)
+- **Snapshot:** 2026-09-27
+- **Contents:** the six-hex-digit assignment and organization name of each MA-L entry; the
+  organization addresses from the original listing are not included.
+- IEEE publishes this listing so anyone can identify which organization an address block was
+  assigned to. The assignments are facts registered by the IEEE; organization names belong to their
+  owners. BoardScout uses them only to label network devices by maker.

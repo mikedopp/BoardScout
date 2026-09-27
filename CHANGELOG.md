@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.4.0 — 2026-09-27
+
+Real names and real speeds on the Connections map: what your router, network, and the devices on it
+are called, packets and disk operations per second, and an Internet speed test.
+
+### Added
+- **Your router's make and model.** Many routers put WPS device info in their Wi-Fi beacon; BoardScout
+  reads it from the Wi-Fi card's scan list, even when this PC is on Ethernet (on the test PC:
+  "TP-Link Deco BE63"). Without Wi-Fi it falls back to the name in the router's web certificate
+  ("tplinkdeco.net" → TP-Link Deco), then to the maker of its network card.
+- **Mesh units.** Every access point broadcasting your network is counted, each Deco-style unit is
+  matched to its address on your network, and the map says which one is closest to this PC and how
+  strong each signal is.
+- **Windows' name for your network** ("Network 5", or the Wi-Fi name) and whether Windows treats it
+  as Public or Private, on each adapter.
+- **Devices on your network**, named where they say who they are (multicast DNS, NetBIOS, UPnP, your
+  DNS server) and labeled by maker from their MAC address using the bundled IEEE registry: TVs,
+  consoles, cameras, smart plugs, computers, servers, Raspberry Pis, and mesh units. **Find more
+  devices** pings every address on your local network (on request) so quiet devices show up too.
+- **Packets per second** on every network card, plus packets, discards, and errors since the adapter
+  connected; network speeds now read in Mbps like link speeds and Internet plans.
+- **IOPS and queue depth** for every drive (reads and writes per second, requests waiting).
+- **Test my Internet speed** on the Internet card: latency, jitter, download, and upload against
+  Cloudflare's public speed test, with a live readout while it runs and a note on whether your
+  Internet or your link to the router is the limit. It runs only when clicked, stops after a few
+  seconds or a data cap, and the Scan Log records it.
+- The map opens at once and fills in names a few seconds later; toggling privacy mode no longer
+  re-reads the hardware.
+- `--connections-json --sweep` includes the device search.
+
+### Privacy
+- Privacy mode also hides device names, the router's own name for itself, and the Wi-Fi names it
+  broadcasts; devices are shown by type and maker instead ("Vizio TV or streamer").
+
+### Notes
+- Only the Internet speed test and the public IP lookup leave your network. Naming uses standard
+  local discovery (multicast DNS, NetBIOS, UPnP) and a TLS handshake with your router; nothing logs
+  in to anything.
+
 ## 1.3.0 — 2026-09-27
 
 A Connections map: every device in the PC, where it plugs in, the speed its link negotiated, and the

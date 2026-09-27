@@ -4,8 +4,15 @@ public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 
 public sealed record FanReading(string Name, int Rpm, bool Active);
 
-/// <summary>Bytes per second toward the CPU (received or read) and away from it (sent or written).</summary>
-public readonly record struct LinkRate(double In, double Out);
+/// <summary>
+/// Bytes per second toward the CPU (received or read) and away from it (sent or written). OpsIn/OpsOut
+/// are packets per second for a network adapter and reads/writes per second (IOPS) for a disk.
+/// </summary>
+public readonly record struct LinkRate(double In, double Out, double OpsIn = 0, double OpsOut = 0);
+
+/// <summary>A network adapter's counters since Windows started, plus how fast packets are being dropped.</summary>
+public readonly record struct AdapterCounters(
+    long BytesIn, long BytesOut, long PacketsIn, long PacketsOut, long Dropped, long Errors, double DroppedPerSec);
 
 public sealed record SystemTelemetry(
     double CpuUsagePercent,
@@ -20,8 +27,14 @@ public sealed record SystemTelemetry(
     /// <summary>Per network interface (by NetworkInterface.Id), when detailed rates are on.</summary>
     public IReadOnlyDictionary<string, LinkRate>? InterfaceRates { get; init; }
 
+    /// <summary>Per network interface (by NetworkInterface.Id), when detailed rates are on.</summary>
+    public IReadOnlyDictionary<string, AdapterCounters>? InterfaceCounters { get; init; }
+
     /// <summary>Per physical disk number, when detailed rates are on.</summary>
     public IReadOnlyDictionary<int, LinkRate>? DiskRates { get; init; }
+
+    /// <summary>Requests waiting at each physical disk right now, when detailed rates are on.</summary>
+    public IReadOnlyDictionary<int, int>? DiskQueues { get; init; }
 
     public ulong MemoryUsedBytes => MemoryTotalBytes > MemoryAvailableBytes
         ? MemoryTotalBytes - MemoryAvailableBytes

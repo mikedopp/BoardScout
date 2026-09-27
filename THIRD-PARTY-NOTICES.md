@@ -4,7 +4,7 @@ BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self
 they also redistribute the components below. Each keeps its own license. Nothing here is
 modified from the published version.
 
-Last reviewed for BoardScout 1.3.0 (2026-09-27).
+Last reviewed for BoardScout 1.4.0 (2026-09-27).
 
 ## Libraries compiled into BoardScout.exe
 
@@ -129,13 +129,17 @@ publishes the corresponding source at https://3rdpartysource.microsoft.com.
 The PowerShell scanner in `DriverScout/` is part of this project (MIT). Its own notices, including
 the PCI and USB ID databases, are in `src/BoardScout.App/DriverScout/THIRD-PARTY-NOTICES.md`. The
 Connections view also reads that same bundled `usb.ids` file (the USB ID Repository, 3-clause BSD)
-to name USB devices; nothing else is added for it.
+to name USB devices, and `oui.tsv` — the IEEE Registration Authority's public MA-L listing reduced
+to prefix and organization name — to label network devices by maker (details in the DriverScout
+notices).
 
-## Online service used on request
+## Online services used on request
 
-The Connections view's **Look up my public IP** button requests `https://1.1.1.1/cdn-cgi/trace`
-from Cloudflare, Inc. only when clicked. No Cloudflare code or data is bundled; Cloudflare's own
-terms and privacy policy govern that request.
+The Connections view's **Look up my public IP** button requests `https://1.1.1.1/cdn-cgi/trace`,
+and its **Test my Internet speed** button downloads from and uploads to `https://speed.cloudflare.com`
+(the endpoints Cloudflare's public speed test page uses), both from Cloudflare, Inc. and only when
+clicked. No Cloudflare code or data is bundled; Cloudflare's own terms and privacy policy govern
+those requests.
 
 ## Not bundled
 
@@ -169,6 +173,9 @@ respective owners and are used for identification only.
 - **Realtek** is a trademark of Realtek Semiconductor Corp.
 - **Bluetooth** is a trademark of Bluetooth SIG, Inc.
 - **Pi-hole** is a trademark of Pi-hole LLC.
+- **Deco** is a trademark of TP-Link Systems Inc. Vizio, Ring, Raspberry Pi, Espressif, and the other
+  makers named from the IEEE registry are the names or trademarks of their respective owners.
+- **Wi-Fi** and **Wi-Fi Protected Setup (WPS)** are trademarks of the Wi-Fi Alliance.
 - **Amazon** and **Newegg** are trademarks of their respective owners; the upgrade report links to
   their public search pages without affiliation.
 

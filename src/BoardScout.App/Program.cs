@@ -14,7 +14,8 @@ internal static class Program
             return PrintSystemJsonAsync().GetAwaiter().GetResult();
 
         if (args.Contains("--connections-json", StringComparer.OrdinalIgnoreCase))
-            return PrintConnectionsJsonAsync(args.Contains("--privacy", StringComparer.OrdinalIgnoreCase)).GetAwaiter().GetResult();
+            return PrintConnectionsJsonAsync(args.Contains("--privacy", StringComparer.OrdinalIgnoreCase),
+                args.Contains("--sweep", StringComparer.OrdinalIgnoreCase)).GetAwaiter().GetResult();
 
         if (args.Contains("--scan", StringComparer.OrdinalIgnoreCase) ||
             args.Contains("--check-drivers", StringComparer.OrdinalIgnoreCase))
@@ -90,14 +91,15 @@ internal static class Program
         }
     }
 
-    // Prints what the Connections tab receives. Contains local addresses and MACs unless --privacy is given.
-    private static async Task<int> PrintConnectionsJsonAsync(bool privacy)
+    // Prints what the Connections tab receives. Contains local addresses and MACs unless --privacy is given;
+    // --sweep pings every address on the local network first, like "Find more devices".
+    private static async Task<int> PrintConnectionsJsonAsync(bool privacy, bool sweep)
     {
         try
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             Privacy.Learn(null);
-            var json = await ConnectionsService.GatherJsonAsync(privacy);
+            var json = await ConnectionsService.GatherJsonAsync(privacy, sweep);
             Console.WriteLine(System.Text.Json.Nodes.JsonNode.Parse(json)?.ToJsonString(
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
             return 0;

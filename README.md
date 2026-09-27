@@ -4,7 +4,7 @@ A portable Windows app that maps your motherboard, bandwidth, drivers, storage, 
 system in one place: what is plugged in where, what each part is good for, what needs attention,
 and how long Windows will keep patching it. It never installs drivers or firmware.
 
-**Status:** v1.3.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.4.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +15,9 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.3.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.3.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.3.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.4.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.4.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.4.0-SHA256SUMS.txt` | Checksums for both. |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -46,10 +46,19 @@ HDMI/DisplayPort mode, Ethernet or Wi-Fi rate — and flags links running below 
 supports (a PCIe 4.0 SSD on PCIe 3.0 lanes, an NVMe drive given 2 of its 4 lanes, a USB 3 drive on a
 USB 2 port) with the likely reason. Dots flow along the real paths as data moves: disk reads and
 writes, and network traffic from the Internet through the router, the adapter, and the chipset to
-the CPU. Click any card for details: link now versus best, live traffic, firmware and driver
-versions, drive temperature where Windows reports it, IP and DNS settings, and the Wi-Fi network,
-signal, band, and security. The router card shows its address, name, and round trip; the Internet
-card can look up your public IP on request. Plug something in and the map redraws itself.
+the CPU. Cards show live speeds — network in Mbps with packets per second, drives in MB/s with IOPS —
+and details add packets, discards, and errors since the adapter connected, and each drive's queue.
+Click any card for details: link now versus best, live traffic, firmware and driver versions, drive
+temperature where Windows reports it, IP and DNS settings, and the Wi-Fi network, signal, band, and
+security. Plug something in and the map redraws itself.
+
+It also puts **real names** on your network: the router's make and model (read from its own Wi-Fi
+beacon, even when this PC is wired, or from its web certificate), how many mesh units are in range
+and which is closest, Windows' name for the network and whether it is Public or Private, and the
+other devices on it — named where they say who they are and labeled by maker from their MAC address
+("CastTV · Vizio", "Ring camera", "Deco BE63 unit · excellent signal"). **Find more devices** pings
+every address on your local network so quiet devices show up too. The Internet card can look up your
+public IP and **test your Internet speed** (latency, download, upload), each only when you click.
 
 ![Connections: CPU, chipset, USB, SATA, and NVMe devices with negotiated link speeds, live traffic, and the path through the router to the Internet](docs/screenshots/connections.png)
 
@@ -88,13 +97,20 @@ Only these, and only when you ask:
   Cloudflare (`https://1.1.1.1/cdn-cgi/trace`), which answers with the address your network uses on
   the Internet. BoardScout never makes this request on its own, and the Scan Log records each time
   it does.
+- **Test my Internet speed** on the same card downloads and uploads test data from Cloudflare's
+  public speed test (`speed.cloudflare.com`) for a few seconds — at most 400 MB down and 150 MB up,
+  which only very fast connections reach — and the Scan Log records it.
 - Links you click (official update pages, PawnIO, Report issue) open in your browser.
 
 Everything else is local. Scans use built-in Windows tools, and the Topology, Connections, and
-System views load their scripts (QuickLiquid, D3) from the app folder, not a CDN. To draw your
-network path, the Connections tab pings your router and asks your own DNS servers for the names
-of your router and DNS servers; nothing else leaves your network. "Internet access" on that tab is
-what Windows' own connectivity check already concluded.
+System views load their scripts (QuickLiquid, D3) from the app folder, not a CDN. To draw and name
+your network, the Connections tab stays on your local network: it pings your router, reads the Wi-Fi
+card's scan list (starting a scan if it is stale), opens a TLS handshake with your router's web
+interface to read its certificate (it never logs in), asks devices for their names with the usual
+local protocols (multicast DNS, NetBIOS, UPnP), asks your own DNS servers for reverse names, and
+labels makers from the IEEE registry bundled with the app. **Find more devices** pings every address
+on your local network, only when you click it. "Internet access" on that tab is what Windows' own
+connectivity check already concluded.
 
 ## Privacy mode: screenshots and exports you can share
 
@@ -112,7 +128,9 @@ Turn it on under the version button → Settings, or press **Ctrl+Shift+P**. Whi
 - Spec sheet and JSON exports leave out the PC name, machine ID, serial numbers, system UUID,
   and volume labels. JSON exports stay importable.
 - Connections hides MAC addresses, Wi-Fi network names and access-point addresses, IPv6
-  addresses, Bluetooth device names that look like someone's ("Sam's AirPods"), and the public IP.
+  addresses, the names devices on your network give themselves (they show by type and maker, like
+  "Vizio TV or streamer"), the router's own name for itself, Bluetooth device names that look like
+  someone's ("Sam's AirPods"), the public IP, and the speed test's server location.
 
 Two protections apply even with privacy mode off: JSON exports never include the Windows owner or
 product ID, and **Copy diagnostics** always masks your PC name, user folder, serials, emails, and
@@ -135,8 +153,9 @@ MAC addresses.
   state, and settings on the clipboard for an issue report.
 - Unexpected errors are written to `crash.log` in the data folder.
 - `BoardScout.exe --system-json` prints the System tab's data; `--connections-json` prints the
-  Connections map (add `--privacy` to mask it as privacy mode does); `--scan` runs a headless scan;
-  `--check-drivers` also checks drivers.
+  Connections map with network names (add `--privacy` to mask it as privacy mode does, `--sweep` to
+  search the network like *Find more devices*); `--scan` runs a headless scan; `--check-drivers` also
+  checks drivers.
 - Topology, Connections, and System need the Microsoft Edge WebView2 Runtime (built into Windows 11
   and current Windows 10). Without it those views say so; the rest works.
 - A drive with no temperature on Connections is normal: without administrator rights, Windows

@@ -31,8 +31,8 @@ internal sealed class SystemTelemetryService : IDisposable
     private long _previousNetReceived;
     private bool _hasNetworkBaseline;
     private DateTime _previousSampleUtc = DateTime.UtcNow;
-    private readonly Dictionary<string, (long Sent, long Received)> _interfaceCounters = [];
-    private readonly Dictionary<int, (long Read, long Written)> _diskCounters = [];
+    private readonly Dictionary<string, AdapterSample> _interfaceCounters = [];
+    private readonly Dictionary<int, DiskCounterSample> _diskCounters = [];
     private int[] _diskNumbers = [];
     private DateTime _disksReadUtc = DateTime.MinValue;
 
@@ -63,27 +63,30 @@ internal sealed class SystemTelemetryService : IDisposable
             var cpuUsage = SampleCpu();
             var (memTotal, memAvailable) = SampleMemory();
             var (thermals, fans) = SampleSensors();
-            var (netSent, netReceived, interfaceRates) = SampleNetwork(now, elapsed, detailed);
+            var network = SampleNetwork(now, elapsed, detailed);
+            var disks = SampleDisks(now, elapsed, detailed);
 
             return new SystemTelemetry(
                 cpuUsage, memTotal, memAvailable,
                 thermals, fans,
-                netSent, netReceived,
+                network.SentBytesPerSec, network.ReceivedBytesPerSec,
                 DateTimeOffset.Now)
             {
-                InterfaceRates = interfaceRates,
-                DiskRates = SampleDisks(now, elapsed, detailed)
+                InterfaceRates = network.Rates,
+                InterfaceCounters = network.Counters,
+                DiskRates = disks.Rates,
+                DiskQueues = disks.Queues
             };
         }
     }
 
-    // Cumulative byte counters from each physical disk, read through zero-access handles (no admin needed).
-    private Dictionary<int, LinkRate>? SampleDisks(DateTime now, double elapsed, bool detailed)
+    // Cumulative counters from each physical disk, read through zero-access handles (no admin needed).
+    private (Dictionary<int, LinkRate>? Rates, Dictionary<int, int>? Queues) SampleDisks(DateTime now, double elapsed, bool detailed)
     {
         if (!detailed)
         {
             _diskCounters.Clear();
-            return null;
+            return (null, null);
         }
         if (now - _disksReadUtc > InterfaceRefresh)
         {
@@ -92,14 +95,23 @@ internal sealed class SystemTelemetryService : IDisposable
         }
 
         var rates = new Dictionary<int, LinkRate>();
+        var queues = new Dictionary<int, int>();
         foreach (var number in _diskNumbers)
         {
             if (DeviceTree.DiskCounters(number) is not { } counters) continue;
-            if (_diskCounters.TryGetValue(number, out var previous) && counters.Read >= previous.Read && counters.Written >= previous.Written)
-                rates[number] = new LinkRate((counters.Read - previous.Read) / elapsed, (counters.Written - previous.Written) / elapsed);
+            queues[number] = Math.Max(0, counters.QueueDepth);
+            if (_diskCounters.TryGetValue(number, out var previous) &&
+                counters.BytesRead >= previous.BytesRead && counters.BytesWritten >= previous.BytesWritten)
+            {
+                rates[number] = new LinkRate(
+                    (counters.BytesRead - previous.BytesRead) / elapsed,
+                    (counters.BytesWritten - previous.BytesWritten) / elapsed,
+                    unchecked(counters.Reads - previous.Reads) / elapsed,
+                    unchecked(counters.Writes - previous.Writes) / elapsed);
+            }
             _diskCounters[number] = counters;
         }
-        return rates;
+        return (rates, queues);
     }
 
     private (List<ThermalReading> Thermals, List<FanReading> Fans) SampleSensors()
@@ -254,8 +266,13 @@ internal sealed class SystemTelemetryService : IDisposable
         return (memory.TotalPhysical, memory.AvailablePhysical);
     }
 
-    private (double SentBytesPerSec, double ReceivedBytesPerSec, Dictionary<string, LinkRate>? PerInterface) SampleNetwork(
-        DateTime now, double elapsed, bool detailed)
+    private readonly record struct AdapterSample(long BytesIn, long BytesOut, long PacketsIn, long PacketsOut, long Dropped, long Errors);
+
+    private readonly record struct NetworkSample(
+        double SentBytesPerSec, double ReceivedBytesPerSec,
+        Dictionary<string, LinkRate>? Rates, Dictionary<string, AdapterCounters>? Counters);
+
+    private NetworkSample SampleNetwork(DateTime now, double elapsed, bool detailed)
     {
         try
         {
@@ -275,18 +292,34 @@ internal sealed class SystemTelemetryService : IDisposable
 
             long totalSent = 0, totalReceived = 0;
             var perInterface = detailed ? new Dictionary<string, LinkRate>() : null;
+            var counters = detailed ? new Dictionary<string, AdapterCounters>() : null;
             if (!detailed) _interfaceCounters.Clear();
             foreach (var iface in _interfaces)
             {
                 var stats = iface.GetIPStatistics();
                 totalSent += stats.BytesSent;
                 totalReceived += stats.BytesReceived;
-                if (perInterface is null) continue;
+                if (perInterface is null || counters is null) continue;
+
+                var sample = new AdapterSample(
+                    stats.BytesReceived, stats.BytesSent,
+                    stats.UnicastPacketsReceived + stats.NonUnicastPacketsReceived,
+                    stats.UnicastPacketsSent + stats.NonUnicastPacketsSent,
+                    stats.IncomingPacketsDiscarded + stats.OutgoingPacketsDiscarded,
+                    stats.IncomingPacketsWithErrors + stats.OutgoingPacketsWithErrors);
+                var droppedPerSec = 0d;
                 if (_interfaceCounters.TryGetValue(iface.Id, out var previous))
+                {
                     perInterface[iface.Id] = new LinkRate(
-                        Math.Max(0, stats.BytesReceived - previous.Received) / elapsed,
-                        Math.Max(0, stats.BytesSent - previous.Sent) / elapsed);
-                _interfaceCounters[iface.Id] = (stats.BytesSent, stats.BytesReceived);
+                        Math.Max(0, sample.BytesIn - previous.BytesIn) / elapsed,
+                        Math.Max(0, sample.BytesOut - previous.BytesOut) / elapsed,
+                        Math.Max(0, sample.PacketsIn - previous.PacketsIn) / elapsed,
+                        Math.Max(0, sample.PacketsOut - previous.PacketsOut) / elapsed);
+                    droppedPerSec = Math.Max(0, sample.Dropped + sample.Errors - previous.Dropped - previous.Errors) / elapsed;
+                }
+                counters[iface.Id] = new AdapterCounters(sample.BytesIn, sample.BytesOut, sample.PacketsIn, sample.PacketsOut,
+                    sample.Dropped, sample.Errors, droppedPerSec);
+                _interfaceCounters[iface.Id] = sample;
             }
 
             var rates = _hasNetworkBaseline
@@ -296,12 +329,12 @@ internal sealed class SystemTelemetryService : IDisposable
             _previousNetSent = totalSent;
             _previousNetReceived = totalReceived;
             _hasNetworkBaseline = true;
-            return (rates.Item1, rates.Item2, perInterface);
+            return new NetworkSample(rates.Item1, rates.Item2, perInterface, counters);
         }
         catch
         {
             _interfacesReadUtc = DateTime.MinValue;
-            return (0, 0, null);
+            return new NetworkSample(0, 0, null, null);
         }
     }
 

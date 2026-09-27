@@ -19,10 +19,12 @@ namespace BoardScout.Services;
 /// </summary>
 internal static partial class ConnectionsService
 {
-    public static Task<string> GatherJsonAsync(bool privacy) =>
-        Task.Run(() => JsonSerializer.Serialize(Gather(privacy), BoardScoutJson.Default.ConnectionsSnapshot));
+    /// <summary>Everything read from the PC for one map. Building the map from it again is cheap, so a
+    /// privacy toggle or late-arriving network names do not re-read the hardware.</summary>
+    internal sealed record Capture(
+        DeviceNode? Tree, Dictionary<uint, int> Disks, List<DisplayTarget> Displays, NetworkFacts Network, long CaptureMs, DateTimeOffset At);
 
-    public static ConnectionsSnapshot Gather(bool privacy)
+    public static Capture Read()
     {
         var watch = Stopwatch.StartNew();
         // Reverse DNS and pings can wait on silent hosts, so the network side runs alongside the device walk.
@@ -30,7 +32,12 @@ internal static partial class ConnectionsService
         var tree = DeviceTree.Capture();
         var disks = DeviceTree.DiskNumbers();
         var displays = DeviceTree.DisplayTargets();
-        var builder = new MapBuilder(tree, disks, displays, network.GetAwaiter().GetResult(), privacy);
+        return new Capture(tree, disks, displays, network.GetAwaiter().GetResult(), watch.ElapsedMilliseconds, DateTimeOffset.Now);
+    }
+
+    public static ConnectionsSnapshot Build(Capture capture, bool privacy, DiscoveryResult? discovery)
+    {
+        var builder = new MapBuilder(capture.Tree, capture.Disks, capture.Displays, capture.Network, privacy, discovery);
         var root = builder.Build();
         return new ConnectionsSnapshot
         {
@@ -38,9 +45,21 @@ internal static partial class ConnectionsService
             Notes = builder.Notes,
             Privacy = privacy,
             Elevated = SystemTelemetryService.IsElevated,
-            GatheredMs = watch.ElapsedMilliseconds,
-            GatheredAt = DateTimeOffset.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+            Discovery = discovery is null ? "pending" : "done",
+            GatheredMs = capture.CaptureMs,
+            GatheredAt = capture.At.ToString("HH:mm:ss", CultureInfo.InvariantCulture)
         };
+    }
+
+    public static string ToJson(ConnectionsSnapshot snapshot) =>
+        JsonSerializer.Serialize(snapshot, BoardScoutJson.Default.ConnectionsSnapshot);
+
+    /// <summary>The whole map including network names, for the command line.</summary>
+    public static async Task<string> GatherJsonAsync(bool privacy, bool sweep = false)
+    {
+        var capture = await Task.Run(Read);
+        var discovery = await NetworkDiscovery.RunAsync(capture.Network, CancellationToken.None, sweep);
+        return ToJson(Build(capture, privacy, discovery));
     }
 
     /// <summary>The key the live-rate messages use for a network interface.</summary>
@@ -57,6 +76,7 @@ internal static partial class ConnectionsService
         private readonly Dictionary<uint, int> _disks;
         private readonly List<DisplayTarget> _displays;
         private readonly NetworkFacts _network;
+        private readonly DiscoveryResult? _discovery;
         private readonly bool _privacy;
         private readonly Dictionary<(int Vendor, int Product), (string Vendor, string? Product)> _usbNames;
         private readonly string _cpuName;
@@ -67,12 +87,14 @@ internal static partial class ConnectionsService
         private ConnectionNode? _platform;
         private bool _gpuSensorTaken;
 
-        public MapBuilder(DeviceNode? tree, Dictionary<uint, int> disks, List<DisplayTarget> displays, NetworkFacts network, bool privacy)
+        public MapBuilder(DeviceNode? tree, Dictionary<uint, int> disks, List<DisplayTarget> displays, NetworkFacts network,
+            bool privacy, DiscoveryResult? discovery)
         {
             _tree = tree;
             _disks = disks;
             _displays = displays;
             _network = network;
+            _discovery = discovery;
             _privacy = privacy;
             _cpuName = ReadMachineString(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString") ?? "Processor";
             // Ryzen 4000G/5000G APUs run every CPU PCIe lane at 3.0, even on B550/X570 boards.
@@ -569,10 +591,28 @@ internal static partial class ConnectionsService
             }
             else node.Detail = isWifi ? "Not connected" : "Cable unplugged or link down";
 
+            AddProfileFacts(node, adapter);
             AddAddressFacts(node, adapter);
             if (wifi is not null) AddWifiFacts(node, wifi);
             if (adapter.Up && adapter.Gateways.Count > 0) node.Children.Add(BuildRouter(adapter, wifi));
             return node;
+        }
+
+        // Windows' own name for the network ("Network 5", or the Wi-Fi name) and whether it is Public.
+        private void AddProfileFacts(ConnectionNode node, AdapterFacts adapter)
+        {
+            if (_discovery is null || !Guid.TryParse(adapter.Id, out var id) || !_discovery.Profiles.TryGetValue(id, out var profile)) return;
+            var generic = GenericNetworkName().IsMatch(profile.Name);
+            node.Facts.Insert(1, new("Windows network name", _privacy && !generic ? Hidden : profile.Name));
+            node.Facts.Insert(2, new("Network type", profile.Category switch
+            {
+                "Public" => "Public: Windows hides this PC from other devices here and turns off sharing",
+                "Private" => "Private: other devices here can find this PC and use its shared folders and printers",
+                "Domain" => "Domain: managed by your organization",
+                _ => profile.Category
+            }));
+            if (profile.FirstConnected is { } first)
+                node.Facts.Insert(3, new("First connected", first.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
 
         private void AddAddressFacts(ConnectionNode node, AdapterFacts adapter)
@@ -648,6 +688,24 @@ internal static partial class ConnectionsService
                 node.Name = $"Router · {host}";
                 node.Facts.Add(new("Name", host));
             }
+            RouterIdentity? identity = null;
+            _discovery?.Routers.TryGetValue(key, out identity);
+            // Everything else this PC can see on the same network.
+            var neighbors = (_discovery?.Devices ?? [])
+                .Where(d => !d.Address.Equals(gateway) && !adapter.DnsServers.Contains(d.Address) &&
+                            adapter.IPv4.Any(cidr => NetworkDiscovery.InSubnet(d.Address, cidr)))
+                .ToList();
+            // Each radio heard belongs to the mesh unit (or the router) whose LAN MAC is numerically closest.
+            var units = neighbors.Where(d => d.Mac is not null && LanKind(d, router) == "mesh")
+                .Select(d => (Mac: d.Mac!, Label: d.Address.ToString())).ToList();
+            if (router?.Mac is { } routerMac) units.Add((routerMac, key));
+            var radioOwners = (identity?.Radios ?? []).ToDictionary(r => r.Bssid, r => units
+                .Select(u => (u.Mac, u.Label, Distance: MacDistance(r.Bssid, u.Mac)))
+                .Where(u => u.Distance is <= 16)
+                .OrderBy(u => u.Distance)
+                .Select(u => (u.Mac, u.Label))
+                .FirstOrDefault());
+            if (identity is not null) AddIdentityFacts(node, identity, key, router, radioOwners);
             if (router?.Mac is { } mac) node.Facts.Add(new("MAC address", _privacy ? Hidden : mac));
             if (router?.PingMs is { } latency) node.Facts.Add(new("Round trip", Latency(latency)));
             if (adapter.DhcpServers.Any(d => d.Equals(gateway))) node.Facts.Add(new("Hands out addresses", "Yes (DHCP)"));
@@ -697,10 +755,173 @@ internal static partial class ConnectionsService
                     if (hostName.Contains("pi.hole", StringComparison.OrdinalIgnoreCase))
                         server.Facts.Add(new("Looks like", "Pi-hole (network-wide ad blocking)"));
                 }
+                if (_discovery?.Devices.FirstOrDefault(d => d.Address.Equals(dns)) is { } seen)
+                {
+                    if (seen.Vendor is not null) server.Facts.Add(new("Hardware maker", $"{seen.Vendor} (from its MAC address)"));
+                    if (seen.Name is not null && !_privacy) server.Facts.Add(new("Calls itself", $"{seen.Name} ({seen.NameSource})"));
+                }
                 (local ? node : internet).Children.Add(server);
+            }
+
+            if (neighbors.Count > 0)
+            {
+                var group = new ConnectionNode
+                {
+                    Id = $"lan-{ShortHash(key)}",
+                    Kind = "lan-group",
+                    Name = "Devices on your network",
+                    Detail = neighbors.Count == 1 ? "1 device found" : $"{neighbors.Count} devices found",
+                    Link = new ConnectionLink { Bus = "lan", Label = "Your local network", Short = "LAN" },
+                    Facts =
+                    {
+                        new("Found through", "This PC's list of recent neighbors, plus devices that answered multicast DNS or UPnP"),
+                        new("Names from", "Multicast DNS, NetBIOS, UPnP, and your DNS server"),
+                        new("Makers from", "The first half of each device's MAC address (IEEE registry)"),
+                        new("Not listed", "Devices this PC has not talked to lately and that stay quiet; Find more devices pings every address to list them")
+                    }
+                };
+                foreach (var device in neighbors) group.Children.Add(BuildLanDevice(device, router, identity, radioOwners));
+                node.Children.Add(group);
             }
             return node;
         }
+
+        private void AddIdentityFacts(ConnectionNode node, RouterIdentity identity, string address, RouterFacts? router,
+            Dictionary<string, (string Mac, string Label)> radioOwners)
+        {
+            if (identity.DisplayName is { } model)
+            {
+                node.Name = model;
+                node.Facts.Insert(0, new("Model", model));
+                if (identity.NameSource is { } source) node.Facts.Insert(1, new("Identified from", source));
+            }
+            if (identity.DeviceName is { } deviceName && !_privacy) node.Facts.Add(new("Calls itself", deviceName));
+            if (identity.MacVendor is not null) node.Facts.Add(new("Network card maker", identity.MacVendor));
+            if (identity.CertificateName is not null) node.Facts.Add(new("Web interface", $"https://{identity.CertificateName}"));
+            if (identity.Ssids.Count > 0)
+                node.Facts.Add(new("Wi-Fi it broadcasts", _privacy ? Hidden : string.Join(", ", identity.Ssids)));
+            if (identity.Radios.Count > 0)
+            {
+                node.Facts.Add(new("Access points in range", identity.UnitsInRange.ToString(CultureInfo.InvariantCulture)));
+                node.Facts.Add(new("Radios heard from here", string.Join(", ", identity.Radios.Take(8).Select(r =>
+                    $"{NetworkProbe.Band(r.FrequencyMhz, null)} {r.RssiDbm} dBm{(r.GatewayUnit ? " (this router)" : "")}"))));
+                var nearest = identity.Radios[0];
+                if (identity.UnitsInRange > 1)
+                {
+                    var owner = radioOwners.GetValueOrDefault(nearest.Bssid);
+                    var which = nearest.GatewayUnit || owner.Label == address ? ": the router unit itself."
+                        : owner.Label is not null ? $": the unit at {owner.Label}."
+                        : ", a mesh unit rather than the router itself.";
+                    node.Note = $"Your network is a mesh: {identity.UnitsInRange} access points are in range of this PC. " +
+                        $"The strongest signal here is {SignalWord(nearest.RssiDbm)} ({nearest.RssiDbm} dBm, {NetworkProbe.Band(nearest.FrequencyMhz, null)}){which}";
+                }
+            }
+            var parts = new List<string> { address };
+            if (router?.PingMs is { } ping) parts.Add(Latency(ping));
+            if (identity.UnitsInRange > 1) parts.Add($"mesh · {identity.UnitsInRange} units");
+            node.Detail = string.Join(" · ", parts);
+        }
+
+        private ConnectionNode BuildLanDevice(LanDevice device, RouterFacts? router, RouterIdentity? identity,
+            Dictionary<string, (string Mac, string Label)> radioOwners)
+        {
+            var kind = LanKind(device, router);
+            var octet = device.Address.GetAddressBytes()[3];
+            // A model ("Xbox One") names the device well without saying whose it is. Mesh units are named
+            // after the router model they belong to.
+            var generic = device.Model ?? (kind == "mesh" && identity?.Model is { } model ? $"{model} unit" : LanKindName(kind, device.Vendor));
+            var node = new ConnectionNode
+            {
+                Id = $"lan-{ShortHash(device.Mac ?? device.Address.ToString())}",
+                Kind = kind,
+                Name = device.Name is not null && !_privacy ? device.Name : generic,
+                Detail = string.Join(" · ", new[]
+                {
+                    device.Address.ToString(),
+                    device.Vendor ?? (device.RandomMac ? "private address" : null)
+                }.Where(s => s is not null)),
+                Link = new ConnectionLink { Bus = "lan", Label = "Your local network", Short = $".{octet}" }
+            };
+            node.Facts.Add(new("Address", device.Address.ToString()));
+            if (device.Name is not null) node.Facts.Add(new("Calls itself", _privacy ? Hidden : $"{device.Name} (from {device.NameSource})"));
+            if (device.Model is not null) node.Facts.Add(new("Model", device.Model));
+            if (device.Vendor is not null) node.Facts.Add(new("Made by", device.Mac is null ? device.Vendor : $"{device.Vendor} (from its MAC address)"));
+            if (device.RandomMac)
+                node.Facts.Add(new("Private address", "It uses a random or locally assigned MAC address (phones, tablets, laptops, and virtual machines do), so its maker can't be looked up."));
+            if (device.Mac is not null) node.Facts.Add(new("MAC address", _privacy ? Hidden : device.Mac));
+
+            // A mesh unit's Wi-Fi radios have BSSIDs right next to its LAN MAC: that tells how well this PC hears it.
+            if (kind == "mesh" && identity is not null && device.Mac is not null)
+            {
+                var near = identity.Radios.Where(r => radioOwners.TryGetValue(r.Bssid, out var owner) &&
+                    string.Equals(owner.Mac, device.Mac, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (near.Count > 0)
+                {
+                    var best = near.MaxBy(r => r.RssiDbm)!;
+                    node.Facts.Add(new("Its Wi-Fi here", string.Join(", ", near.Select(r => $"{NetworkProbe.Band(r.FrequencyMhz, null)} {r.RssiDbm} dBm"))));
+                    node.Detail = $"{node.Detail} · {SignalWord(best.RssiDbm)} signal";
+                    if (identity.Radios.Count > 0 && best.RssiDbm == identity.Radios.Max(r => r.RssiDbm))
+                        node.Note = "This is the access point closest to this PC.";
+                }
+            }
+            return node;
+        }
+
+        // How far apart two MAC addresses are as numbers, when their first four bytes match.
+        private static int? MacDistance(string a, string b)
+        {
+            var x = Convert.FromHexString(new string(a.Where(char.IsAsciiHexDigit).ToArray()));
+            var y = Convert.FromHexString(new string(b.Where(char.IsAsciiHexDigit).ToArray()));
+            if (x.Length != 6 || y.Length != 6 || !x.AsSpan(0, 4).SequenceEqual(y.AsSpan(0, 4))) return null;
+            return Math.Abs(((x[4] << 8) | x[5]) - ((y[4] << 8) | y[5]));
+        }
+
+        private static string LanKind(LanDevice device, RouterFacts? router)
+        {
+            var text = $"{device.Name} {device.Model} {device.Vendor}";
+            // Mesh units share the router's MAC block (same first four bytes), unlike other gadgets from its maker.
+            if (router?.Mac is { } routerMac && device.Mac is { } mac && !device.RandomMac &&
+                string.Equals(mac[..11], routerMac[..11], StringComparison.OrdinalIgnoreCase))
+                return "mesh";
+            if (Regex.IsMatch(text, @"Raspberry|pihole|pi-hole", RegexOptions.IgnoreCase)) return "pi";
+            if (Regex.IsMatch(text, @"\bTV\b|TV$|Cast|Roku|Fire ?TV|Bravia|webOS|Tizen|Vizio|Hisense|TCL|Shield", RegexOptions.IgnoreCase)) return "tv";
+            if (Regex.IsMatch(text, @"Xbox|PlayStation|PS[345]\b|Nintendo|Switch", RegexOptions.IgnoreCase)) return "console";
+            if (Regex.IsMatch(text, @"Sonos|Echo|Alexa|Amazon|Google|Nest|Bose|HomePod|Speaker", RegexOptions.IgnoreCase)) return "speaker";
+            if (Regex.IsMatch(text, @"Ring|Wyze|Arlo|Reolink|Hikvision|Eufy|Camera|Cam\b", RegexOptions.IgnoreCase)) return "camera";
+            if (Regex.IsMatch(text, @"Printer|Brother|Epson|Canon|LaserJet|OfficeJet|DeskJet", RegexOptions.IgnoreCase)) return "printer";
+            if (Regex.IsMatch(text, @"Espressif|Tuya|Shelly|Sonoff|Kasa|Wemo|Philips Lighting|Signify|LIFX|Wiz\b|smart ?plug", RegexOptions.IgnoreCase)) return "iot";
+            if (Regex.IsMatch(text, @"iPhone|iPad|Galaxy|Pixel|Android|Phone", RegexOptions.IgnoreCase)) return "phone";
+            if (Regex.IsMatch(text, @"pbx|server|\bnas\b|proxmox|truenas|unraid|docker|\bvm\b|ubuntu|debian", RegexOptions.IgnoreCase)) return "server";
+            if (Regex.IsMatch(text, @"Micro-Star|ASUSTek|\bDell\b|Hewlett|Lenovo|\bIntel\b|Gigabyte|ASRock|Synology|QNAP|\bPC\b|Desktop|Laptop|Windows", RegexOptions.IgnoreCase)) return "pc";
+            // A random MAC with no name: almost always a phone, tablet, or laptop with privacy addressing on.
+            if (device.RandomMac && device.Name is null) return "phone";
+            return "device";
+        }
+
+        private static string LanKindName(string kind, string? vendor) => kind switch
+        {
+            "mesh" => vendor is null ? "Mesh access point" : $"{vendor} access point",
+            "pi" => "Raspberry Pi",
+            "tv" => vendor is null ? "TV or streaming device" : $"{vendor} TV or streamer",
+            "console" => vendor is null ? "Game console" : $"{vendor} game console",
+            "speaker" => vendor is null ? "Smart speaker or display" : $"{vendor} smart device",
+            "camera" => vendor is null ? "Camera" : $"{vendor} camera",
+            "printer" => vendor is null ? "Printer" : $"{vendor} printer",
+            "iot" => vendor is null ? "Smart home device" : $"{vendor} smart device",
+            "phone" => "Phone, tablet, or laptop",
+            "server" => "Server",
+            "pc" => vendor is null ? "Computer" : $"{vendor} computer",
+            _ => vendor is null ? "Device" : $"{vendor} device"
+        };
+
+        private static string SignalWord(int rssi) => rssi switch
+        {
+            >= -50 => "excellent",
+            >= -60 => "very good",
+            >= -70 => "good",
+            >= -80 => "fair",
+            _ => "weak"
+        };
 
         private static ConnectionLink RouterLink(AdapterFacts adapter, WifiFacts? wifi)
         {
@@ -1137,6 +1358,10 @@ internal static partial class ConnectionsService
 
         [GeneratedRegex(@"Wi-?Fi|Wireless|WLAN|802\.11", RegexOptions.IgnoreCase)]
         private static partial Regex WirelessName();
+
+        // Names Windows makes up ("Network", "Network 5"); anything else may be a Wi-Fi name.
+        [GeneratedRegex(@"^(Unidentified network|Network( \d+)?)$", RegexOptions.IgnoreCase)]
+        private static partial Regex GenericNetworkName();
 
         [GeneratedRegex(@"^(Generic\s+)?(USB\s*)?(\d\.\d\s*)?(Receiver|(SuperSpeed\s+)?(USB\s+)?Hub|Composite Device|Input Device|Device|Mass Storage( Device)?|Storage|Keyboard|Mouse|Gamepad|Controller)$", RegexOptions.IgnoreCase)]
         private static partial Regex GenericUsbName();

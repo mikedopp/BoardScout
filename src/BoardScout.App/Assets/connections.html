@@ -17,8 +17,9 @@ body{color:var(--t);font-family:'Segoe UI',system-ui,sans-serif;overflow:auto;
     var(--s);
   background-attachment:fixed}
 button{font:inherit;color:inherit}
-#head{position:sticky;top:0;left:0;z-index:6;display:flex;align-items:flex-start;gap:16px;padding:14px 22px 10px;
-  background:linear-gradient(180deg,rgba(12,22,32,.94),rgba(12,22,32,.78) 70%,rgba(12,22,32,0));pointer-events:none}
+#head{position:sticky;top:0;left:0;z-index:6;display:flex;align-items:flex-start;gap:16px;padding:14px 22px 14px;
+  background:linear-gradient(180deg,rgba(12,22,32,.98),rgba(12,22,32,.95) 88%,rgba(12,22,32,0));
+  backdrop-filter:blur(8px);pointer-events:none}
 #head > *{pointer-events:auto}
 #head .titles{flex:1;min-width:0}
 #head h1{font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--tm)}
@@ -131,7 +132,9 @@ const KIND={cpu:'Processor',chipset:'Chipset',integrated:'Inside the CPU',gpu:'G
   receiver:'Wireless receiver',gamepad:'Game controller',audio:'Audio',capture:'Video capture',rgb:'RGB lighting',keyboard:'Keyboard',
   mouse:'Mouse',input:'Input device',printer:'Printer',serial:'Serial adapter',usb:'USB device',bluetooth:'Bluetooth radio',
   'bt-device':'Bluetooth device',ethernet:'Ethernet adapter',wifi:'Wi-Fi adapter',router:'Router',internet:'Internet',dns:'DNS server',
-  'virtual-group':'Software adapters',virtual:'Software adapter',device:'Device'};
+  'virtual-group':'Software adapters',virtual:'Software adapter',device:'Device','lan-group':'Your local network',mesh:'Mesh access point',
+  tv:'TV or streamer',console:'Game console',pc:'Computer',phone:'Phone, tablet, or laptop',pi:'Raspberry Pi',speaker:'Smart speaker',
+  camera:'Camera',iot:'Smart home device',server:'Server'};
 // Hand-drawn 24×24 line icons.
 const ICON={
   cpu:'M7 7h10v10H7zM10 10h4v4h-4zM9 3v4M12 3v4M15 3v4M9 17v4M12 17v4M15 17v4M3 9h4M3 12h4M3 15h4M17 9h4M17 12h4M17 15h4',
@@ -166,11 +169,23 @@ const ICON={
   dns:'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
   'virtual-group':'M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-1 9z',
   virtual:'M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-1 9z',
-  device:'M6 6h12v12H6zM10 10h4v4h-4z'
+  device:'M6 6h12v12H6zM10 10h4v4h-4z',
+  'lan-group':'M12 3v5M5 13v-3h14v3M12 8v2M3 13h4v4H3zM10 13h4v4h-4zM17 13h4v4h-4z',
+  mesh:'M12 20a8 8 0 0 0 0-16a8 8 0 0 0 0 16zM12 15a3 3 0 1 0 0-6a3 3 0 1 0 0 6zM12 4v2M12 18v2M4 12h2M18 12h2',
+  tv:'M3 5h18v11H3zM8 20h8M12 16v4',
+  console:'M6 8h12a4 4 0 0 1 4 4l-1 5a2 2 0 0 1-3.5 1L15 16H9l-2.5 2A2 2 0 0 1 3 17l-1-5a4 4 0 0 1 4-4zM7 11v3M5.5 12.5h3M16 11h.01M18 13h.01',
+  pc:'M4 4h16v11H4zM2 19h20M9 15v4M15 15v4',
+  phone:'M8 2h8a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2',
+  pi:'M5 6h14v12H5zM8 9h3v3H8zM14 9h2M14 12h2M8 15h8',
+  speaker:'M7 3h10v18H7zM12 16m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M12 7h.01',
+  camera:'M3 8h4l2-3h6l2 3h4v11H3zM12 13.5m-3.5 0a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0',
+  iot:'M12 3v3M12 18v3M3 12h3M18 12h3M7 7h10v10H7zM10 10h4v4h-4z',
+  server:'M4 4h16v5H4zM4 11h16v5H4zM7 6.5h.01M7 13.5h.01M8 20h8'
 };
 const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=18,SPINE=64,COL_INSET=30;
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
-  history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0};
+  history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
+  speed:null,discoveryBusy:false,sweepBusy:false};
 
 const post=m=>window.chrome?.webview?.postMessage(m);
 const $=id=>document.getElementById(id);
@@ -184,6 +199,28 @@ function fmtRate(b){
   if(b>=1048576)return (b/1048576).toFixed(b>=104857600?0:1)+' MB/s';
   if(b>=1024)return Math.round(b/1024)+' KB/s';
   return Math.round(b)+' B/s';
+}
+// Network speeds are quoted in bits per second, like link speeds and Internet plans.
+function fmtBits(bytes){
+  const b=(bytes||0)*8;
+  if(b>=1e9)return (b/1e9).toFixed(2)+' Gbps';
+  if(b>=1e6)return (b/1e6).toFixed(b>=1e8?0:1)+' Mbps';
+  if(b>=1e3)return Math.round(b/1e3)+' Kbps';
+  return Math.round(b)+' bps';
+}
+function fmtCount(n){
+  n=n||0;
+  if(n>=1e6)return (n/1e6).toFixed(1)+'M';
+  if(n>=1e4)return Math.round(n/1e3)+'k';
+  if(n>=1e3)return (n/1e3).toFixed(1)+'k';
+  return String(Math.round(n));
+}
+function fmtBytes(n){
+  n=n||0;
+  if(n>=1e12)return (n/1e12).toFixed(2)+' TB';
+  if(n>=1e9)return (n/1e9).toFixed(1)+' GB';
+  if(n>=1e6)return (n/1e6).toFixed(0)+' MB';
+  return Math.round(n/1e3)+' KB';
 }
 
 // ---- Layout ------------------------------------------------------------------------------
@@ -455,8 +492,12 @@ function fit(text,max){
 function renderSummary(){
   const data=state.data,box=$('summary');box.replaceChildren();
   const all=[...state.nodes.values()];
-  const devices=all.filter(n=>!['cpu','chipset','integrated','platform','virtual-group','router','internet','dns'].includes(n.kind)).length;
+  const devices=all.filter(n=>!['cpu','chipset','integrated','platform','virtual-group','router','internet','dns','lan-group'].includes(n.kind)).length;
   box.append(el('span','pill',`${devices} devices`));
+  const router=all.find(n=>n.kind==='router'&&n.facts?.some(f=>f.label==='Model'));
+  if(router){const p=el('span','pill note','Router: '+router.name);p.style.cursor='pointer';p.onclick=()=>{select(router.id,true);scrollToNode(router.id)};box.append(p)}
+  if(data.discovery!=='done'||state.discoveryBusy)
+    box.append(el('span','pill',state.sweepBusy?'Pinging every address on your network…':'Looking up router, network, and device names…'));
   for(const n of all.filter(n=>n.warning||n.problem)){
     const text=n.link?.degraded?`${n.name} · ${n.link.short} of ${(n.link.max||'').replace(/^PCIe |^USB 3\.2 /,'')}`:n.name;
     const p=el('span','pill warn','⚠ '+text);
@@ -465,7 +506,7 @@ function renderSummary(){
   }
   for(const note of data.notes||[])box.append(el('span','pill note',note));
   box.append(el('span','pill',`Updated ${data.gatheredAt} · read in ${data.gatheredMs} ms`));
-  if(data.privacy)box.append(el('span','pill','Privacy on: MAC addresses, Wi-Fi names, IPv6, and the public IP are hidden'));
+  if(data.privacy)box.append(el('span','pill','Privacy on: MAC addresses, Wi-Fi and device names, IPv6, and the public IP are hidden'));
 }
 
 function scrollToNode(id){
@@ -488,13 +529,33 @@ function ratesOf(n,flow){
   return [rin,rout];
 }
 
+// A card's own packets (network) or operations (disk) per second, and its counters since Windows started.
+function countersOf(n,flow){
+  const net=n.net?flow.net?.[n.net]:null;
+  if(net)return {kind:'net',opsIn:net[2]||0,opsOut:net[3]||0,dropRate:net[4]||0,
+    totalIn:net[5],totalOut:net[6],packetsIn:net[7],packetsOut:net[8],dropped:net[9],errors:net[10]};
+  const disk=n.disk!=null?flow.disk?.[n.disk]:null;
+  if(disk)return {kind:'disk',opsIn:disk[2]||0,opsOut:disk[3]||0,queue:disk[4]||0};
+  return null;
+}
+
 function liveText(n){
   const rin=n.rin||0,rout=n.rout||0;
   if(rin+rout<1024)return null;
   if(n.kind==='cpu')return null;
   if(AGGREGATE.has(n.kind))return `⇅ ${fmtRate(rin+rout)}`;
-  if(n.disk!=null&&!n.net)return `Read ${fmtRate(rin)} · Write ${fmtRate(rout)}`;
-  return `↓ ${fmtRate(rin)} · ↑ ${fmtRate(rout)}`;
+  const c=n.counters;
+  if(c?.kind==='disk')return `Read ${fmtRate(rin)} · Write ${fmtRate(rout)}`;
+  if(c?.kind==='net')return `↓ ${fmtBits(rin)} · ↑ ${fmtBits(rout)}`;
+  return `⇅ ${fmtRate(rin+rout)}`;
+}
+
+// Packets per second (network) or operations per second (disk), for the chip on a card's first line.
+function opsText(n){
+  const c=n.counters;if(!c)return '';
+  const ops=(c.opsIn||0)+(c.opsOut||0);
+  if(ops<1)return '';
+  return c.kind==='net'?`${fmtCount(ops)} pkt/s`:`${fmtCount(ops)} IOPS`;
 }
 
 function applyFlow(){
@@ -503,6 +564,7 @@ function applyFlow(){
   for(const n of state.nodes.values()){
     const [rin,rout]=ratesOf(n,flow);
     n.rin=rin;n.rout=rout;
+    n.counters=countersOf(n,flow);
     const h=state.history.get(n.id)||[];h.push([rin,rout]);if(h.length>60)h.shift();state.history.set(n.id,h);
     const card=document.getElementById('c-'+n.id);if(!card)continue;
     const p=state.pos.get(n.id);
@@ -516,6 +578,7 @@ function applyFlow(){
     if(n.sensor&&flow.temps?.[n.sensor]!=null)n.tempC=flow.temps[n.sensor];
     if(n.tempC!=null)chip(d3.select(card).select('.tchip'),Math.round(n.tempC)+'°',tempColor(n,n.tempC),p.w-10,p.h/2-17);
     if(n.kind==='cpu'&&flow.cpu!=null)chip(d3.select(card).select('.uchip'),Math.round(flow.cpu)+'% load','#3d9eff',p.w-10,p.h/2-17);
+    else if(n.counters)chip(d3.select(card).select('.uchip'),showLive?opsText(n):'','#2dd4bf',p.w-10,p.h/2-17);
     fitCard(card,n,p);
   }
   for(const link of state.links){
@@ -630,13 +693,16 @@ function select(id,user){
   }
 
   if(hasFlow(n)){
-    const s=el('div','sec');s.append(el('h3',null,n.disk!=null?'Disk activity':'Live traffic'));
+    const s=el('div','sec');s.append(el('h3',null,n.disk!=null&&!n.net?'Disk activity':'Live traffic'));
     const live=el('div','live');live.id='live';s.append(live);
+    const ops=el('div','live');ops.id='ops';s.append(ops);
     const canvas=el('canvas');canvas.id='spark';s.append(canvas);
     const use=el('div','d');use.id='use';s.append(use);
+    const totals=el('table');totals.id='totals';totals.style.marginTop='8px';s.append(totals);
     insp.append(s);
   }
-  if(n.kind==='internet')insp.append(wanSection(n));
+  if(n.kind==='internet'){insp.append(speedSection());insp.append(wanSection(n))}
+  if(n.kind==='router'||n.kind==='lan-group')insp.append(lanScanSection());
 
   if(n.facts?.length){
     const s=el('div','sec');s.append(el('h3',null,'Details'));
@@ -672,6 +738,55 @@ function closeInspector(user){
   syncGlass();
 }
 
+// ---- Internet speed test and device search -------------------------------------------------
+
+function speedSection(){
+  const s=el('div','sec');s.append(el('h3',null,'Internet speed'));
+  const box=el('div');box.id='speed';s.append(box);
+  fillSpeed(box);
+  return s;
+}
+
+function fillSpeed(box){
+  box.replaceChildren();
+  const sp=state.speed;
+  if(sp&&sp.running){
+    const phase={latency:'Measuring latency…',download:'Testing download…',upload:'Testing upload…'}[sp.phase]||'Starting…';
+    const big=el('div',null,sp.mbps!=null?`${sp.mbps} Mbps`:'…');big.style.cssText='font-size:28px;font-weight:600;margin:4px 0';
+    box.append(el('div','d',phase),big);
+    const stop=el('button','btn','Stop');stop.onclick=()=>post({type:'speedcancel'});box.append(stop);
+    return;
+  }
+  if(sp?.result){
+    const r=sp.result,t=el('table');
+    const rows=[['Download',`${r.downMbps} Mbps`],['Upload',`${r.upMbps} Mbps`],['Latency',r.latencyMs!=null?`${r.latencyMs} ms (jitter ${r.jitterMs} ms)`:null],
+      ['Data used',r.usedMB!=null?`${r.usedMB} MB`:null],['Server',r.edge?`Cloudflare ${r.edge}`:'Cloudflare'],['Tested',r.checkedAt]];
+    for(const [k,v] of rows){if(!v)continue;const tr=el('tr');tr.append(el('td',null,k),el('td',null,v));t.append(tr)}
+    box.append(t);
+    // Compare with the local link: is the Internet or the cable the bottleneck?
+    const router=[...state.nodes.values()].find(n=>n.kind==='router'&&n.link?.gbps);
+    if(router?.link?.gbps&&r.downMbps!=null){
+      const link=router.link.gbps*1000;
+      box.append(el('div','d',r.downMbps<link*0.8?`Your ${router.link.short} connection to the router is faster than your Internet service, so the Internet is the limit.`
+        :`Your Internet is nearly as fast as your ${router.link.short} connection to the router; that link is the limit.`));
+    }
+  }else if(sp?.error)box.append(el('div','callout warn',sp.error));
+  const btn=el('button','btn primary',sp?.result?'Test again':'Test my Internet speed');btn.style.marginTop='8px';
+  btn.onclick=()=>{state.speed={running:true,phase:'latency'};fillSpeed(box);post({type:'speedtest'})};
+  box.append(btn);
+  box.append(el('div','wanbox','Downloads and uploads test data from Cloudflare (speed.cloudflare.com) for up to about 12 seconds: at most 400 MB down '+
+    'and 150 MB up on very fast connections, far less on slower ones. Watch the dots race along the path while it runs. BoardScout never runs it on its own.'));
+}
+
+function lanScanSection(){
+  const s=el('div','sec');s.append(el('h3',null,'Find more devices'));
+  const btn=el('button','btn',state.sweepBusy?'Looking…':'Find more devices');btn.id='lanscan';btn.disabled=!!state.sweepBusy;
+  btn.onclick=()=>{state.sweepBusy=true;state.discoveryBusy=true;btn.disabled=true;btn.textContent='Looking…';renderSummary();post({type:'lanscan'})};
+  s.append(btn);
+  s.append(el('div','wanbox','Pings every address on your local network (a few seconds) so every device that is switched on shows up, then asks each one for its name. Nothing leaves your network.'));
+  return s;
+}
+
 function wanSection(n){
   const s=el('div','sec');s.append(el('h3',null,'Public IP address'));
   const box=el('div');box.id='wan';s.append(box);
@@ -699,11 +814,36 @@ function fillWan(box){
 
 function updateLive(){
   const n=state.nodes.get(state.selected);const live=$('live');if(!n||!live)return;
-  const isDisk=n.disk!=null&&!n.net;
+  const c=n.counters;
+  const isDisk=c?.kind==='disk'||(n.disk!=null&&!n.net);
+  const isNet=c?.kind==='net';
+  const speed=v=>isNet?fmtBits(v):fmtRate(v);
   live.replaceChildren();
-  const a=el('span');a.append(isDisk?'Read ':'Down ',el('b',null,fmtRate(n.rin||0)));
-  const b=el('span');b.append(isDisk?'Write ':'Up ',el('b',null,fmtRate(n.rout||0)));
+  const a=el('span');a.append(isDisk?'Read ':'Down ',el('b',null,speed(n.rin||0)));
+  const b=el('span');b.append(isDisk?'Write ':'Up ',el('b',null,speed(n.rout||0)));
   live.append(a,b);
+  const ops=$('ops');
+  if(ops){
+    ops.replaceChildren();
+    if(isNet){
+      ops.append(el('span',null,`${fmtCount(c.opsIn)} packets/s in`),el('span',null,`${fmtCount(c.opsOut)} out`));
+      if(c.dropRate>0){const d=el('span',null,`${c.dropRate} discarded/s`);d.style.color='var(--ts)';ops.append(d)}
+    }else if(isDisk){
+      ops.append(el('span',null,`${fmtCount(c.opsIn)} reads/s`),el('span',null,`${fmtCount(c.opsOut)} writes/s`),
+        el('span',null,c.queue>0?`${c.queue} waiting`:'queue empty'));
+    }
+  }
+  const totals=$('totals');
+  if(totals){
+    totals.replaceChildren();
+    if(isNet&&c.totalIn!=null){
+      const row=(k,v)=>{const tr=el('tr');tr.append(el('td',null,k),el('td',null,v));totals.append(tr)};
+      row('Received since the adapter connected',`${fmtBytes(c.totalIn)} · ${fmtCount(c.packetsIn)} packets`);
+      row('Sent since the adapter connected',`${fmtBytes(c.totalOut)} · ${fmtCount(c.packetsOut)} packets`);
+      row('Packets with errors',c.errors?`${fmtCount(c.errors)}: a bad cable, port, or Wi-Fi interference can cause these`:'None');
+      row('Discarded',c.dropped?`${fmtCount(c.dropped)}: normal in small numbers (broadcasts for protocols this PC doesn't use)`:'None');
+    }
+  }
   const use=$('use');
   if(use){
     const bps=((n.rin||0)+(n.rout||0))*8;
@@ -756,7 +896,12 @@ window.chrome?.webview?.addEventListener('message',e=>{
   const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
   if(!msg)return;
   if(msg.type==='settings')applySettings(msg);
-  else if(msg.type==='connections'&&msg.data){state.data=msg.data;$('refresh').disabled=false;$('refresh').textContent='Refresh';render()}
+  else if(msg.type==='connections'&&msg.data){
+    state.data=msg.data;
+    if(msg.data.discovery==='done'){state.discoveryBusy=false;state.sweepBusy=false}
+    $('refresh').disabled=false;$('refresh').textContent='Refresh';
+    render();
+  }
   else if(msg.type==='flow'){state.flow=msg;applyFlow()}
   else if(msg.type==='wan'){
     state.wanBusy=false;state.wan=msg;
@@ -765,6 +910,13 @@ window.chrome?.webview?.addEventListener('message',e=>{
     const box=$('wan');if(box)fillWan(box);
   }
   else if(msg.type==='busy'){$('refresh').disabled=true;$('refresh').textContent='Reading…'}
+  else if(msg.type==='discovery'){state.discoveryBusy=true;state.sweepBusy=!!msg.sweep;if(state.data)renderSummary()}
+  else if(msg.type==='speed'){
+    if(msg.phase==='done')state.speed={result:msg};
+    else if(msg.phase==='error')state.speed={error:msg.error};
+    else state.speed={running:true,phase:msg.phase,mbps:msg.mbps};
+    const box=$('speed');if(box)fillSpeed(box);
+  }
 });
 $('refresh').onclick=()=>{$('refresh').disabled=true;$('refresh').textContent='Reading…';post({type:'refresh'})};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.selected)closeInspector(true)});

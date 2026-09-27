@@ -30,7 +30,13 @@ public sealed class MainForm : Form
     private bool _connectionsStale = true;
     private bool _connectionsLoading;
     private bool _connectionsReloadQueued;
+    private bool _rediscoverQueued;
+    private bool _sweepQueued;
+    private ConnectionsService.Capture? _connectionsCapture;
+    private DiscoveryResult? _discovery;
+    private string? _discoveryGateways;
     private CancellationTokenSource? _wanLookupCts;
+    private CancellationTokenSource? _speedTestCts;
     private readonly System.Windows.Forms.Timer _deviceChangeTimer = new() { Interval = 1500 };
     private readonly Dictionary<string, string> _netKeys = [];
     private readonly List<(TabPage Page, WebView2 View)> _webTabs = [];
@@ -137,6 +143,7 @@ public sealed class MainForm : Form
             _telemetryCts?.Cancel();
             _telemetryService.Dispose();
             _wanLookupCts?.Cancel();
+            _speedTestCts?.Cancel();
             NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
             _deviceChangeTimer.Dispose();
             _topologyWebView.Dispose();
@@ -535,11 +542,15 @@ public sealed class MainForm : Form
 
     private bool ConnectionsVisible => _connectionsPage is not null && _tabs.SelectedTab == _connectionsPage && Visible;
 
-    private async Task LoadConnectionsAsync()
+    // Reads the hardware and network (fast), shows the map, then looks up router, network, and device names
+    // in the background (a few seconds) and shows the map again with them. Names are reused for two minutes.
+    private async Task LoadConnectionsAsync(bool rediscover = false, bool sweep = false)
     {
         if (_connectionsLoading)
         {
             _connectionsReloadQueued = true;
+            _rediscoverQueued |= rediscover || sweep;
+            _sweepQueued |= sweep;
             return;
         }
         _connectionsLoading = true;
@@ -548,12 +559,26 @@ public sealed class MainForm : Form
             do
             {
                 _connectionsReloadQueued = false;
-                if (_connectionsReady) _connectionsWebView.CoreWebView2.PostWebMessageAsJson("{\"type\":\"busy\"}");
-                var json = await ConnectionsService.GatherJsonAsync(Privacy.Enabled);
+                rediscover |= _rediscoverQueued;
+                sweep |= _sweepQueued;
+                _rediscoverQueued = _sweepQueued = false;
+                PostToConnections("{\"type\":\"busy\"}");
+                var capture = await Task.Run(ConnectionsService.Read);
                 if (IsDisposed) return;
-                _connectionsPayload = $"{{\"type\":\"connections\",\"data\":{json}}}";
+                _connectionsCapture = capture;
                 _connectionsStale = false;
-                if (_connectionsReady) _connectionsWebView.CoreWebView2.PostWebMessageAsJson(_connectionsPayload);
+                var gateways = string.Join(",", capture.Network.Routers.Keys.Order());
+                var fresh = _discovery is not null && !rediscover && !sweep && _discoveryGateways == gateways &&
+                            DateTimeOffset.Now - _discovery.At < TimeSpan.FromMinutes(2);
+                PostConnectionsMap(fresh ? _discovery : null);
+                if (fresh) continue;
+
+                PostToConnections(sweep ? "{\"type\":\"discovery\",\"sweep\":true}" : "{\"type\":\"discovery\"}");
+                if (sweep) AppendLog("CONNECTIONS: pinging every address on the local network to find devices, at your request.");
+                _discovery = await NetworkDiscovery.RunAsync(capture.Network, CancellationToken.None, sweep);
+                _discoveryGateways = gateways;
+                if (IsDisposed) return;
+                if (ReferenceEquals(_connectionsCapture, capture)) PostConnectionsMap(_discovery);
             }
             while (_connectionsReloadQueued && !IsDisposed);
         }
@@ -567,6 +592,50 @@ public sealed class MainForm : Form
         }
     }
 
+    // Builds the map from what was last read, with the current privacy setting (a privacy toggle needs no new read).
+    private void PostConnectionsMap(DiscoveryResult? discovery)
+    {
+        if (_connectionsCapture is null) return;
+        var json = ConnectionsService.ToJson(ConnectionsService.Build(_connectionsCapture, Privacy.Enabled, discovery));
+        _connectionsPayload = $"{{\"type\":\"connections\",\"data\":{json}}}";
+        PostToConnections(_connectionsPayload);
+    }
+
+    private void PostToConnections(string json)
+    {
+        if (_connectionsReady && !IsDisposed) _connectionsWebView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
+    private async Task RunSpeedTestAsync()
+    {
+        _speedTestCts?.Cancel();
+        var cts = _speedTestCts = new CancellationTokenSource();
+        AppendLog($"SPEED TEST: testing against Cloudflare ({SpeedTest.Server}) at your request.");
+        void Send(SpeedTestUpdate update)
+        {
+            if (Privacy.Enabled) update.Edge = null;
+            var json = System.Text.Json.JsonSerializer.Serialize(update, BoardScoutJson.Default.SpeedTestUpdate);
+            if (InvokeRequired) BeginInvoke(() => PostToConnections(json));
+            else PostToConnections(json);
+        }
+        try
+        {
+            var result = await Task.Run(() => SpeedTest.RunAsync(Send, cts.Token), cts.Token);
+            Send(result);
+            AppendLog($"SPEED TEST: {result.DownloadMbps:0.#} Mbps down, {result.UploadMbps:0.#} Mbps up, " +
+                      $"{result.LatencyMs:0} ms latency; used {result.UsedMegabytes:0} MB.");
+        }
+        catch (OperationCanceledException)
+        {
+            Send(new SpeedTestUpdate { Phase = "error", Error = "Stopped." });
+        }
+        catch (Exception ex)
+        {
+            Send(new SpeedTestUpdate { Phase = "error", Error = ex.Message });
+            AppendLog("SPEED TEST: " + ex.Message);
+        }
+    }
+
     private async void OnConnectionsMessage(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
     {
         try
@@ -575,7 +644,19 @@ public sealed class MainForm : Form
             var type = message.RootElement.TryGetProperty("type", out var value) ? value.GetString() : null;
             if (type == "refresh")
             {
-                await LoadConnectionsAsync();
+                await LoadConnectionsAsync(rediscover: true);
+            }
+            else if (type == "lanscan")
+            {
+                await LoadConnectionsAsync(rediscover: true, sweep: true);
+            }
+            else if (type == "speedtest")
+            {
+                await RunSpeedTestAsync();
+            }
+            else if (type == "speedcancel")
+            {
+                _speedTestCts?.Cancel();
             }
             else if (type == "wan")
             {
@@ -601,6 +682,9 @@ public sealed class MainForm : Form
         }
     }
 
+    // Live rates for the map. Network: [bytes in/s, out/s, packets in/s, out/s, dropped+errors/s,
+    // bytes in, bytes out, packets in, packets out, dropped, errors since Windows started].
+    // Disk: [bytes read/s, written/s, reads/s, writes/s, requests queued now].
     private void PostConnectionFlow(SystemTelemetry telemetry)
     {
         if (!_connectionsReady || !ConnectionsVisible || telemetry.InterfaceRates is null) return;
@@ -608,10 +692,20 @@ public sealed class MainForm : Form
         foreach (var (id, rate) in telemetry.InterfaceRates)
         {
             if (!_netKeys.TryGetValue(id, out var key)) _netKeys[id] = key = ConnectionsService.NetKey(id);
-            flow.Network[key] = [Math.Round(rate.In), Math.Round(rate.Out)];
+            var totals = telemetry.InterfaceCounters?.GetValueOrDefault(id) ?? default;
+            flow.Network[key] =
+            [
+                Math.Round(rate.In), Math.Round(rate.Out), Math.Round(rate.OpsIn), Math.Round(rate.OpsOut),
+                Math.Round(totals.DroppedPerSec, 1),
+                totals.BytesIn, totals.BytesOut, totals.PacketsIn, totals.PacketsOut, totals.Dropped, totals.Errors
+            ];
         }
         foreach (var (number, rate) in telemetry.DiskRates ?? new Dictionary<int, LinkRate>())
-            flow.Disks[number.ToString(System.Globalization.CultureInfo.InvariantCulture)] = [Math.Round(rate.In), Math.Round(rate.Out)];
+        {
+            var queue = telemetry.DiskQueues?.GetValueOrDefault(number) ?? 0;
+            flow.Disks[number.ToString(System.Globalization.CultureInfo.InvariantCulture)] =
+                [Math.Round(rate.In), Math.Round(rate.Out), Math.Round(rate.OpsIn), Math.Round(rate.OpsOut), queue];
+        }
         foreach (var (zone, key) in new[] { ("CPU", "cpu"), ("GPU", "gpu"), ("Chipset", "chipset") })
             if (telemetry.Thermals.FirstOrDefault(t => t.Zone == zone) is { } reading)
                 flow.Temperatures[key] = reading.TemperatureCelsius;
@@ -1496,9 +1590,10 @@ public sealed class MainForm : Form
             _privacyChip.Visible = Privacy.Enabled;
             RenderLog();
             BindStorage();
-            // The map masks MACs, Wi-Fi names, and IPv6 on the C# side, so it is read again.
-            _connectionsStale = true;
-            if (ConnectionsVisible) _ = LoadConnectionsAsync();
+            // The map masks MACs, Wi-Fi and device names, and IPv6 on the C# side, so it is rebuilt
+            // from what was last read (no new read needed).
+            if (_connectionsCapture is not null) PostConnectionsMap(_discovery);
+            else _connectionsStale = true;
             _status.Text = Privacy.Enabled
                 ? "Privacy mode on — PC name, owner details, serial numbers, paths, and app lists are hidden in screens and exports."
                 : "Privacy mode off.";

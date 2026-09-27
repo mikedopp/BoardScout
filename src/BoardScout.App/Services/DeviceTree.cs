@@ -52,6 +52,9 @@ internal sealed record UsbPort(int Port, int Speed, int Flags, bool IsHub)
     public bool SuperSpeedPlusCapable => (Flags & 8) != 0;
 }
 
+/// <summary>A disk's counters since boot. The operation counts are 32-bit and wrap.</summary>
+internal readonly record struct DiskCounterSample(long BytesRead, long BytesWritten, uint Reads, uint Writes, int QueueDepth);
+
 /// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe).</summary>
 internal sealed record DiskFacts(int Number, string? Vendor, string? Product, string? Firmware, int Bus, long? SizeBytes, double? TemperatureC);
 
@@ -272,14 +275,18 @@ internal static class DeviceTree
         return new DiskFacts(number, vendor, product, firmware, bus, size, temperature);
     }
 
-    /// <summary>Cumulative bytes read and written since boot, or null when the disk keeps no counters.</summary>
-    public static (long Read, long Written)? DiskCounters(int number)
+    /// <summary>Cumulative bytes and operations since boot plus the current queue depth, or null when the
+    /// disk keeps no counters.</summary>
+    public static DiskCounterSample? DiskCounters(int number)
     {
         using var handle = OpenDisk(number);
         if (handle.IsInvalid) return null;
-        var buffer = new byte[88]; // DISK_PERFORMANCE: BytesRead, BytesWritten, ...
+        // DISK_PERFORMANCE: BytesRead @0, BytesWritten @8, ReadTime, WriteTime, IdleTime,
+        // ReadCount @40, WriteCount @44, QueueDepth @48, ...
+        var buffer = new byte[88];
         return DeviceIoControl(handle, IoctlDiskPerformance, [], 0, buffer, buffer.Length, out _, IntPtr.Zero)
-            ? (BitConverter.ToInt64(buffer, 0), BitConverter.ToInt64(buffer, 8))
+            ? new DiskCounterSample(BitConverter.ToInt64(buffer, 0), BitConverter.ToInt64(buffer, 8),
+                BitConverter.ToUInt32(buffer, 40), BitConverter.ToUInt32(buffer, 44), BitConverter.ToInt32(buffer, 48))
             : null;
     }
 

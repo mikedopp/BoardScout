@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BoardScout</AssemblyName>
     <RootNamespace>BoardScout</RootNamespace>
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
     <Product>BoardScout</Product>
     <Description>Portable motherboard, storage, and driver health dashboard.</Description>
     <Authors>mikedopp</Authors>

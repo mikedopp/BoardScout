@@ -226,4 +226,5 @@ public sealed record EfficiencySuggestion(
 [JsonSerializable(typeof(ConnectionsSnapshot))]
 [JsonSerializable(typeof(ConnectionFlow))]
 [JsonSerializable(typeof(WanLookup))]
+[JsonSerializable(typeof(BoardScout.Services.SpeedTestUpdate))]
 internal sealed partial class BoardScoutJson : JsonSerializerContext;

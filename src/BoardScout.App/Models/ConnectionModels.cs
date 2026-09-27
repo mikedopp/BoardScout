@@ -11,6 +11,9 @@ public sealed class ConnectionsSnapshot
     [JsonPropertyName("notes")] public List<string> Notes { get; set; } = [];
     [JsonPropertyName("privacy")] public bool Privacy { get; set; }
     [JsonPropertyName("elevated")] public bool Elevated { get; set; }
+
+    /// <summary>"pending" while router, network, and device names are still being looked up; "done" after.</summary>
+    [JsonPropertyName("discovery")] public string Discovery { get; set; } = "pending";
     [JsonPropertyName("gatheredMs")] public long GatheredMs { get; set; }
     [JsonPropertyName("gatheredAt")] public string GatheredAt { get; set; } = "";
 }
