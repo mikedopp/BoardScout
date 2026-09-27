@@ -2,13 +2,14 @@ namespace BoardScout.Models;
 
 public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 
+public sealed record FanReading(string Name, int Rpm, bool Active);
+
 public sealed record SystemTelemetry(
     double CpuUsagePercent,
     ulong MemoryTotalBytes,
     ulong MemoryAvailableBytes,
     IReadOnlyList<ThermalReading> Thermals,
-    double DiskReadBytesPerSec,
-    double DiskWriteBytesPerSec,
+    IReadOnlyList<FanReading> Fans,
     double NetworkSentBytesPerSec,
     double NetworkReceivedBytesPerSec,
     DateTimeOffset SampledAt)
@@ -22,6 +23,20 @@ public sealed record SystemTelemetry(
     public double MemoryUsagePercent => MemoryTotalBytes == 0
         ? 0
         : MemoryUsedBytes * 100d / MemoryTotalBytes;
+}
 
-    public double? CpuTemperatureCelsius => Thermals.Count > 0 ? Thermals[0].TemperatureCelsius : null;
+/// <summary>What the hardware sensor library could reach, and why not when it could not.</summary>
+public sealed record SensorStatus(
+    bool Started,
+    bool Elevated,
+    bool PawnIoInstalled,
+    string? PawnIoVersion,
+    int TemperatureZones,
+    int Fans,
+    string? Error)
+{
+    public static SensorStatus Pending { get; } = new(false, false, false, null, 0, 0, null);
+
+    /// <summary>CPU, VRM, and motherboard fan sensors need the PawnIO driver and an elevated process.</summary>
+    public bool MotherboardSensorsAvailable => Elevated && PawnIoInstalled;
 }

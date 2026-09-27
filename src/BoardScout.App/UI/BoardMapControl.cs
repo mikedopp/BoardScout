@@ -34,6 +34,8 @@ public sealed class BoardMapControl : Control
     private SystemTelemetry? _telemetry;
     private string? _hoveredId;
     private float _zoom = 1f;
+    private float _zoomTarget = 1f;
+    private readonly Func<float, bool> _animateZoom;
     private PointF _pan;
     private Point _dragStart;
     private PointF _panStart;
@@ -46,12 +48,13 @@ public sealed class BoardMapControl : Control
         BackColor = AppTheme.Surface;
         MinimumSize = new Size(620, 440);
         TabStop = true;
+        _animateZoom = AnimateZoom;
     }
 
     public event EventHandler<BoardPartDetails?>? PartHovered;
     public event EventHandler? ZoomChanged;
 
-    public int ZoomPercent => (int)Math.Round(_zoom * 100);
+    public int ZoomPercent => (int)Math.Round(_zoomTarget * 100);
 
     public void SetSnapshot(ScanManifest? snapshot)
     {
@@ -75,16 +78,10 @@ public sealed class BoardMapControl : Control
         Invalidate();
     }
 
-    public void ZoomIn() => SetZoom(_zoom + 0.2f);
-    public void ZoomOut() => SetZoom(_zoom - 0.2f);
+    public void ZoomIn() => SetZoom(_zoomTarget + 0.2f);
+    public void ZoomOut() => SetZoom(_zoomTarget - 0.2f);
 
-    public void ResetView()
-    {
-        _zoom = 1f;
-        _pan = PointF.Empty;
-        ZoomChanged?.Invoke(this, EventArgs.Empty);
-        Invalidate();
-    }
+    public void ResetView() => SetZoom(1f);
 
     public void RefreshTheme()
     {
@@ -130,7 +127,7 @@ public sealed class BoardMapControl : Control
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        SetZoom(_zoom + (e.Delta > 0 ? 0.15f : -0.15f));
+        SetZoom(_zoomTarget + (e.Delta > 0 ? 0.15f : -0.15f));
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -180,14 +177,35 @@ public sealed class BoardMapControl : Control
         Invalidate();
     }
 
+    // Zoom eases toward its target instead of jumping between steps.
     private void SetZoom(float value)
     {
         var next = Math.Clamp(value, 1f, 2.5f);
-        if (Math.Abs(next - _zoom) < 0.001f) return;
+        if (Math.Abs(next - _zoomTarget) < 0.001f && Math.Abs(next - _zoom) < 0.001f) return;
+        _zoomTarget = next;
+        ZoomChanged?.Invoke(this, EventArgs.Empty);
+        if (Motion.Enabled)
+        {
+            Motion.Start(_animateZoom);
+            return;
+        }
         _zoom = next;
+        ApplyZoom();
+    }
+
+    private bool AnimateZoom(float seconds)
+    {
+        if (IsDisposed) return false;
+        _zoom = Motion.Approach(_zoom, _zoomTarget, 16f, seconds);
+        if (Math.Abs(_zoom - _zoomTarget) < 0.002f) _zoom = _zoomTarget;
+        ApplyZoom();
+        return _zoom != _zoomTarget;
+    }
+
+    private void ApplyZoom()
+    {
         if (_zoom <= 1.01f) _pan = PointF.Empty;
         ClampPan();
-        ZoomChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
     }
 
@@ -862,11 +880,24 @@ public sealed class BoardMapControl : Control
         using var brush = new SolidBrush(fill);
         using var pen = new Pen(border, 1.5f);
         g.FillRoundedRectangle(brush, rect, 12);
+        if (Glass.Enabled) DrawSheen(g, rect, 12);
         g.DrawRoundedRectangle(pen, rect, 12);
         var top = new RectangleF(rect.X + 8, rect.Y + 5, rect.Width - 16, rect.Height * 0.46f - 3);
         var bottom = new RectangleF(rect.X + 8, rect.Y + rect.Height * 0.46f, rect.Width - 16, rect.Height * 0.48f - 5);
         DrawTextFit(g, title, titleFont, AppTheme.Text, top, ContentAlignment.MiddleCenter);
         DrawTextFit(g, subtitle, subtitleFont, AppTheme.Muted, bottom, ContentAlignment.MiddleCenter);
+    }
+
+    private static void DrawSheen(Graphics g, RectangleF rect, float radius)
+    {
+        using var path = Glass.RoundedPath(rect, radius);
+        var state = g.Save();
+        g.SetClip(path, CombineMode.Intersect);
+        var sheenRect = new RectangleF(rect.X, rect.Y, rect.Width, rect.Height * 0.5f);
+        using var sheen = new LinearGradientBrush(RectangleF.Inflate(sheenRect, 1, 1),
+            Color.FromArgb(24, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical);
+        g.FillRectangle(sheen, sheenRect);
+        g.Restore(state);
     }
 
     private static void DrawPortBox(Graphics g, RectangleF rect, string port, string model, Font font)

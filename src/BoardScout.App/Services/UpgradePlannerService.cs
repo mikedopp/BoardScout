@@ -191,12 +191,16 @@ internal static class UpgradePlannerService
         var gpu = scan.Components.FirstOrDefault(c =>
             c.Model.Contains("GeForce", StringComparison.OrdinalIgnoreCase) ||
             c.Model.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase));
+        // Ryzen G-series APUs drive the x16 slot at PCIe 3.0; Zen 3 desktop CPUs run it at 4.0.
+        var apu = Regex.IsMatch(cpuName, @"\d{4}G\b", RegexOptions.IgnoreCase);
         if (gpu is not null && !gpu.Model.Contains("4090") && !gpu.Model.Contains("4080"))
         {
             opts.Add(new UpgradeOption("GPU", gpu.Model,
                 "NVIDIA GeForce RTX 4070 Ti Super",
-                "16GB GDDR6X, PCIe 4.0 x16 — massive upgrade from RTX 3050. " +
-                "The board's top x16 slot runs full Gen4 bandwidth from the CPU.",
+                $"16GB GDDR6X — a big step up from the {gpu.Model.Replace("NVIDIA ", "")}. " +
+                (apu
+                    ? "With this APU the top x16 slot runs at PCIe 3.0; pairing it with a 5800X3D unlocks PCIe 4.0."
+                    : "The board's top x16 slot runs full Gen4 bandwidth from the CPU."),
                 "~$784", "essential"));
             opts.Add(new UpgradeOption("GPU (dream)", gpu.Model,
                 "NVIDIA GeForce RTX 4090",
@@ -211,7 +215,9 @@ internal static class UpgradePlannerService
             c.Model.Contains("SN850", StringComparison.OrdinalIgnoreCase));
         if (!hasGen4Nvme)
         {
-            opts.Add(new UpgradeOption("NVMe (M2_1)", "Current M.2 drive",
+            var currentNvme = scan.Components.FirstOrDefault(c => c.Category == "storage" &&
+                string.Equals(c.LookupHints.BusType, "NVMe", StringComparison.OrdinalIgnoreCase));
+            opts.Add(new UpgradeOption("NVMe (M2_1)", currentNvme?.Model ?? "Current M.2 drive",
                 "Samsung 990 Pro 2TB (Gen4)",
                 "7,450 MB/s reads in the CPU-direct M.2 slot. " +
                 "The fastest Gen4 drive available. Prime Day 2026 price hit $369.",
@@ -224,9 +230,12 @@ internal static class UpgradePlannerService
             "AM4 mounting kit included. The B550M micro-ATX case must fit 165mm height.",
             "~$110", "essential"));
 
-        if (chipset.Contains("B550", StringComparison.OrdinalIgnoreCase))
+        var wifi = scan.Components.FirstOrDefault(c => c.Category == "network" &&
+            Regex.IsMatch(c.Model, @"Wi-?Fi|Wireless|AX\d{3}", RegexOptions.IgnoreCase));
+        if (chipset.Contains("B550", StringComparison.OrdinalIgnoreCase) &&
+            wifi is not null && Regex.IsMatch(wifi.Model, "AX21[01]", RegexOptions.IgnoreCase))
         {
-            opts.Add(new UpgradeOption("WiFi", "Intel AX210 (Wi-Fi 6E)",
+            opts.Add(new UpgradeOption("WiFi", wifi.Model,
                 "Already best-in-class",
                 "The AX210 in M2_3 Key-E is the top WiFi card for this board. " +
                 "Wi-Fi 7 cards exist but the B550 M.2 Key-E slot caps at Gen3 speeds — no benefit.",

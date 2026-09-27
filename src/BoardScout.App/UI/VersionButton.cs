@@ -3,6 +3,10 @@ using System.Reflection;
 
 namespace BoardScout.UI;
 
+/// <summary>
+/// The version number as a Google chasing-colors pill. Clicking it opens the version pop-out
+/// (runtime, sensors, troubleshooting, settings, dependencies, requirements, legal).
+/// </summary>
 internal sealed class VersionButton : Control
 {
     private static readonly Color[] Chase =
@@ -15,9 +19,7 @@ internal sealed class VersionButton : Control
     ];
 
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 33 };
-    private float _angle;
-    private Panel? _popout;
-    private bool _popoutVisible;
+    private float _angle = 35f;
 
     public static string AppVersion { get; } =
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
@@ -30,8 +32,25 @@ internal sealed class VersionButton : Control
         Size = new Size(100, 30);
         Cursor = Cursors.Hand;
         Font = new Font("Cascadia Mono, Consolas", 9f);
-        _timer.Tick += (_, _) => { _angle = (_angle + 1.5f) % 360f; Invalidate(); };
-        _timer.Start();
+        AccessibleName = $"BoardScout version {AppVersion}";
+        AccessibleDescription = "Opens runtime, sensor, troubleshooting, settings, and dependency details.";
+        AccessibleRole = AccessibleRole.PushButton;
+        TabStop = true;
+        _timer.Tick += (_, _) =>
+        {
+            if (!Visible || FindForm() is not { Visible: true, WindowState: not FormWindowState.Minimized }) return;
+            _angle = (_angle + 1.5f) % 360f;
+            Invalidate();
+        };
+        RefreshMotion();
+    }
+
+    /// <summary>The chase stops when motion is turned off; the colors stay.</summary>
+    public void RefreshMotion()
+    {
+        if (Motion.Enabled) _timer.Start();
+        else _timer.Stop();
+        Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -40,8 +59,7 @@ internal sealed class VersionButton : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-        var outer = new Rectangle(0, 0, Width - 1, Height - 1);
-        var outerPath = RoundedRect(outer, 14);
+        using var outerPath = Glass.RoundedPath(new RectangleF(0, 0, Width - 1, Height - 1), 14);
 
         var cx = Width / 2f;
         var cy = Height / 2f;
@@ -66,154 +84,44 @@ internal sealed class VersionButton : Control
         using var pen = new Pen(gradBrush, 2.5f);
         g.DrawPath(pen, outerPath);
 
-        var inner = new Rectangle(3, 3, Width - 7, Height - 7);
-        var innerPath = RoundedRect(inner, 11);
+        using var innerPath = Glass.RoundedPath(new RectangleF(3, 3, Width - 7, Height - 7), 11);
         using var fill = new SolidBrush(AppTheme.Surface);
         g.FillPath(fill, innerPath);
 
         var text = $"v{AppVersion}";
         var textSize = g.MeasureString(text, Font);
-        var x = (Width - textSize.Width) / 2;
-        var y = (Height - textSize.Height) / 2;
         using var textBrush = new SolidBrush(Color.FromArgb(168, 205, 231));
-        g.DrawString(text, Font, textBrush, x, y);
-    }
+        g.DrawString(text, Font, textBrush, (Width - textSize.Width) / 2, (Height - textSize.Height) / 2);
 
-    protected override void OnClick(EventArgs e)
-    {
-        base.OnClick(e);
-        TogglePopout();
-    }
-
-    private void TogglePopout()
-    {
-        if (_popoutVisible && _popout is not null)
+        if (Focused)
         {
-            _popout.Visible = false;
-            _popoutVisible = false;
-            FindForm()?.Controls.Remove(_popout);
-            _popout.Dispose();
-            _popout = null;
-            return;
+            using var focus = new Pen(Color.FromArgb(160, AppTheme.Text), 1f) { DashStyle = DashStyle.Dot };
+            using var focusPath = Glass.RoundedPath(new RectangleF(4.5f, 4.5f, Width - 10, Height - 10), 9);
+            g.DrawPath(focus, focusPath);
         }
-
-        var form = FindForm();
-        if (form is null) return;
-
-        _popout = new Panel
-        {
-            Size = new Size(380, 280),
-            BackColor = AppTheme.Surface,
-            BorderStyle = BorderStyle.FixedSingle,
-            Tag = "surface"
-        };
-
-        var screenPt = PointToScreen(new Point(0, Height + 4));
-        var formPt = form.PointToClient(screenPt);
-        if (formPt.X + 380 > form.ClientSize.Width)
-            formPt.X = form.ClientSize.Width - 390;
-        _popout.Location = formPt;
-
-        var content = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            Padding = new Padding(16, 12, 16, 12),
-            AutoScroll = true
-        };
-
-        AddSection(content, $"BoardScout v{AppVersion}", AppTheme.Accent, true);
-        AddSection(content, "Runtime", AppTheme.Muted);
-        AddDetail(content, $".NET {Environment.Version}  ·  {(Environment.Is64BitProcess ? "64-bit" : "32-bit")}");
-        AddDetail(content, $"OS: {Environment.OSVersion}");
-
-        AddSection(content, "Dependencies", AppTheme.Muted);
-        AddDetail(content, "LibreHardwareMonitorLib 0.9.6 (MPL-2.0)");
-        AddDetail(content, "Microsoft.Web.WebView2 1.0.2903.40");
-        AddDetail(content, "System.Management 10.0.2 (MIT)");
-        AddDetail(content, "D3.js v7 (ISC)");
-
-        AddSection(content, "Requirements", AppTheme.Muted);
-        AddDetail(content, "WebView2 Runtime (Win 10 21H2+)");
-        AddDetail(content, "Admin elevation for full sensor access");
-
-        AddSection(content, "Legal", AppTheme.Muted);
-        AddDetail(content, "MIT License · See THIRD-PARTY-NOTICES.md");
-        AddDetail(content, "All trademarks belong to their respective owners");
-
-        var feedbackLink = new LinkLabel
-        {
-            Text = "Report an issue on GitHub",
-            AutoSize = true,
-            LinkColor = AppTheme.Accent,
-            ActiveLinkColor = AppTheme.Good,
-            VisitedLinkColor = AppTheme.Accent,
-            Font = new Font("Segoe UI Semibold", 8.75f),
-            Padding = new Padding(0, 10, 0, 2)
-        };
-        feedbackLink.LinkClicked += (_, _) =>
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                "https://github.com/mikedopp/BoardScout/issues") { UseShellExecute = true });
-        content.Controls.Add(feedbackLink);
-
-        _popout.Controls.Add(content);
-        form.Controls.Add(_popout);
-        _popout.BringToFront();
-        _popout.Visible = true;
-        _popoutVisible = true;
-
-        form.Click += ClosePopout;
-        form.Deactivate += ClosePopout;
     }
 
-    private void ClosePopout(object? sender, EventArgs e)
+    protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (!_popoutVisible) return;
-        var form = FindForm();
-        if (form is not null)
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space)
         {
-            form.Click -= ClosePopout;
-            form.Deactivate -= ClosePopout;
+            OnClick(EventArgs.Empty);
+            e.Handled = true;
         }
-        _popout?.Dispose();
-        _popout = null;
-        _popoutVisible = false;
     }
 
-    private static void AddSection(TableLayoutPanel panel, string text, Color color, bool title = false)
-    {
-        panel.Controls.Add(new Label
-        {
-            Text = title ? text : text.ToUpperInvariant(),
-            AutoSize = true,
-            ForeColor = color,
-            Font = new Font("Segoe UI Semibold", title ? 11f : 8f),
-            Padding = new Padding(0, title ? 0 : 8, 0, 2)
-        });
-    }
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
-    private static void AddDetail(TableLayoutPanel panel, string text)
-    {
-        panel.Controls.Add(new Label
-        {
-            Text = text,
-            AutoSize = true,
-            ForeColor = AppTheme.Muted,
-            Font = new Font("Segoe UI", 8.75f),
-            Padding = new Padding(0, 1, 0, 1)
-        });
-    }
+    // Screen readers and UI Automation can press the button, not only a mouse.
+    protected override AccessibleObject CreateAccessibilityInstance() => new VersionAccessible(this);
 
-    private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
+    private sealed class VersionAccessible(VersionButton owner) : ControlAccessibleObject(owner)
     {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
-        path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
-        path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
-        path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
+        public override AccessibleRole Role => AccessibleRole.PushButton;
+        public override string DefaultAction => "Press";
+        public override void DoDefaultAction() => owner.OnClick(EventArgs.Empty);
     }
 
     protected override void Dispose(bool disposing)
@@ -222,7 +130,6 @@ internal sealed class VersionButton : Control
         {
             _timer.Stop();
             _timer.Dispose();
-            _popout?.Dispose();
         }
         base.Dispose(disposing);
     }

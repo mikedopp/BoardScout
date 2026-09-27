@@ -1,15 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>BoardScout</AssemblyName>
     <RootNamespace>BoardScout</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Product>BoardScout</Product>
     <Description>Portable motherboard, storage, and driver health dashboard.</Description>
+    <Authors>mikedopp</Authors>
+    <Company>mikedopp</Company>
+    <Copyright>Copyright (c) 2026 mikedopp</Copyright>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
     <PublishSingleFile>true</PublishSingleFile>
@@ -19,13 +22,30 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
     <PublishDir>..\..\release\</PublishDir>
+    <!-- Ship English resources only, and leave the SDKs' IntelliSense XML out of the portable folder. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
+  </PropertyGroup>
+
+  <!-- -p:Standalone=true packs Assets, DriverScout, and the notices into the exe itself; .NET unpacks
+       them to a per-version temp cache on first run. Without it the exe expects those folders beside it. -->
+  <PropertyGroup Condition="'$(Standalone)' == 'true'">
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
-    <PackageReference Include="System.Management" Version="10.0.2" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="System.Management" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
   </ItemGroup>
+
+  <!-- The WebView2 package references its WPF control for every .NET 5+ app. This app is
+       WinForms-only, and that reference drags in a WindowsBase 4.0/5.0 conflict (MSB3277). -->
+  <Target Name="DropWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <Content Include="DriverScout\**\*">
@@ -33,6 +53,12 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="Assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <!-- License and third-party notices travel with the portable build. -->
+    <Content Include="..\..\LICENSE;..\..\THIRD-PARTY-NOTICES.md">
+      <Link>%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

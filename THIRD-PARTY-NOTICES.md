@@ -1,65 +1,166 @@
 # Third-Party Software Notices
 
-BoardScout uses the following open-source libraries and components.
+BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self-contained, so
+they also redistribute the components below. Each keeps its own license. Nothing here is
+modified from the published version.
 
-## LibreHardwareMonitorLib 0.9.6
+Last reviewed for BoardScout 1.1.0 (2026-09-26).
 
-- **License**: Mozilla Public License 2.0 (MPL-2.0)
-- **Source**: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
-- **Copyright**: LibreHardwareMonitor contributors
-- **Usage**: CPU, GPU, VRM temperature and fan speed readings via Super I/O and SMBus
+## Libraries compiled into BoardScout.exe
 
-## Microsoft.Web.WebView2 1.0.2903.40
+| Component | Version | License | Source |
+| --- | --- | --- | --- |
+| .NET runtime and Windows Forms | 10.0.12 | MIT | https://github.com/dotnet/runtime, https://github.com/dotnet/winforms |
+| LibreHardwareMonitorLib | 0.9.6 | MPL-2.0 | https://github.com/LibreHardwareMonitor/LibreHardwareMonitor |
+| BlackSharp.Core (LibreHardwareMonitorLib dependency) | 1.0.7 | MPL-2.0 | https://github.com/Blacktempel/BlackSharp |
+| DiskInfoToolkit (LibreHardwareMonitorLib dependency) | 1.1.2 | MPL-2.0 | https://github.com/Blacktempel/DiskInfoToolkit |
+| RAMSPDToolkit-NDD (LibreHardwareMonitorLib dependency) | 1.4.2 | MPL-2.0 | https://github.com/Blacktempel/RAMSPDToolkit |
+| HidSharp (LibreHardwareMonitorLib dependency) | 2.6.4 | Apache-2.0 | https://software.seekye.com/hidsharp |
+| Microsoft.Web.WebView2 (SDK and loader) | 1.0.4191.47 | Microsoft BSD-style license (below) | https://www.nuget.org/packages/Microsoft.Web.WebView2 |
+| System.Management | 10.0.12 | MIT | https://github.com/dotnet/runtime |
+| System.IO.Ports (LibreHardwareMonitorLib dependency) | 10.0.3 | MIT | https://github.com/dotnet/runtime |
+| Mono.Posix.NETStandard (LibreHardwareMonitorLib dependency) | 1.0.0 | MIT | https://www.nuget.org/packages/Mono.Posix.NETStandard |
 
-- **License**: Microsoft WebView2 SDK License
-- **Source**: https://www.nuget.org/packages/Microsoft.Web.WebView2
-- **Copyright**: Microsoft Corporation
-- **Usage**: Embedded Chromium-based web view for interactive topology visualization
+**MPL-2.0 components.** The Source Code Form of each MPL-2.0 component is available at the
+repository linked above, under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/).
+BoardScout uses the unmodified NuGet packages.
 
-## System.Management 10.0.2
+**HidSharp.** Copyright 2010-2025 James F. Bellinger. Licensed under the Apache License,
+Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0). Distributed on an "AS IS" basis,
+without warranties or conditions of any kind.
 
-- **License**: MIT
-- **Source**: https://github.com/dotnet/runtime
-- **Copyright**: .NET Foundation and Contributors
-- **Usage**: WMI queries for hardware inventory data
+## Web libraries bundled in `Assets/vendor`
 
-## D3.js v7
+These run inside the Topology and System views. They are loaded from disk, not from a CDN, so
+the views work offline. The files are byte-identical to the npm packages; the tarball SHA-1
+matched the registry's published `shasum` when they were added.
 
-- **License**: ISC (BSD-3-Clause compatible)
-- **Source**: https://github.com/d3/d3
-- **Copyright**: Mike Bostock and Observable, Inc.
-- **Usage**: Interactive hierarchical tree layout for PCIe/bus topology visualization
+| File | Package | License | SHA-256 |
+| --- | --- | --- | --- |
+| `vendor/quick-liquid/index.mjs` | quick-liquid 0.1.2 | MIT | `0eb68672ed9ab3ab089e1387a043592638752968741fc0f1a40b29f9156ca73a` |
+| `vendor/quick-liquid/chunk-4TLGP4GF.mjs` | quick-liquid 0.1.2 | MIT | `b0258bfac49133cf48eb6c11275a383e361cdd6c4af803739701f0c88f007e0b` |
+| `vendor/d3/d3.v7.min.js` | d3 7.9.0 | ISC | `f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539` |
 
-## .NET Runtime 8.0
+### QuickLiquid 0.1.2
 
-- **License**: MIT
-- **Source**: https://github.com/dotnet/runtime
-- **Copyright**: .NET Foundation and Contributors
+Source: https://github.com/amarnath3003/quickLiquid
+
+```
+MIT License
+
+Copyright (c) 2026 Amarnath
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### D3.js 7.9.0
+
+Source: https://github.com/d3/d3
+
+```
+Copyright 2010-2023 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
+## Microsoft WebView2 SDK license
+
+```
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * The name of Microsoft Corporation, or the names of its contributors
+may not be used to endorse or promote products derived from this
+software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+The WebView2 package also ships a `NOTICE.txt` for components Microsoft incorporates; Microsoft
+publishes the corresponding source at https://3rdpartysource.microsoft.com.
+
+## Bundled DriverScout engine
+
+The PowerShell scanner in `DriverScout/` is part of this project (MIT). Its own notices, including
+the PCI and USB ID databases, are in `src/BoardScout.App/DriverScout/THIRD-PARTY-NOTICES.md`.
+
+## Not bundled
+
+- **PawnIO** (namazso, https://pawnio.eu/) is the kernel driver LibreHardwareMonitorLib 0.9.6 uses
+  for CPU, VRM, and motherboard fan sensors. BoardScout does not ship or install it; the version
+  pop-out links to its official site.
+- **Microsoft Edge WebView2 Runtime** is part of Windows 10/11 or installed by Microsoft's
+  Evergreen installer; BoardScout does not ship it.
 
 ---
 
 # Trademark Notices
 
-All product names, logos, and brands mentioned in this software are the
-property of their respective owners. All company, product, and service
-names used in this software are for identification purposes only.
+All product names, logos, and brands mentioned in this software are the property of their
+respective owners and are used for identification only.
 
 - **AMD**, **Ryzen**, **Radeon**, and **AMD B550** are trademarks of Advanced Micro Devices, Inc.
 - **Intel** and **Intel Core** are trademarks of Intel Corporation.
 - **NVIDIA**, **GeForce**, and **RTX** are trademarks of NVIDIA Corporation.
 - **ASRock** is a trademark of ASRock Inc.
-- **Microsoft**, **Windows**, and **WebView2** are trademarks of Microsoft Corporation.
+- **Microsoft**, **Windows**, **Windows 11**, and **WebView2** are trademarks of Microsoft Corporation.
 - **Crucial** and **Micron** are trademarks of Micron Technology, Inc.
 - **Samsung** is a trademark of Samsung Electronics Co., Ltd.
 - **Western Digital** and **WD** are trademarks of Western Digital Corporation.
 - **Lexar** is a trademark of Longsys Electronics.
+- **Noctua** is a trademark of Rascom Computerdistribution GmbH.
+- **Amazon** and **Newegg** are trademarks of their respective owners; the upgrade report links to
+  their public search pages without affiliation.
 
-Use of these trademarks does not imply endorsement by the trademark holder.
-BoardScout is an independent project and is not affiliated with, endorsed by,
-or sponsored by any of the companies mentioned above.
+Use of these trademarks does not imply endorsement by the trademark holder. BoardScout is an
+independent project and is not affiliated with, endorsed by, or sponsored by any company above.
 
-This software reads hardware identifiers (vendor IDs, product names, model
-numbers) reported by the operating system and hardware firmware for the sole
-purpose of providing hardware inventory and diagnostic information to the user.
-No proprietary data, firmware, drivers, or copyrighted materials from any
-hardware vendor are bundled with or distributed by this software.
+BoardScout reads hardware identifiers (vendor IDs, product names, model numbers) that the
+operating system and firmware report, only to show hardware inventory and diagnostics to the
+user. No proprietary firmware, drivers, or copyrighted vendor materials are bundled with or
+distributed by this software.

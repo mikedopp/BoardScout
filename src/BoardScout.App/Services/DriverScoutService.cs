@@ -57,21 +57,25 @@ public sealed class DriverScoutService
             ?? throw new InvalidOperationException("DriverScout completed without producing a driver report.");
     }
 
-    public async Task<ScanManifest> LoadScanAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        var scan = await JsonSerializer.DeserializeAsync<ScanManifest>(stream, JsonDefaults.Options, cancellationToken);
-        if (scan is null || scan.SystemInfo.Baseboard is null)
-            throw new InvalidDataException("The selected file is not a compatible BoardScout scan.");
-        return scan;
-    }
+    // Scans run to ~300 KB of JSON; parse on the thread pool so the window stays responsive.
+    public Task<ScanManifest> LoadScanAsync(string path, CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            using var stream = File.OpenRead(path);
+            var scan = JsonSerializer.Deserialize(stream, BoardScoutJson.Default.ScanManifest);
+            if (scan is null || scan.SystemInfo.Baseboard is null)
+                throw new InvalidDataException("The selected file is not a compatible BoardScout scan.");
+            _ = scan.Cpu;
+            return scan;
+        }, cancellationToken);
 
-    public async Task<DriverReport> LoadReportAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return await JsonSerializer.DeserializeAsync<DriverReport>(stream, JsonDefaults.Options, cancellationToken)
-            ?? throw new InvalidDataException("The selected file is not a compatible DriverScout report.");
-    }
+    public Task<DriverReport> LoadReportAsync(string path, CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            using var stream = File.OpenRead(path);
+            return JsonSerializer.Deserialize(stream, BoardScoutJson.Default.DriverReport)
+                ?? throw new InvalidDataException("The selected file is not a compatible DriverScout report.");
+        }, cancellationToken);
 
     public void OpenDataFolder()
     {
@@ -134,7 +138,7 @@ public sealed class DriverScoutService
                 path);
     }
 
-    private static string ResolveWritableDataRoot()
+    internal static string ResolveWritableDataRoot()
     {
         var configured = Environment.GetEnvironmentVariable("BOARDSCOUT_DATA");
         if (!string.IsNullOrWhiteSpace(configured))
@@ -143,7 +147,10 @@ public sealed class DriverScoutService
             return Path.GetFullPath(configured);
         }
 
-        var portable = Path.Combine(AppContext.BaseDirectory, "Data");
+        // Beside the real exe. The standalone build unpacks its bundled files to a temp cache and
+        // runs from there, so AppContext.BaseDirectory is not where the user put BoardScout.
+        var exeFolder = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        var portable = Path.Combine(exeFolder, "Data");
         if (CanWrite(portable)) return portable;
 
         var fallback = Path.Combine(

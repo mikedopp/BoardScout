@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.1.0 — 2026-09-26
+
+.NET 10, the QuickLiquid glass look, a UI that no longer freezes, and a System tab that tells the
+truth about Windows support.
+
+### Fixed
+- **The window froze for about 5 seconds after every start.** The System tab asked WMI for the TPM
+  on the UI thread; without admin rights that query times out after ~5 s. TPM is now read through
+  TPM Base Services (~10 ms, no admin), and the whole System gather (~0.6 s) runs off the UI thread.
+- **"TPM: Not detected" on PCs that have one.** Same cause: the WMI query fails without admin. This
+  PC's TPM 2.0 now shows correctly.
+- **The UI stuttered every second.** Sensor sampling (~80 ms) and the network adapter scan (~30 ms)
+  ran on the UI thread each tick, and the sensor driver's first open (~0.6 s) blocked startup. All
+  sampling now runs on a background thread. Measured on the release build: UI stalls in the first
+  8 s went from 6 (~1.2 s total, recurring) to 2 (~0.2 s, only in the first 0.6 s).
+- **Patches listed out of order.** Install dates were sorted as text, so 9/9/2026 came before
+  12/1/2025. Dates are parsed and sorted as dates (ISO format in the table).
+- **The ".NET SDKs" trait never appeared.** SDKs were counted from `dotnet --list-runtimes`, which
+  never lists SDKs. Runtimes and SDKs are now read from the dotnet folders (x64 and x86).
+- **Topology was blank without internet.** D3 loaded from d3js.org; it is now bundled.
+- **The web views broke in read-only folders.** WebView2 kept its profile beside the exe; it now
+  lives in the BoardScout data folder.
+- **Topology showed one board's details on every board.** "M2_2 disables SATA 5/6", PCIE2/PCIE3,
+  and the Key-E note were hard-wired for the ASRock B550M Steel Legend. They now appear only for
+  that board; other boards get generic labels plus the slots their firmware reports.
+- **Topology bus labels overlapped** under the CPU. Labels now sit on each link near its device.
+- **FANS showed an amber "Fans idle" warning** when only the GPU fan was readable (it stops at idle
+  by design). It now says what is missing ("Needs PawnIO" / "Needs admin").
+- **Stale version strings:** spec sheets said "BoardScout v0.8.0", downloads sent a v0.8.0
+  User-Agent, and every build zip was named 0.9.0. All now come from the real version.
+- **Upgrade report assumed one PC:** it called every GPU "a massive upgrade from RTX 3050" and
+  listed an Intel AX210 as your Wi-Fi card. It now uses the detected GPU, NVMe drive, and Wi-Fi card,
+  and notes when an APU limits the x16 slot to PCIe 3.0. Spec sheets no longer call DDR5 "DDR4".
+- **The version pop-out ignored clicks elsewhere** (it only closed on another version click or
+  when the window lost focus). Clicking anywhere else or pressing Escape now closes it.
+
+### Added
+- **QuickLiquid glass.** The System tab's personality card and the Topology legend use real SVG
+  refraction from QuickLiquid 0.1.2 (bundled, works offline). The System tab's task filter has a
+  liquid tab indicator.
+- **Liquid native UI.** The sidebar selection glides between destinations and stretches like a
+  droplet; buttons, header tiles, the inspector, and cards get a glass sheen; zoom eases instead of
+  jumping; topology links show flowing traffic, faster on wider buses.
+- **Windows support that matches Microsoft's lifecycle pages** (checked 2026-09-26): Windows 10
+  shows Extended Security Updates coverage through October 12, 2027, with the days left; Windows 11
+  shows the end date for its version and edition (Home/Pro or Enterprise/Education), including 25H2
+  and 26H1.
+- **Windows 11 readiness** for Windows 10 PCs: TPM 2.0, UEFI Secure Boot, processor generation,
+  memory, and system drive, each with a plain-language result. It is a quick check, not Microsoft's.
+- **Sensor troubleshooting.** LibreHardwareMonitorLib 0.9.6 reads CPU, VRM, and motherboard fan
+  sensors through the PawnIO driver, which it does not ship. The version pop-out now says whether
+  PawnIO is installed and whether BoardScout is elevated, links to pawnio.eu, and can restart
+  BoardScout as administrator.
+- **Settings** under the version button: glass effects, motion, live refresh (1/2/5 s), and minimize
+  to tray. Stored in `Data\settings.json`.
+- **Copy diagnostics** (version, runtime, Windows build, WebView2, sensors, settings) for issue reports.
+- **Standalone exe.** Releases now include a single `BoardScout-<version>-win-x64.exe` with everything
+  inside, next to the portable zip. Both keep scans in a `Data` folder beside the exe.
+- `crash.log` in the data folder when something unexpected happens, and a `--system-json` switch that
+  prints the System tab's data.
+
+### Changed
+- .NET 8 → **.NET 10** (runtime 10.0.12). WebView2 SDK 1.0.2903.40 → 1.0.4191.47, System.Management
+  10.0.2 → 10.0.12. The exe is ~20 MB smaller (the unused WebView2 WPF assembly is no longer shipped).
+- The cached scan loads off the UI thread with source-generated JSON.
+- Dark scrollbars; rounded glass cards replace square 1 px borders.
+- Removed dead code (an unused GDI+ topology control and unused models).
+
+### Known limitations
+- Without PawnIO and administrator rights only GPU temperature and GPU fans are readable.
+- Memory use is ~290 MB (was ~260 MB), mostly the newer WebView2 runtime and the glass engine.
+- The Windows 11 readiness check covers common Intel Core and AMD Ryzen names; others show
+  "check PC Health Check".
+
+### Dependencies
+- Added (bundled web assets): QuickLiquid 0.1.2 (MIT), D3.js 7.9.0 (ISC, previously loaded from a CDN).
+- THIRD-PARTY-NOTICES now also lists LibreHardwareMonitorLib's own dependencies that ship inside the
+  exe: BlackSharp.Core, DiskInfoToolkit, RAMSPDToolkit-NDD (MPL-2.0), HidSharp (Apache-2.0),
+  System.IO.Ports and Mono.Posix.NETStandard (MIT).
+
 ## 1.0.0 — 2026-08-24
 
 ### Added
@@ -70,7 +150,7 @@
 - System.Management bumped from 8.0.0 to 10.0.2 (LibreHardwareMonitorLib dependency)
 
 ### Dependencies
-- LibreHardwareMonitorLib 0.9.6 (MIT) — direct Super I/O, SMBus, GPU sensor access
+- LibreHardwareMonitorLib 0.9.6 (MPL-2.0; originally listed here as MIT in error) — direct Super I/O, SMBus, GPU sensor access
 
 ## 0.5.0 — 2026-08-22
 

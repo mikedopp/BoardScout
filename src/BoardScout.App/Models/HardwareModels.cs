@@ -47,14 +47,19 @@ public sealed class MachineSystem
     [JsonPropertyName("bios")] public BiosInfo Bios { get; set; } = new();
     [JsonPropertyName("cpu")] public JsonElement CpuElement { get; set; }
 
-    public CpuInfo GetCpu()
+    private CpuInfo? _cpu;
+
+    // The board map asks for the CPU on every paint; parse the element once.
+    public CpuInfo GetCpu() => _cpu ??= ParseCpu();
+
+    private CpuInfo ParseCpu()
     {
         try
         {
             if (CpuElement.ValueKind == JsonValueKind.Array)
-                return CpuElement.EnumerateArray().FirstOrDefault().Deserialize<CpuInfo>(JsonDefaults.Options) ?? new();
+                return CpuElement.EnumerateArray().FirstOrDefault().Deserialize(BoardScoutJson.Default.CpuInfo) ?? new();
             if (CpuElement.ValueKind == JsonValueKind.Object)
-                return CpuElement.Deserialize<CpuInfo>(JsonDefaults.Options) ?? new();
+                return CpuElement.Deserialize(BoardScoutJson.Default.CpuInfo) ?? new();
         }
         catch { }
         return new();
@@ -208,12 +213,14 @@ public sealed record EfficiencySuggestion(
     string Action,
     string Category);
 
-public static class JsonDefaults
-{
-    public static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip
-    };
-}
+// Source-generated metadata: no reflection warm-up when the cached scan loads at startup.
+[JsonSourceGenerationOptions(
+    PropertyNameCaseInsensitive = true,
+    AllowTrailingCommas = true,
+    ReadCommentHandling = JsonCommentHandling.Skip)]
+[JsonSerializable(typeof(ScanManifest))]
+[JsonSerializable(typeof(DriverReport))]
+[JsonSerializable(typeof(CpuInfo))]
+[JsonSerializable(typeof(SystemInfoSnapshot))]
+[JsonSerializable(typeof(AppSettings))]
+internal sealed partial class BoardScoutJson : JsonSerializerContext;

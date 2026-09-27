@@ -8,39 +8,55 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'src\BoardScout.App\BoardScout.App.csproj'
-$output = Join-Path $PSScriptRoot "build\portable\$Runtime"
-$archive = Join-Path $PSScriptRoot "build\BoardScout-0.9.0-$Runtime.zip"
+# The version comes from the project, so artifact names can never drift from the app again.
+$version = ([xml](Get-Content -LiteralPath $project -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+if (-not $version) { throw "No <Version> found in $project" }
 
-$portableRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'build\portable'))
-$resolvedOutput = [IO.Path]::GetFullPath($output)
-if (-not $resolvedOutput.StartsWith($portableRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Refusing unexpected publish output: $resolvedOutput"
-}
-if (Test-Path -LiteralPath $resolvedOutput) {
-    Remove-Item -LiteralPath $resolvedOutput -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $output | Out-Null
-$publishArgs = @(
-    'publish', $project,
-    '--configuration', $Configuration,
-    '--runtime', $Runtime,
-    '--self-contained', 'true',
-    '-p:PublishSingleFile=true',
-    '-p:PublishTrimmed=false',
-    '--output', $output
-)
-& dotnet @publishArgs
+$buildRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'build'))
+$portable = Join-Path $buildRoot "portable\$Runtime"
+$standalone = Join-Path $buildRoot "standalone\$Runtime"
+$zip = Join-Path $buildRoot "BoardScout-$version-$Runtime.zip"
+$exe = Join-Path $buildRoot "BoardScout-$version-$Runtime.exe"
+$sums = Join-Path $buildRoot "BoardScout-$version-SHA256SUMS.txt"
 
-if ($LASTEXITCODE -ne 0) {
-    throw "dotnet publish failed with exit code $LASTEXITCODE"
+foreach ($dir in $portable, $standalone) {
+    if (-not ([IO.Path]::GetFullPath($dir)).StartsWith($buildRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing unexpected publish output: $dir"
+    }
+    if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
 }
 
-if (Test-Path -LiteralPath $archive) {
-    Remove-Item -LiteralPath $archive -Force
+function Publish-BoardScout([string]$Output, [string[]]$Extra) {
+    $publishArgs = @(
+        'publish', $project,
+        '--configuration', $Configuration,
+        '--runtime', $Runtime,
+        '--self-contained', 'true',
+        '-p:PublishSingleFile=true',
+        '-p:PublishTrimmed=false',
+        '--output', $Output
+    ) + $Extra
+    & dotnet @publishArgs
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
 }
-Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -CompressionLevel Optimal
 
-$exe = Join-Path $output 'BoardScout.exe'
-Write-Host "Portable app: $exe" -ForegroundColor Green
-Write-Host "Distribution zip: $archive" -ForegroundColor Green
-return $exe
+# Portable folder: BoardScout.exe with Assets, DriverScout, LICENSE, and notices beside it.
+Publish-BoardScout $portable @()
+if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+Compress-Archive -Path (Join-Path $portable '*') -DestinationPath $zip -CompressionLevel Optimal
+
+# Standalone: one exe with everything packed inside it.
+Publish-BoardScout $standalone @('-p:Standalone=true')
+Copy-Item -LiteralPath (Join-Path $standalone 'BoardScout.exe') -Destination $exe -Force
+
+Get-FileHash -Algorithm SHA256 -LiteralPath $zip, $exe |
+    ForEach-Object { '{0}  {1}' -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
+    Set-Content -LiteralPath $sums -Encoding ascii
+
+$portableExe = Join-Path $portable 'BoardScout.exe'
+Write-Host "Portable app:     $portableExe" -ForegroundColor Green
+Write-Host "Distribution zip: $zip" -ForegroundColor Green
+Write-Host "Standalone exe:   $exe" -ForegroundColor Green
+Write-Host "Checksums:        $sums" -ForegroundColor Green
+return $portableExe

@@ -1,55 +1,75 @@
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using BoardScout.Models;
 using LibreHardwareMonitor.Hardware;
 
 namespace BoardScout.Services;
 
+/// <summary>
+/// Samples CPU, memory, sensor, and network activity. <see cref="Sample"/> blocks (the first call
+/// opens the sensor driver, later calls read hardware registers), so it belongs on a background
+/// thread. Calls are serialized: the sensor library is never used from two threads at once.
+/// </summary>
 internal sealed class SystemTelemetryService : IDisposable
 {
+    // Hardware that has not reported a temperature or fan after this many passes is skipped from
+    // then on; updating it cost ~80 ms every second for nothing on machines without PawnIO.
+    private const int SensorDiscoveryPasses = 3;
+    private static readonly TimeSpan InterfaceRefresh = TimeSpan.FromSeconds(15);
+    private static readonly Lazy<(bool Installed, string? Version)> PawnIo = new(ReadPawnIo);
+
+    private readonly object _gate = new();
     private ulong? _previousIdle;
     private ulong? _previousKernel;
     private ulong? _previousUser;
     private double _lastCpuUsage;
 
-    private long _previousDiskReadBytes;
-    private long _previousDiskWriteBytes;
+    private NetworkInterface[] _interfaces = [];
+    private DateTime _interfacesReadUtc = DateTime.MinValue;
     private long _previousNetSent;
     private long _previousNetReceived;
-    private DateTime _previousSampleTime = DateTime.UtcNow;
-    private bool _hasPrevious;
+    private bool _hasNetworkBaseline;
+    private DateTime _previousSampleUtc = DateTime.UtcNow;
 
     private Computer? _computer;
-    private bool _lhmFailed;
+    private bool _sensorsFailed;
+    private int _discoveryPasses;
+    private readonly HashSet<IHardware> _sensorHardware = [];
+    private IHardware[]? _lockedSensorHardware;
+    private bool _disposed;
 
-    public IReadOnlyList<FanReading> LastFanReadings { get; private set; } = [];
+    public static bool IsElevated { get; } = CheckElevated();
+
+    public SensorStatus SensorStatus { get; private set; } = SensorStatus.Pending;
 
     public SystemTelemetry Sample()
     {
-        var now = DateTime.UtcNow;
-        var elapsed = (now - _previousSampleTime).TotalSeconds;
-        if (elapsed < 0.01) elapsed = 1;
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var now = DateTime.UtcNow;
+            var elapsed = Math.Max(0.05, (now - _previousSampleUtc).TotalSeconds);
+            _previousSampleUtc = now;
 
-        var cpuUsage = SampleCpu();
-        var (memTotal, memAvailable) = SampleMemory();
-        var (thermals, fans) = SampleSensors();
-        LastFanReadings = fans;
-        var (diskRead, diskWrite) = SampleDiskIo(elapsed);
-        var (netSent, netReceived) = SampleNetwork(elapsed);
+            var cpuUsage = SampleCpu();
+            var (memTotal, memAvailable) = SampleMemory();
+            var (thermals, fans) = SampleSensors();
+            var (netSent, netReceived) = SampleNetwork(now, elapsed);
 
-        _previousSampleTime = now;
-
-        return new SystemTelemetry(
-            cpuUsage, memTotal, memAvailable,
-            thermals,
-            diskRead, diskWrite,
-            netSent, netReceived,
-            DateTimeOffset.Now);
+            return new SystemTelemetry(
+                cpuUsage, memTotal, memAvailable,
+                thermals, fans,
+                netSent, netReceived,
+                DateTimeOffset.Now);
+        }
     }
 
     private (List<ThermalReading> Thermals, List<FanReading> Fans) SampleSensors()
     {
-        if (_lhmFailed) return ([], []);
+        var thermals = new List<ThermalReading>();
+        var fans = new List<FanReading>();
+        if (_sensorsFailed) return (thermals, fans);
 
         try
         {
@@ -64,27 +84,38 @@ internal sealed class SystemTelemetryService : IDisposable
                 _computer.Open();
             }
 
-            var thermals = new List<ThermalReading>();
-            var fans = new List<FanReading>();
-
-            foreach (var hardware in _computer.Hardware)
+            IEnumerable<IHardware> hardware = _lockedSensorHardware ?? (IEnumerable<IHardware>)_computer.Hardware;
+            foreach (var hw in hardware)
             {
-                hardware.Update();
-                foreach (var sub in hardware.SubHardware)
+                var before = thermals.Count + fans.Count;
+                hw.Update();
+                CollectSensors(hw, thermals, fans);
+                foreach (var sub in hw.SubHardware)
+                {
                     sub.Update();
-
-                CollectSensors(hardware, thermals, fans);
-                foreach (var sub in hardware.SubHardware)
                     CollectSensors(sub, thermals, fans);
+                }
+                if (_lockedSensorHardware is null && thermals.Count + fans.Count > before)
+                    _sensorHardware.Add(hw);
             }
 
-            return (thermals, fans);
+            if (_lockedSensorHardware is null && ++_discoveryPasses >= SensorDiscoveryPasses)
+                _lockedSensorHardware = [.. _sensorHardware];
+
+            UpdateStatus(thermals.Count, fans.Count, null);
         }
-        catch
+        catch (Exception ex)
         {
-            _lhmFailed = true;
-            return ([], []);
+            _sensorsFailed = true;
+            UpdateStatus(0, 0, ex.Message);
         }
+        return (thermals, fans);
+    }
+
+    private void UpdateStatus(int temperatureZones, int fans, string? error)
+    {
+        var (installed, version) = PawnIo.Value;
+        SensorStatus = new SensorStatus(true, IsElevated, installed, version, temperatureZones, fans, error);
     }
 
     private static void CollectSensors(IHardware hw, List<ThermalReading> thermals, List<FanReading> fans)
@@ -107,8 +138,7 @@ internal sealed class SystemTelemetryService : IDisposable
                 case SensorType.Fan:
                 {
                     var rpm = (int)sensor.Value.Value;
-                    var name = ClassifyFan(hw, sensor);
-                    fans.Add(new FanReading(name, rpm, rpm > 0));
+                    fans.Add(new FanReading(ClassifyFan(hw, sensor), rpm, rpm > 0));
                     break;
                 }
             }
@@ -187,62 +217,79 @@ internal sealed class SystemTelemetryService : IDisposable
         return (memory.TotalPhysical, memory.AvailablePhysical);
     }
 
-    private (double ReadBytesPerSec, double WriteBytesPerSec) SampleDiskIo(double elapsed)
-    {
-        if (GetProcessIoCounters(GetCurrentProcess(), out var counters))
-        {
-            var readBytes = (long)counters.ReadTransferCount;
-            var writeBytes = (long)counters.WriteTransferCount;
-            if (_hasPrevious)
-            {
-                var dr = Math.Max(0, readBytes - _previousDiskReadBytes) / elapsed;
-                var dw = Math.Max(0, writeBytes - _previousDiskWriteBytes) / elapsed;
-                _previousDiskReadBytes = readBytes;
-                _previousDiskWriteBytes = writeBytes;
-                return (dr, dw);
-            }
-            _previousDiskReadBytes = readBytes;
-            _previousDiskWriteBytes = writeBytes;
-        }
-        return (0, 0);
-    }
-
-    private (double SentBytesPerSec, double ReceivedBytesPerSec) SampleNetwork(double elapsed)
+    private (double SentBytesPerSec, double ReceivedBytesPerSec) SampleNetwork(DateTime now, double elapsed)
     {
         try
         {
-            long totalSent = 0, totalReceived = 0;
-            foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
+            // Enumerating adapters is the slow part (~30 ms); their byte counters are cheap to re-read.
+            if (now - _interfacesReadUtc > InterfaceRefresh)
             {
-                if (iface.OperationalStatus != OperationalStatus.Up) continue;
-                if (iface.NetworkInterfaceType is NetworkInterfaceType.Loopback) continue;
+                _interfaces = NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(i => i.OperationalStatus == OperationalStatus.Up &&
+                                i.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel))
+                    .ToArray();
+                _interfacesReadUtc = now;
+                _hasNetworkBaseline = false; // a changed adapter set would otherwise read as one huge spike
+            }
+
+            long totalSent = 0, totalReceived = 0;
+            foreach (var iface in _interfaces)
+            {
                 var stats = iface.GetIPStatistics();
                 totalSent += stats.BytesSent;
                 totalReceived += stats.BytesReceived;
             }
 
-            if (_hasPrevious)
-            {
-                var sent = Math.Max(0, totalSent - _previousNetSent) / elapsed;
-                var received = Math.Max(0, totalReceived - _previousNetReceived) / elapsed;
-                _previousNetSent = totalSent;
-                _previousNetReceived = totalReceived;
-                return (sent, received);
-            }
+            var rates = _hasNetworkBaseline
+                ? (Math.Max(0, totalSent - _previousNetSent) / elapsed,
+                   Math.Max(0, totalReceived - _previousNetReceived) / elapsed)
+                : (0d, 0d);
             _previousNetSent = totalSent;
             _previousNetReceived = totalReceived;
-            _hasPrevious = true;
+            _hasNetworkBaseline = true;
+            return rates;
         }
-        catch { }
-        return (0, 0);
+        catch
+        {
+            _interfacesReadUtc = DateTime.MinValue;
+            return (0, 0);
+        }
     }
 
     public void Dispose()
     {
-        if (_computer is not null)
+        lock (_gate)
         {
-            _computer.Close();
+            if (_disposed) return;
+            _disposed = true;
+            try { _computer?.Close(); } catch { }
             _computer = null;
+        }
+    }
+
+    private static (bool Installed, string? Version) ReadPawnIo()
+    {
+        try
+        {
+            var installed = LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled;
+            return (installed, installed ? LibreHardwareMonitor.PawnIo.PawnIo.Version?.ToString() : null);
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
+    private static bool CheckElevated()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -269,17 +316,6 @@ internal sealed class SystemTelemetryService : IDisposable
         public ulong AvailableExtendedVirtual;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct IoCounters
-    {
-        public ulong ReadOperationCount;
-        public ulong WriteOperationCount;
-        public ulong OtherOperationCount;
-        public ulong ReadTransferCount;
-        public ulong WriteTransferCount;
-        public ulong OtherTransferCount;
-    }
-
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetSystemTimes(out FileTime idleTime, out FileTime kernelTime, out FileTime userTime);
@@ -287,13 +323,4 @@ internal sealed class SystemTelemetryService : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetCurrentProcess();
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetProcessIoCounters(IntPtr process, out IoCounters counters);
 }
-
-public sealed record FanReading(string Name, int Rpm, bool Active);

@@ -2,207 +2,295 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<title>BoardScout · Topology</title>
+<script src="vendor/d3/d3.v7.min.js"></script>
 <style>
-:root{--bg:#060b10;--s:#0c1620;--sr:#111e2c;--b:#162030;--t:#e8edf4;--ts:#8a9bb2;--tm:#4a6080;
+:root{--bg:#060b10;--s:#0c1620;--sr:#111e2c;--b:#1c2a3c;--t:#e8edf4;--ts:#8a9bb2;--tm:#4a6080;
   --a:#3d9eff;--ok:#10b981;--w:#f59e0b;--cr:#ef4444;--p:#a78bfa;--tl:#2dd4bf;--or:#fb923c}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--t);font-family:'Segoe UI',system-ui,sans-serif;overflow:auto}
-svg{display:block;width:100%;min-height:100vh}
-.node rect{rx:10;ry:10;stroke-width:2;cursor:pointer;transition:filter .15s}
-.node rect:hover{filter:brightness(1.25) drop-shadow(0 0 8px rgba(61,158,255,.3))}
+body{color:var(--t);font-family:'Segoe UI',system-ui,sans-serif;overflow:auto;min-height:100vh;
+  background:
+    radial-gradient(rgba(255,255,255,.05) 1px,transparent 1.2px) 0 0/24px 24px,
+    radial-gradient(900px 520px at 50% -12%,rgba(61,158,255,.16),transparent 62%),
+    radial-gradient(640px 420px at 6% 90%,rgba(167,139,250,.11),transparent 62%),
+    radial-gradient(640px 420px at 96% 86%,rgba(45,212,191,.09),transparent 62%),
+    var(--s);
+  background-attachment:fixed}
+svg{display:block;width:100%}
+.node{cursor:pointer}
+.node .card{transition:filter .2s}
+.node:hover .card{filter:brightness(1.28) drop-shadow(0 0 10px rgba(61,158,255,.35))}
 .node text{fill:var(--t);pointer-events:none}
 .node .label{font-weight:600;font-size:14px}
 .node .detail{fill:var(--ts);font-size:11px}
-.link{fill:none;stroke-width:2;opacity:.5}
-.link:hover{opacity:1;stroke-width:3}
-.badge{font-size:10px;font-family:'Segoe UI',sans-serif;pointer-events:none}
-.badge rect{rx:10;ry:10}
+.link{fill:none;stroke-width:2;opacity:.42}
+/* Liquid flow: dashes travel down each link, faster on wider buses. */
+.flow{fill:none;stroke-width:2.4;stroke-linecap:round;stroke-dasharray:2 16;opacity:.95;animation:flow var(--speed,1.6s) linear infinite;pointer-events:none}
+@keyframes flow{to{stroke-dashoffset:-36}}
+body.no-motion .flow{display:none}
+@media (prefers-reduced-motion:reduce){.flow{display:none}}
+.badge text{font-size:10px;pointer-events:none}
 .title-text{fill:var(--tm);font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase}
 .hint{fill:var(--tm);font-size:10px}
-.tooltip{position:fixed;background:var(--sr);border:1px solid var(--b);color:var(--t);padding:12px 16px;border-radius:10px;
-  font-size:12px;max-width:340px;line-height:1.6;pointer-events:none;z-index:99;display:none;box-shadow:0 6px 32px rgba(0,0,0,.6)}
+.tooltip{position:fixed;color:var(--t);padding:12px 16px;border-radius:14px;font-size:12px;max-width:340px;line-height:1.6;
+  pointer-events:none;z-index:99;display:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(17,30,44,.72);
+  border:1px solid rgba(255,255,255,.09);border-top-color:rgba(255,255,255,.2);
+  box-shadow:0 12px 36px rgba(0,0,0,.5);backdrop-filter:blur(14px) saturate(1.4)}
+body.no-glass .tooltip{background:var(--sr);backdrop-filter:none;border-color:var(--b)}
 .tooltip h4{font-size:13px;margin-bottom:4px}
 .tooltip .tip-detail{color:var(--ts);margin-top:6px;font-size:11px}
+#legend{position:fixed;top:14px;right:18px;border-radius:18px;padding:12px 16px;font-size:11.5px;color:var(--ts);z-index:5;
+  box-shadow:0 12px 34px rgba(0,0,0,.4)}
+#legend:not(.ql-live){background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(17,30,44,.66);
+  border:1px solid rgba(255,255,255,.09);border-top-color:rgba(255,255,255,.2);backdrop-filter:blur(12px) saturate(1.4)}
+body.no-glass #legend{background:var(--sr);backdrop-filter:none;border:1px solid var(--b)}
+#legend > .ql-content{position:relative;z-index:10}
+#legend h5{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--a);margin-bottom:6px}
+#legend .row{display:flex;align-items:center;gap:8px;margin:3px 0}
+#legend .sw{width:18px;height:3px;border-radius:2px}
+#legend .sw.dashed{background:repeating-linear-gradient(90deg,var(--tm) 0 5px,transparent 5px 9px)!important}
 </style>
 </head>
 <body>
 <div class="tooltip" id="tip"></div>
+<div id="legend" hidden>
+  <div class="ql-content">
+    <h5>Bandwidth</h5>
+    <div class="row"><span class="sw" style="background:#3d9eff"></span>CPU-direct lanes</div>
+    <div class="row"><span class="sw" style="background:#a78bfa"></span>Chipset (shared uplink)</div>
+    <div class="row"><span class="sw" style="background:#10b981"></span>Storage &amp; network</div>
+    <div class="row"><span class="sw" style="background:#fb923c"></span>SATA</div>
+    <div class="row"><span class="sw dashed"></span>Open slot</div>
+  </div>
+</div>
 <svg id="topo"></svg>
 <script>
+'use strict';
 const COLORS={cpu:'#3d9eff',memory:'#f59e0b',gpu:'#10b981',storage:'#10b981',chipset:'#a78bfa',
-  usb:'#2dd4bf',sata:'#fb923c',open:'#4a6080',lan:'#10b981',wifi:'#10b981'};
-const BG='#0c1620',STROKE='#162030';
+  usb:'#2dd4bf',sata:'#fb923c',open:'#4a6080',lan:'#10b981',wifi:'#10b981',slots:'#4a6080'};
+const BG='#0c1620';
+const state={glass:true,motion:true,scan:null,legendGlass:null,ql:null};
 
 function shortCpu(n){return(n||'CPU').replace(/ with Radeon Graphics/i,'').replace(/AMD /i,'').replace(/Intel\(R\) /i,'')}
 
+// Wider buses get faster flow; open slots have none.
+function flowSpeed(bus){
+  if(!bus)return null;
+  if(/x16/i.test(bus))return '0.8s';
+  if(/DDR/i.test(bus))return '0.9s';
+  if(/x4|uplink/i.test(bus))return '1.3s';
+  if(/x2/i.test(bus))return '1.7s';
+  return '2.3s';
+}
+
 function buildTree(scan){
   const cpu=scan.system?.cpu;
-  const cpuName=shortCpu(Array.isArray(cpu)?cpu[0]?.name:cpu?.name);
+  const cpuName=Array.isArray(cpu)?cpu[0]?.name:cpu?.name;
   const cores=Array.isArray(cpu)?cpu[0]?.cores:cpu?.cores;
   const threads=Array.isArray(cpu)?cpu[0]?.threads:cpu?.threads;
   const mem=scan.memory||{};
   const first=mem.slots?.[0];
+  const ddr=(first?.rated_mhz||first?.speed_mhz||0)>=4800?'DDR5':'DDR4';
   const comps=scan.components||[];
   const gpu=comps.find(c=>c.category==='gpu');
   const storage=comps.filter(c=>c.category==='storage');
   const nvme=storage.filter(c=>(c.lookup_hints?.bus_type||'').toLowerCase()==='nvme');
   const sata=storage.filter(c=>(c.lookup_hints?.bus_type||'').toLowerCase()==='sata');
   const wifi=comps.find(c=>c.category==='network'&&/Wi-?Fi|Wireless|AX\d{3}/i.test(c.model));
-  const lan=comps.find(c=>c.category==='network'&&c!==wifi&&/Ethernet|GbE|Realtek/i.test(c.model));
+  const lan=comps.find(c=>c.category==='network'&&c!==wifi&&/Ethernet|GbE|Realtek|2\.5G/i.test(c.model));
   const chipsetComp=comps.find(c=>c.category==='chipset');
-  const usb=scan.usb_devices||[];
-  const usbCount=usb.filter(d=>d.class!=='USB').length;
+  const usbCount=(scan.usb_devices||[]).filter(d=>d.class!=='USB').length;
+  const slots=scan.expansion_slots||[];
   const ff=(scan.form_factor||'').toUpperCase();
+  // Slot names, lane sharing, and lane generations below were verified for this one board.
+  // Every other board gets generic labels instead of borrowed ones.
+  const steel=/B550M Steel Legend/i.test(scan.system?.baseboard?.product||'');
+  const apu=/\d{4}G\b/i.test(cpuName||'');
+  const gen=steel?(apu?'PCIe 3.0':'PCIe 4.0'):'PCIe';
 
-  const tree={
-    id:'cpu',name:cpuName,detail:`${cores||0} cores / ${threads||0} threads`,color:COLORS.cpu,
-    tip:`Processor with ${cores} cores and ${threads} threads. CPU-direct paths avoid the chipset uplink entirely.`,
-    children:[]
-  };
+  const tree={id:'cpu',name:shortCpu(cpuName),detail:`${cores||0} cores / ${threads||0} threads`,color:COLORS.cpu,
+    tip:`Processor with ${cores} cores and ${threads} threads. CPU-direct paths avoid the chipset uplink entirely.`,children:[]};
 
-  tree.children.push({id:'mem',name:`DDR4 ${mem.populated||0}×${mem.total_bytes?Math.round(mem.total_bytes/1073741824/Math.max(1,mem.populated||1)):0} GB`,
-    detail:first?`${first.speed_mhz} / ${first.rated_mhz} MT/s`:'',color:COLORS.memory,bus:'DDR4 dual ch.',
-    tip:'Memory is directly attached to the CPU. Enable the rated memory profile in firmware for full speed.'});
+  tree.children.push({id:'mem',name:`${ddr} ${mem.populated||0}×${mem.total_bytes?Math.round(mem.total_bytes/1073741824/Math.max(1,mem.populated||1)):0} GB`,
+    detail:first?`${first.speed_mhz} / ${first.rated_mhz} MT/s`:'',color:COLORS.memory,bus:`${ddr} dual channel`,
+    tip:'Memory is directly attached to the CPU. Enable the rated memory profile (XMP/DOCP/EXPO) in firmware for full speed.'});
 
   if(gpu){
-    tree.children.push({id:'gpu',name:gpu.model.replace('NVIDIA ',''),detail:'PCIE1 · CPU-direct',color:COLORS.gpu,bus:'PCIe 3.0 x16',bw:'15.8 GB/s',
-      tip:'Primary graphics slot. CPU-direct connection with maximum bandwidth.'});
+    tree.children.push({id:'gpu',name:gpu.model.replace('NVIDIA ',''),detail:steel?'PCIE1 · CPU-direct':'Primary x16 slot · CPU-direct',
+      color:COLORS.gpu,bus:`${gen} x16`,bw:steel?(apu?'15.8 GB/s':'31.5 GB/s'):null,
+      tip:'Primary graphics slot. CPU-direct connection with the most bandwidth on the board.'});
   }
   if(nvme.length>0){
-    tree.children.push({id:'m2-1',name:nvme[0].model,detail:'M2_1 · CPU-direct',color:COLORS.storage,bus:'PCIe 3.0 x4',bw:'3.9 GB/s',
+    tree.children.push({id:'m2-1',name:nvme[0].model,detail:steel?'M2_1 · CPU-direct':'M.2 · CPU-direct',color:COLORS.storage,
+      bus:`${gen} x4`,bw:steel?(apu?'3.9 GB/s':'7.9 GB/s'):null,
       tip:'Fastest native storage socket. CPU-direct with no chipset contention.'});
   }
 
   const chipsetChildren=[];
-  if(nvme.length>1){
-    chipsetChildren.push({id:'m2-2',name:nvme[1].model,detail:'M2_2 · disables SATA 5/6',color:COLORS.storage,bus:'PCIe 3.0 x2',bw:'1.97 GB/s',
-      tip:'Secondary M.2 slot. Limited to x2 and disables SATA ports 5-6 while occupied.'});
-  }
-  if(ff!=='MINI-ITX'){
+  nvme.slice(1).forEach((drive,i)=>chipsetChildren.push({id:`m2-${i+2}`,name:drive.model,
+    detail:steel&&i===0?'M2_2 · disables SATA 5/6':'M.2 · chipset',color:COLORS.storage,
+    bus:steel&&i===0?'PCIe 3.0 x2':'Chipset PCIe',bw:steel&&i===0?'1.97 GB/s':null,
+    tip:steel&&i===0?'Secondary M.2 slot. Limited to x2 and disables SATA ports 5-6 while occupied.':'Additional NVMe drive behind the chipset; it shares the chipset uplink.'}));
+  if(steel&&ff!=='MINI-ITX'){
     chipsetChildren.push({id:'pcie-x1',name:'PCIE2 slot',detail:'x1 · available',color:COLORS.open,bus:'PCIe 3.0 x1',dashed:true,
       tip:'Short expansion slot. Good for capture, sound, USB, or network cards.'});
     chipsetChildren.push({id:'pcie-x4',name:'PCIE3 slot',detail:'x4 in x16 · available',color:COLORS.open,bus:'PCIe 3.0 x4',dashed:true,
       tip:'Best slot for NVMe expansion adapters. Full-length physical slot, electrically x4.'});
+  }else if(slots.length){
+    const free=slots.filter(s=>s.current_usage===3).length;
+    chipsetChildren.push({id:'slots',name:'Expansion slots',detail:`${slots.length} reported${free?` · ${free} available`:''}`,
+      color:COLORS.slots,dashed:true,tip:'Slots reported by the firmware (SMBIOS). Check the board manual for which are CPU- or chipset-connected.'});
   }
   if(wifi){
-    chipsetChildren.push({id:'wifi',name:wifi.model.replace('Intel(R) ',''),detail:'M2_3 Key-E',color:COLORS.wifi,bus:'PCIe + USB',
-      tip:'WiFi/BT module in Key-E socket. This cannot accept an NVMe SSD.'});
+    chipsetChildren.push({id:'wifi',name:wifi.model.replace('Intel(R) ',''),detail:steel?'M2_3 Key-E':'M.2 Key-E / PCIe',color:COLORS.wifi,bus:'PCIe + USB',
+      tip:'WiFi/Bluetooth module in an M.2 Key-E socket. That socket cannot accept an NVMe SSD.'});
   }
   if(lan){
-    chipsetChildren.push({id:'lan',name:lan.model,detail:'Onboard',color:COLORS.lan,bus:'PCIe 3.0 x1',
+    chipsetChildren.push({id:'lan',name:lan.model,detail:'Onboard',color:COLORS.lan,bus:'PCIe x1',
       tip:'Onboard Ethernet controller. Chipset-connected, does not use a user slot.'});
   }
   if(sata.length>0){
-    chipsetChildren.push({id:'sata',name:`SATA (${sata.length})`,detail:`${sata.length} installed · 6 ports`,color:COLORS.sata,bus:'SATA III',bw:'600 MB/s',
-      tip:`${sata.length} SATA drive(s). Ports 5-6 unavailable while M2_2 is occupied.`});
+    chipsetChildren.push({id:'sata',name:`SATA (${sata.length})`,detail:steel?`${sata.length} installed · 6 ports`:`${sata.length} installed`,
+      color:COLORS.sata,bus:'SATA III',bw:'600 MB/s',
+      tip:steel?`${sata.length} SATA drive(s). Ports 5-6 are unavailable while M2_2 is occupied.`:`${sata.length} SATA drive(s) on the chipset's SATA controller.`});
   }
-  chipsetChildren.push({id:'usb',name:'USB controllers',detail:`${usbCount} devices`,color:COLORS.usb,bus:'USB 3.2/2.0',
-    tip:'Chipset USB controllers with shared bandwidth between hubs.'});
+  chipsetChildren.push({id:'usb',name:'USB controllers',detail:`${usbCount} devices`,color:COLORS.usb,bus:'USB',
+    tip:'Chipset USB controllers with bandwidth shared between hubs.'});
 
-  tree.children.push({
-    id:'chipset',name:chipsetComp?.model?.replace(/AMD /,'')??'Chipset',detail:'Platform hub',color:COLORS.chipset,
-    bus:'x4 uplink',bw:'3.9 GB/s shared',
-    tip:'All devices below share the chipset-to-CPU uplink. Aggregate throughput is capped at 3.9 GB/s.',
-    children:chipsetChildren
-  });
+  tree.children.push({id:'chipset',name:chipsetComp?.model?.replace(/AMD /,'')??'Chipset',detail:'Platform hub',color:COLORS.chipset,
+    bus:steel?'PCIe 3.0 x4 uplink':'Chipset uplink',bw:steel?'3.9 GB/s shared':'shared',
+    tip:'Every device below shares the chipset-to-CPU uplink, so they cannot all run flat out at once.',children:chipsetChildren});
 
-  return tree;
+  return {tree,steel};
+}
+
+// A point on d3.linkVertical's cubic curve (its control points sit at the vertical midpoint).
+function pointOnLink(s,t,u){
+  const my=(s.y+t.y)/2,a=(1-u)**3,b=3*(1-u)**2*u,c=3*(1-u)*u**2,d=u**3;
+  return {x:s.x*(a+b)+t.x*(c+d),y:s.y*a+my*(b+c)+t.y*d};
 }
 
 function render(scan){
+  state.scan=scan;
   const svg=d3.select('#topo');
   svg.selectAll('*').remove();
   const W=window.innerWidth;
-  const nodeW=200,nodeH=56;
-
-  const root=d3.hierarchy(buildTree(scan));
-  const treeLayout=d3.tree().nodeSize([nodeW+40,140]).separation((a,b)=>a.parent===b.parent?1:1.2);
-  treeLayout(root);
+  const nodeW=204,nodeH=58;
+  const {tree,steel}=buildTree(scan);
+  const root=d3.hierarchy(tree);
+  d3.tree().nodeSize([nodeW+40,140]).separation((a,b)=>a.parent===b.parent?1:1.2)(root);
 
   let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
   root.each(d=>{minX=Math.min(minX,d.x);maxX=Math.max(maxX,d.x);minY=Math.min(minY,d.y);maxY=Math.max(maxY,d.y)});
-
-  const treeW=maxX-minX+nodeW+80;
-  const treeH=maxY-minY+nodeH+160;
-  const topPad=60;
-  const H=treeH+topPad+40;
-
-  const scale=Math.min((W-40)/treeW,1);
+  // Fit the tree to the pane (up to 130%) and center it, instead of leaving it small at the top.
+  const contentW=maxX-minX+nodeW+40, contentH=maxY-minY+nodeH;
+  const topPad=76, bottomPad=64;
+  const scale=Math.max(.45,Math.min((W-80)/contentW,(window.innerHeight-topPad-bottomPad)/contentH,1.3));
+  const H=Math.max(window.innerHeight,topPad+contentH*scale+bottomPad);
   const tx=(W/2)-(((maxX+minX)/2)*scale);
-  const ty=topPad-minY*scale+40;
-
+  const top=topPad+Math.max(0,(H-topPad-bottomPad-contentH*scale)/2);
+  const ty=top-(minY-nodeH/2)*scale;
   svg.attr('viewBox',`0 0 ${W} ${H}`).style('height',H+'px');
+
+  const defs=svg.append('defs');
+  const glassFill=defs.append('linearGradient').attr('id','glassFill').attr('x1',0).attr('y1',0).attr('x2',0).attr('y2',1);
+  glassFill.append('stop').attr('offset',0).attr('stop-color','#fff').attr('stop-opacity',.1);
+  glassFill.append('stop').attr('offset',.5).attr('stop-color','#fff').attr('stop-opacity',.02);
+  glassFill.append('stop').attr('offset',1).attr('stop-color','#000').attr('stop-opacity',.14);
 
   const g=svg.append('g').attr('transform',`translate(${tx},${ty}) scale(${scale})`);
   const tip=document.getElementById('tip');
+  const linkPath=d3.linkVertical().x(d=>d.x).y(d=>d.y);
 
-  g.selectAll('.link').data(root.links()).join('path')
-    .attr('class','link')
+  g.selectAll('.link').data(root.links()).join('path').attr('class','link')
     .attr('stroke',d=>d.target.data.color||'#4a6080')
     .attr('stroke-dasharray',d=>d.target.data.dashed?'6,4':null)
-    .attr('d',d3.linkVertical().x(d=>d.x).y(d=>d.y));
+    .attr('d',linkPath);
+  g.selectAll('.flow').data(root.links().filter(d=>!d.target.data.dashed&&flowSpeed(d.target.data.bus))).join('path').attr('class','flow')
+    .attr('stroke',d=>d.target.data.color||'#4a6080')
+    .style('--speed',d=>flowSpeed(d.target.data.bus))
+    .attr('d',linkPath);
 
-  const badges=root.links().filter(d=>d.target.data.bus);
-  g.selectAll('.badge-g').data(badges).join('g').attr('class','badge-g')
-    .attr('transform',d=>{
-      const mx=(d.source.x+d.target.x)/2;
-      const my=(d.source.y+d.target.y)/2;
-      return `translate(${mx},${my})`;
-    })
+  // Badges sit on each curve near its child: at the midpoint every link under one parent is
+  // still bunched together and the labels overlapped.
+  g.selectAll('.badge').data(root.links().filter(d=>d.target.data.bus)).join('g').attr('class','badge')
+    .attr('transform',d=>{const p=pointOnLink(d.source,d.target,.72);return `translate(${p.x},${p.y})`})
     .each(function(d){
       const sel=d3.select(this);
       const text=d.target.data.bus+(d.target.data.bw?' │ '+d.target.data.bw:'');
-      const tw=text.length*6+20;
-      sel.append('rect').attr('x',-tw/2).attr('y',-10).attr('width',tw).attr('height',18)
-        .attr('fill',BG).attr('stroke',d.target.data.color||STROKE).attr('stroke-width',.7).attr('opacity',.95);
-      sel.append('text').attr('class','badge').attr('text-anchor','middle').attr('dy',3)
-        .attr('fill',d.target.data.color||'#8a9bb2').text(text);
+      const tw=text.length*6+22;
+      sel.append('rect').attr('x',-tw/2).attr('y',-10).attr('width',tw).attr('height',19).attr('rx',9.5)
+        .attr('fill',BG).attr('stroke',d.target.data.color||'#1c2a3c').attr('stroke-width',.8).attr('opacity',.96);
+      sel.append('text').attr('text-anchor','middle').attr('dy',3.5).attr('fill',d.target.data.color||'#8a9bb2').text(text);
     });
 
-  const node=g.selectAll('.node').data(root.descendants()).join('g')
-    .attr('class','node')
+  const node=g.selectAll('.node').data(root.descendants()).join('g').attr('class','node')
     .attr('transform',d=>`translate(${d.x},${d.y})`);
-
-  node.append('rect')
-    .attr('x',-nodeW/2).attr('y',-nodeH/2).attr('width',nodeW).attr('height',nodeH)
-    .attr('fill',BG).attr('stroke',d=>d.data.color||STROKE)
-    .attr('stroke-dasharray',d=>d.data.dashed?'6,4':null)
-    .on('mouseenter',(e,d)=>{
+  const card=node.append('g').attr('class','card');
+  card.append('rect').attr('x',-nodeW/2).attr('y',-nodeH/2).attr('width',nodeW).attr('height',nodeH).attr('rx',14).attr('fill',BG);
+  card.append('rect').attr('x',-nodeW/2).attr('y',-nodeH/2).attr('width',nodeW).attr('height',nodeH).attr('rx',14)
+    .attr('fill','url(#glassFill)').attr('stroke',d=>d.data.color||'#1c2a3c').attr('stroke-width',1.6)
+    .attr('stroke-dasharray',d=>d.data.dashed?'6,4':null);
+  card.append('line').attr('x1',-nodeW/2+14).attr('x2',nodeW/2-14).attr('y1',-nodeH/2+1.2).attr('y2',-nodeH/2+1.2)
+    .attr('stroke','#fff').attr('stroke-opacity',.22).attr('stroke-width',1);
+  node.on('mouseenter',(e,d)=>{
       tip.style.display='block';
-      tip.innerHTML=`<h4 style="color:${d.data.color}">${d.data.name}</h4>`+(d.data.tip||'')
-        +(d.data.bus?`<div class="tip-detail">${d.data.bus}${d.data.bw?' │ '+d.data.bw:''}</div>`:'');
+      tip.replaceChildren();
+      const h4=document.createElement('h4');h4.style.color=d.data.color;h4.textContent=d.data.name;tip.appendChild(h4);
+      tip.appendChild(document.createTextNode(d.data.tip||''));
+      if(d.data.bus){const det=document.createElement('div');det.className='tip-detail';det.textContent=d.data.bus+(d.data.bw?' │ '+d.data.bw:'');tip.appendChild(det)}
     })
-    .on('mousemove',e=>{tip.style.left=(e.clientX+16)+'px';tip.style.top=(e.clientY-10)+'px'})
+    .on('mousemove',e=>{tip.style.left=Math.min(e.clientX+16,window.innerWidth-360)+'px';tip.style.top=(e.clientY-10)+'px'})
     .on('mouseleave',()=>{tip.style.display='none'});
-
   node.append('text').attr('class','label').attr('text-anchor','middle').attr('dy',-6)
     .text(d=>{const n=d.data.name;return n.length>24?n.slice(0,22)+'…':n});
-  node.append('text').attr('class','detail').attr('text-anchor','middle').attr('dy',14)
-    .text(d=>d.data.detail||'');
+  node.append('text').attr('class','detail').attr('text-anchor','middle').attr('dy',14).text(d=>d.data.detail||'');
 
-  svg.append('text').attr('class','title-text').attr('x',24).attr('y',24).text('Bandwidth topology');
-  svg.append('text').attr('class','hint').attr('x',W-24).attr('y',24).attr('text-anchor','end')
-    .text('CPU-direct paths bypass the chipset uplink · hover any node');
-  svg.append('text').attr('class','hint').attr('x',W/2).attr('y',H-14).attr('text-anchor','middle')
-    .attr('fill','#3d9eff')
-    .text('Key-E (M2_3) is the wireless slot — removing it does not create an NVMe socket');
+  svg.append('text').attr('class','title-text').attr('x',24).attr('y',28).text('Bandwidth topology');
+  svg.append('text').attr('class','hint').attr('x',24).attr('y',46)
+    .text(steel?'Verified layout for the ASRock B550M Steel Legend · hover any node'
+               :'Generic layout from the scan · slot names and lane sharing vary by board · hover any node');
+  if(steel){
+    svg.append('text').attr('class','hint').attr('x',W/2).attr('y',top+contentH*scale+38).attr('text-anchor','middle').attr('fill','#3d9eff')
+      .text('Key-E (M2_3) is the wireless slot — removing it does not create an NVMe socket');
+  }
+  document.getElementById('legend').hidden=false;
+  syncGlass();
 }
 
-if(window.chrome&&window.chrome.webview){
-  window.chrome.webview.addEventListener('message',e=>{
-    if(e.data) render(e.data);
-  });
+function applySettings(s){
+  state.glass=!!s.glass;state.motion=!!s.motion;
+  document.body.classList.toggle('no-glass',!state.glass);
+  document.body.classList.toggle('no-motion',!state.motion);
+  syncGlass();
 }
-window.addEventListener('message',e=>{
-  try{
-    const data=typeof e.data==='string'?JSON.parse(e.data):e.data;
-    if(data) render(data);
-  }catch(err){console.error('topology message error',err)}
+
+async function syncGlass(){
+  const legend=document.getElementById('legend');
+  if(legend.hidden)return;
+  if(!state.ql)state.ql=import('./vendor/quick-liquid/index.mjs').catch(err=>{console.warn('QuickLiquid unavailable',err);return null});
+  const ql=await state.ql;
+  if(!ql)return;
+  if(state.glass&&!state.legendGlass){
+    state.legendGlass=new ql.LiquidGlassEngine(legend,{material:'clear',appearance:'dark',borderRadius:18,quality:'medium',
+      refractionStrength:16,chromaticAberration:0.14,blur:4,dynamicLighting:state.motion});
+    legend.classList.add('ql-live');
+  }else if(!state.glass&&state.legendGlass){
+    state.legendGlass.destroy();state.legendGlass=null;legend.classList.remove('ql-live');
+  }else if(state.legendGlass){
+    state.legendGlass.updateConfig({dynamicLighting:state.motion});
+  }
+}
+
+window.chrome.webview.addEventListener('message',e=>{
+  const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
+  if(!msg)return;
+  if(msg.type==='settings')applySettings(msg);
+  else if(msg.type==='scan'&&msg.scan)render(msg.scan);
 });
-window.addEventListener('resize',()=>{if(window._lastScan) render(window._lastScan)});
-const origRender=render;
-render=function(s){window._lastScan=s;origRender(s)};
+let resizeTimer=0;
+window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.scan)render(state.scan)},120)});
 </script>
 </body>
 </html>

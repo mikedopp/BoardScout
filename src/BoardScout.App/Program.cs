@@ -10,11 +10,25 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        if (args.Contains("--system-json", StringComparer.OrdinalIgnoreCase))
+            return PrintSystemJsonAsync().GetAwaiter().GetResult();
+
         if (args.Contains("--scan", StringComparer.OrdinalIgnoreCase) ||
             args.Contains("--check-drivers", StringComparer.OrdinalIgnoreCase))
         {
             return RunHeadlessAsync(args).GetAwaiter().GetResult();
         }
+
+        // A window that vanishes should leave evidence behind.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) =>
+        {
+            var log = WriteCrashLog(e.Exception);
+            MessageBox.Show(
+                $"BoardScout hit an unexpected error and kept running.\n\n{e.Exception.Message}\n\nDetails: {log}",
+                "BoardScout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrashLog(e.ExceptionObject as Exception);
 
         Application.Run(new MainForm());
         return 0;
@@ -52,6 +66,40 @@ internal static class Program
         {
             Console.Error.WriteLine(ex);
             return 1;
+        }
+    }
+
+    // Prints what the System tab receives, using the latest cached scan when there is one.
+    private static async Task<int> PrintSystemJsonAsync()
+    {
+        try
+        {
+            var service = new DriverScoutService();
+            var scanPath = service.GetLatestScanPath();
+            var scan = scanPath is null ? null : await service.LoadScanAsync(scanPath, CancellationToken.None);
+            Console.WriteLine(await SystemInfoService.GatherJsonAsync(scan));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            return 1;
+        }
+    }
+
+    private static string WriteCrashLog(Exception? exception)
+    {
+        try
+        {
+            var path = Path.Combine(DriverScoutService.ResolveWritableDataRoot(), "crash.log");
+            File.AppendAllText(path,
+                $"[{DateTimeOffset.Now:O}] BoardScout {VersionButton.AppVersion} on .NET {Environment.Version}{Environment.NewLine}" +
+                $"{exception}{Environment.NewLine}{Environment.NewLine}");
+            return path;
+        }
+        catch
+        {
+            return "(crash log could not be written)";
         }
     }
 }

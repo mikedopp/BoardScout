@@ -2,326 +2,424 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoardScout · System</title>
 <style>
+/* Colors match the native AppTheme so the page and the window read as one surface. */
 :root {
-    --bg: #0d1117; --surface: #161b22; --raised: #1c2128; --border: #30363d;
-    --text: #e6edf3; --muted: #8b949e; --accent: #4285f4; --accent-soft: rgba(66,133,244,.12);
-    --good: #3fb950; --warning: #d29922; --critical: #f85149; --purple: #a371f7;
+    --bg: #060b10; --surface: #0c1620; --raised: #111e2c; --border: #1c2a3c; --border-soft: rgba(255,255,255,.06);
+    --text: #e8edf4; --muted: #8a9bb2; --faint: #4a6080;
+    --accent: #3d9eff; --accent-soft: rgba(61,158,255,.13);
+    --good: #10b981; --warning: #f59e0b; --critical: #ef4444; --purple: #a78bfa; --teal: #2dd4bf;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.5; }
-.container { max-width: 1400px; margin: 0 auto; padding: 24px 28px; }
-.loading { text-align: center; padding: 120px 20px; color: var(--muted); font-size: 15px; }
-.loading .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
-@keyframes spin { to { transform: rotate(360deg); } }
-section { margin-bottom: 28px; }
-.section-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--accent);
-    text-transform: uppercase; margin-bottom: 12px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; }
+html { scrollbar-color: #2a3a4f transparent; }
+body {
+    color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.5; min-height: 100vh;
+    /* Ambient light and a faint dot grid give the glass something to refract. */
+    background:
+        radial-gradient(rgba(255,255,255,.045) 1px, transparent 1.2px) 0 0 / 22px 22px,
+        radial-gradient(900px 480px at 6% -6%, rgba(61,158,255,.17), transparent 62%),
+        radial-gradient(700px 440px at 94% 4%, rgba(167,139,250,.13), transparent 62%),
+        radial-gradient(820px 520px at 58% 104%, rgba(45,212,191,.09), transparent 62%),
+        var(--surface);
+    background-attachment: fixed;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 24px 28px 40px; }
+section { margin-bottom: 26px; }
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: .09em; color: var(--accent);
+    text-transform: uppercase; margin: 0 0 11px 2px; display: flex; align-items: center; gap: 10px; }
+.section-title .count { color: var(--faint); letter-spacing: .02em; font-weight: 500; text-transform: none; }
 
-/* Hero personality card */
-.hero { display: flex; gap: 28px; align-items: flex-start; padding: 28px 32px; }
-.hero-left { flex: 1; }
+/* CSS glass for the many surfaces; QuickLiquid refraction is reserved for the hero. */
+.glass {
+    position: relative; border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.012) 55%), rgba(12,22,32,.62);
+    border: 1px solid rgba(255,255,255,.075); border-top-color: rgba(255,255,255,.16);
+    box-shadow: 0 12px 34px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter: blur(14px) saturate(1.35);
+}
+body.no-glass .glass { background: var(--raised); border-color: var(--border); box-shadow: none; backdrop-filter: none; }
+
+/* Loading skeleton */
+.skeleton { display: grid; gap: 18px; }
+.sk { border-radius: 16px; background: linear-gradient(100deg, rgba(255,255,255,.035) 30%, rgba(255,255,255,.09) 50%, rgba(255,255,255,.035) 70%) 0 0 / 300% 100%, rgba(17,30,44,.6);
+    animation: shimmer 1.4s ease-in-out infinite; }
+.sk.hero-sk { height: 250px; } .sk.row-sk { height: 110px; } .sk.table-sk { height: 320px; }
+.loading-note { color: var(--muted); font-size: 13px; margin: 4px 2px 0; }
+@keyframes shimmer { from { background-position: 100% 0, 0 0; } to { background-position: 0 0, 0 0; } }
+
+/* Hero (QuickLiquid host) */
+#hero { border-radius: 22px; box-shadow: 0 18px 48px rgba(0,0,0,.42); }
+body.no-glass #hero, #hero:not(.ql-live) {
+    background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.015) 60%), rgba(12,22,32,.66);
+    border: 1px solid rgba(255,255,255,.08); border-top-color: rgba(255,255,255,.18); backdrop-filter: blur(16px) saturate(1.4);
+}
+body.no-glass #hero { background: var(--raised); border-color: var(--border); backdrop-filter: none; }
+#hero > .ql-content { position: relative; z-index: 10; display: flex; gap: 32px; align-items: flex-start; padding: 28px 32px; }
+.hero-left { flex: 1; min-width: 0; }
 .hero-right { flex: 0 0 340px; }
-.verdict { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.verdict-emoji { font-size: 32px; margin-right: 10px; vertical-align: middle; }
+.verdict { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+.verdict-emoji { font-size: 34px; filter: drop-shadow(0 4px 10px rgba(0,0,0,.35)); }
 .os-caption { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid; }
+.tone-good { color: var(--good); background: rgba(16,185,129,.13); border-color: rgba(16,185,129,.34); }
+.tone-info { color: var(--accent); background: rgba(61,158,255,.13); border-color: rgba(61,158,255,.34); }
+.tone-warning { color: var(--warning); background: rgba(245,158,11,.13); border-color: rgba(245,158,11,.34); }
+.tone-critical { color: var(--critical); background: rgba(239,68,68,.13); border-color: rgba(239,68,68,.34); }
 .traits { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-.trait { background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(66,133,244,.25);
-    border-radius: 20px; padding: 3px 12px; font-size: 12px; font-weight: 500; }
-.patch-health { font-size: 13px; margin-bottom: 8px; }
-.patch-health.good { color: var(--good); }
-.patch-health.warning { color: var(--warning); }
-.patch-health.critical { color: var(--critical); }
-.support-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-.support-badge.supported { background: rgba(63,185,80,.15); color: var(--good); border: 1px solid rgba(63,185,80,.3); }
-.support-badge.eol { background: rgba(210,153,34,.15); color: var(--warning); border: 1px solid rgba(210,153,34,.3); }
-.support-badge.unsupported { background: rgba(248,81,73,.15); color: var(--critical); border: 1px solid rgba(248,81,73,.3); }
-.recs { margin-top: 14px; }
-.rec { color: var(--muted); font-size: 13px; padding: 4px 0 4px 18px; position: relative; }
+.trait { background: rgba(255,255,255,.05); color: var(--text); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.patch-health { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.patch-health::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+.patch-health.tone-good, .patch-health.tone-info, .patch-health.tone-warning, .patch-health.tone-critical { background: none; border: 0; }
+.recs { margin-top: 12px; display: grid; gap: 6px; }
+.rec { color: var(--muted); font-size: 13px; padding-left: 18px; position: relative; }
 .rec::before { content: '\25B8'; position: absolute; left: 2px; color: var(--accent); }
-.info-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.info-row { display: flex; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
 .info-row:last-child { border-bottom: none; }
-.info-label { color: var(--muted); }
+.info-label { color: var(--muted); white-space: nowrap; }
 .info-value { color: var(--text); font-weight: 500; text-align: right; }
 
-/* Build grid */
-.build-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.build-item { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-.build-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
-.build-value { font-size: 14px; font-weight: 600; color: var(--text); word-break: break-word; }
-.disk-bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
-.disk-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+/* Readiness */
+.ready { padding: 18px 22px; }
+.ready-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.ready-summary { font-size: 16px; font-weight: 600; }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.check { display: flex; gap: 11px; align-items: flex-start; padding: 11px 13px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border-soft); }
+.check-icon { flex: 0 0 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.check-pass .check-icon { background: rgba(16,185,129,.18); color: var(--good); }
+.check-warn .check-icon { background: rgba(245,158,11,.18); color: var(--warning); }
+.check-fail .check-icon { background: rgba(239,68,68,.18); color: var(--critical); }
+.check-unknown .check-icon { background: rgba(138,155,178,.16); color: var(--muted); }
+.check-label { font-size: 13px; font-weight: 600; }
+.check-detail { font-size: 12px; color: var(--muted); }
+.footnote { margin-top: 12px; font-size: 11.5px; color: var(--faint); }
 
-/* Dotnet pills */
-.dotnet-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.dotnet-pill { background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; }
+/* Build grid */
+.build-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.build-item { padding: 14px 16px; border-radius: 14px; }
+.build-label { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 4px; }
+.build-value { font-size: 14px; font-weight: 600; word-break: break-word; }
+.build-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.disk-bar { height: 6px; background: rgba(255,255,255,.07); border-radius: 3px; margin-top: 9px; overflow: hidden; }
+.disk-fill { height: 100%; border-radius: 3px; width: 0; transition: width .9s cubic-bezier(.2,.8,.2,1); box-shadow: 0 0 10px currentColor; }
+body.no-motion .disk-fill { transition: none; }
+
+/* .NET */
+.dotnet-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.dotnet-pill { padding: 10px 15px; border-radius: 14px; min-width: 190px; }
 .dotnet-name { font-size: 12px; color: var(--muted); }
-.dotnet-ver { font-size: 15px; font-weight: 600; color: var(--purple); }
+.dotnet-ver { font-size: 14px; font-weight: 600; color: var(--purple); }
+.dotnet-pill.kind-sdk .dotnet-ver { color: var(--teal); }
+.dotnet-pill.kind-self .dotnet-ver { color: var(--accent); }
 
 /* Tables */
-.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 12px; }
-.table-header .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.search { background: var(--raised); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
-    padding: 6px 12px; font-size: 13px; width: 240px; outline: none; font-family: inherit; }
-.search:focus { border-color: var(--accent); }
-.filter-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-.filter-tab { background: var(--raised); border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
-    padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
-.filter-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.table-card { padding: 16px 20px; }
+.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
+.search { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 999px; color: var(--text);
+    padding: 7px 14px; font-size: 13px; width: 260px; outline: none; font-family: inherit; transition: border-color .2s, box-shadow .2s; }
+.search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(61,158,255,.18); }
+.tabs { position: relative; display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
+.tab { position: relative; z-index: 1; background: none; border: 0; color: var(--muted); padding: 5px 14px; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: inherit; border-radius: 999px; transition: color .2s; }
+.tab.active { color: #fff; }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tabs .ql-tab-indicator { background: linear-gradient(180deg, rgba(61,158,255,.55), rgba(61,158,255,.3)); box-shadow: 0 4px 14px rgba(61,158,255,.35), inset 0 1px 0 rgba(255,255,255,.3); }
+.tabs.static .tab.active { background: rgba(61,158,255,.4); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 11px;
-    text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
-thead th:hover { color: var(--accent); }
-tbody td { padding: 7px 10px; border-bottom: 1px solid rgba(48,54,61,.5); vertical-align: top; }
-tbody tr:hover { background: var(--raised); }
-.status-ready { color: var(--good); }
-.status-disabled { color: var(--muted); }
-.status-running { color: var(--accent); }
+thead th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .05em; border-bottom: 1px solid rgba(255,255,255,.09); cursor: pointer; user-select: none; white-space: nowrap; }
+thead th:hover, thead th.sorted { color: var(--accent); }
+thead th .arrow { font-size: 9px; margin-left: 4px; }
+tbody td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: top; }
+tbody tr { transition: background .15s; }
+tbody tr:hover { background: rgba(61,158,255,.06); }
+.status-ready { color: var(--good); } .status-disabled { color: var(--faint); } .status-running { color: var(--accent); }
 .empty { color: var(--muted); font-style: italic; padding: 20px; text-align: center; }
+.foot { color: var(--faint); font-size: 11.5px; text-align: center; margin-top: 10px; }
 
-@media (max-width: 900px) {
-    .hero { flex-direction: column; }
+/* Entrance: sections rise in one after another. */
+.rise { animation: rise .55s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+body.no-motion .rise, body.no-motion .sk { animation: none; }
+@media (prefers-reduced-motion: reduce) { .rise, .sk { animation: none; } .disk-fill { transition: none; } }
+
+@media (max-width: 980px) {
+    #hero > .ql-content { flex-direction: column; }
     .hero-right { flex: auto; width: 100%; }
-    .build-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>
 </head>
 <body>
 <div class="container">
-    <div id="loading" class="loading">
-        <div class="spinner"></div>
-        Gathering system information&hellip;
+    <div id="loading">
+        <div class="section-title">What your OS says about you</div>
+        <div class="skeleton">
+            <div class="sk hero-sk"></div>
+            <div class="sk row-sk"></div>
+            <div class="sk table-sk"></div>
+        </div>
+        <p class="loading-note">Reading Windows, patches, software, and scheduled tasks&hellip;</p>
     </div>
-    <div id="app" style="display:none"></div>
+    <div id="app" hidden></div>
 </div>
 <script>
-window.chrome.webview.addEventListener('message', function(e) {
-    document.getElementById('loading').style.display = 'none';
-    var app = document.getElementById('app');
-    app.style.display = 'block';
-    render(app, typeof e.data === 'string' ? JSON.parse(e.data) : e.data);
+'use strict';
+const state = { glass: true, motion: true, engine: null, tabBars: [], data: null, ql: null };
+
+window.chrome.webview.addEventListener('message', e => {
+    const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (!msg) return;
+    if (msg.type === 'settings') applySettings(msg);
+    else if (msg.type === 'system') render(msg.data);
 });
 
+function applySettings(s) {
+    state.glass = !!s.glass;
+    state.motion = !!s.motion;
+    document.body.classList.toggle('no-glass', !state.glass);
+    document.body.classList.toggle('no-motion', !state.motion);
+    syncGlass();
+}
+
 function h(tag, attrs, children) {
-    var el = document.createElement(tag);
-    if (attrs) Object.keys(attrs).forEach(function(k) {
-        if (k === 'className') el.className = attrs[k];
-        else if (k === 'html') el.innerHTML = attrs[k];
-        else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
-        else el.setAttribute(k, attrs[k]);
-    });
+    const el = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) {
+        if (v === undefined || v === null || v === false) continue;
+        if (k === 'className') el.className = v;
+        else if (k === 'text') el.textContent = v;
+        else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+        else el.setAttribute(k, v);
+    }
     if (typeof children === 'string') el.textContent = children;
-    else if (Array.isArray(children)) children.forEach(function(c) { if (c) el.appendChild(c); });
+    else if (Array.isArray(children)) children.forEach(c => { if (c) el.appendChild(c); });
     return el;
 }
 
-function render(root, data) {
-    root.innerHTML = '';
-    root.appendChild(renderPersonality(data.os));
-    root.appendChild(renderBuild(data.build));
-    root.appendChild(renderDotNet(data.dotnet));
-    root.appendChild(renderPatches(data.patches));
-    root.appendChild(renderSoftware(data.software));
-    root.appendChild(renderTasks(data.tasks));
+function render(data) {
+    state.data = data;
+    const app = document.getElementById('app');
+    destroyGlass();
+    app.replaceChildren(...[
+        renderPersonality(data.os),
+        data.readiness ? renderReadiness(data.readiness) : null,
+        renderBuild(data.build),
+        renderDotNet(data.dotnet),
+        renderTable('Installed patches', data.patches,
+            [['id', 'KB'], ['description', 'Description'], ['installedOn', 'Installed'], ['installedBy', 'By']], null, 2, false),
+        renderTable('Installed software', data.software,
+            [['name', 'Name'], ['version', 'Version'], ['publisher', 'Publisher'], ['installDate', 'Installed'], ['size', 'Size']], null, 0, true),
+        renderTable('Scheduled tasks', data.tasks,
+            [['name', 'Task'], ['status', 'Status'], ['folder', 'Folder'], ['nextRun', 'Next run']], ['All', 'User', 'Microsoft', 'Windows'], 0, true),
+        h('div', { className: 'foot', text: `Gathered in ${data.gatheredMs} ms · nothing here needs administrator rights` })
+    ].filter(Boolean));
+    Array.from(app.children).forEach((el, i) => { el.classList.add('rise'); el.style.animationDelay = `${i * 60}ms`; });
+    document.getElementById('loading').hidden = true;
+    app.hidden = false;
+    requestAnimationFrame(() => document.querySelectorAll('.disk-fill').forEach(f => { f.style.width = f.dataset.width; }));
+    syncGlass();
 }
 
 function renderPersonality(os) {
-    var sec = h('section', null, [h('div', {className:'section-title'}, 'WHAT YOUR OS SAYS ABOUT YOU')]);
-    var card = h('div', {className:'card hero'});
-
-    var left = h('div', {className:'hero-left'});
-    var emoji = emojiMap(os.verdictEmoji);
-    left.appendChild(h('div', {className:'verdict'}, [h('span', {className:'verdict-emoji', html: emoji}), document.createTextNode(os.verdict)]));
-    left.appendChild(h('div', {className:'os-caption'}, os.caption + ' · Build ' + os.build + ' · ' + os.arch));
-
-    var supportClass = os.supportStatus.toLowerCase().includes('supported') ? 'supported'
-        : os.supportStatus.toLowerCase().includes('end') ? 'eol' : 'unsupported';
-    left.appendChild(h('div', {style:'margin-bottom:14px'}, [h('span', {className:'support-badge '+supportClass}, os.supportStatus)]));
-
-    if (os.traits && os.traits.length) {
-        var traits = h('div', {className:'traits'});
-        os.traits.forEach(function(t) { traits.appendChild(h('span', {className:'trait'}, t)); });
-        left.appendChild(traits);
-    }
-
-    var phClass = os.patchHealth.includes('Current') ? 'good' : os.patchHealth.includes('Slightly') ? 'warning' : 'critical';
-    left.appendChild(h('div', {className:'patch-health '+phClass}, '● ' + os.patchHealth));
-
-    if (os.recommendations && os.recommendations.length) {
-        var recs = h('div', {className:'recs'});
-        os.recommendations.forEach(function(r) { recs.appendChild(h('div', {className:'rec'}, r)); });
-        left.appendChild(recs);
-    }
-
-    var right = h('div', {className:'hero-right'});
-    [['OS', os.caption], ['Version', os.version], ['Build', os.build], ['Architecture', os.arch],
-     ['Installed', os.installDate], ['Last boot', os.lastBoot], ['Uptime', os.uptime]
-    ].forEach(function(pair) {
-        if (!pair[1]) return;
-        var row = h('div', {className:'info-row'}, [h('span', {className:'info-label'}, pair[0]), h('span', {className:'info-value'}, pair[1])]);
-        right.appendChild(row);
-    });
-
-    card.appendChild(left);
-    card.appendChild(right);
-    sec.appendChild(card);
-    return sec;
+    const left = h('div', { className: 'hero-left' }, [
+        h('div', { className: 'verdict' }, [h('span', { className: 'verdict-emoji', text: emoji(os.verdictEmoji) }), h('span', { text: os.verdict })]),
+        h('div', { className: 'os-caption', text: [os.caption, os.displayVersion, `Build ${os.build}`, os.arch].filter(Boolean).join(' · ') }),
+        h('div', { className: 'badges' }, [
+            h('span', { className: `badge tone-${os.supportTone}`, text: os.supportStatus }),
+            os.supportDaysLeft != null && os.supportDaysLeft >= 0
+                ? h('span', { className: 'badge tone-info', text: `${os.supportDaysLeft} days left` }) : null
+        ]),
+        os.traits && os.traits.length ? h('div', { className: 'traits' }, os.traits.map(t => h('span', { className: 'trait', text: t }))) : null,
+        h('div', { className: `patch-health tone-${os.patchTone}`, text: os.patchHealth }),
+        os.recommendations && os.recommendations.length
+            ? h('div', { className: 'recs' }, os.recommendations.map(r => h('div', { className: 'rec', text: r }))) : null
+    ]);
+    const rows = [['Edition', os.edition], ['Version', os.displayVersion ? `${os.displayVersion} (${os.version})` : os.version],
+        ['Build', os.build], ['Architecture', os.arch], ['Installed', os.installDate], ['Last boot', os.lastBoot],
+        ['Uptime', os.uptime], ['Last update', os.lastPatch], ['Support ends', os.supportEnds]];
+    const right = h('div', { className: 'hero-right' }, rows.filter(r => r[1]).map(([label, value]) =>
+        h('div', { className: 'info-row' }, [h('span', { className: 'info-label', text: label }), h('span', { className: 'info-value', text: value })])));
+    const hero = h('div', { id: 'hero' }, [h('div', { className: 'ql-content' }, [left, right])]);
+    return h('section', null, [h('div', { className: 'section-title', text: 'What your OS says about you' }), hero]);
 }
 
-function renderBuild(build) {
-    var sec = h('section', null, [h('div', {className:'section-title'}, 'YOUR BUILD')]);
-    var grid = h('div', {className:'build-grid'});
-    [['CPU', build.cpu, build.cpuDetail], ['Memory', build.memory], ['GPU', build.gpu],
-     ['Motherboard', build.motherboard], ['BIOS', build.bios], ['TPM', build.tpm], ['Secure Boot', build.secureBoot]
-    ].forEach(function(item) {
-        if (!item[1]) return;
-        var card = h('div', {className:'build-item'}, [
-            h('div', {className:'build-label'}, item[0]),
-            h('div', {className:'build-value'}, item[1])
-        ]);
-        if (item[2]) card.appendChild(h('div', {style:'color:var(--muted);font-size:12px;margin-top:2px'}, item[2]));
-        grid.appendChild(card);
+function renderReadiness(r) {
+    const icons = { pass: '✓', warn: '!', fail: '✕', unknown: '?' };
+    const card = h('div', { className: 'glass ready' }, [
+        h('div', { className: 'ready-head' }, [
+            h('span', { className: `badge tone-${r.tone}`, text: r.tone === 'good' ? 'Ready' : r.tone === 'critical' ? 'Not ready' : 'Check' }),
+            h('span', { className: 'ready-summary', text: r.summary })
+        ]),
+        h('div', { className: 'checks' }, r.checks.map(c => h('div', { className: `check check-${c.state}` }, [
+            h('span', { className: 'check-icon', text: icons[c.state] || '?' }),
+            h('div', null, [h('div', { className: 'check-label', text: c.label }), h('div', { className: 'check-detail', text: c.detail })])
+        ]))),
+        h('div', { className: 'footnote', text: "BoardScout's quick check — Microsoft's PC Health Check app has the final word." })
+    ]);
+    return h('section', null, [h('div', { className: 'section-title', text: r.title }), card]);
+}
+
+function renderBuild(b) {
+    const tone = v => /^TPM 2|^On$/.test(v) ? 'var(--good)' : /^Off|^TPM 1/.test(v) ? 'var(--warning)' : /Not detected|Legacy/.test(v) ? 'var(--critical)' : null;
+    const items = [['CPU', b.cpu, b.cpuDetail], ['Memory', b.memory], ['GPU', b.gpu], ['Motherboard', b.motherboard],
+        ['BIOS', b.bios], ['TPM', b.tpm], ['Secure Boot', b.secureBoot]]
+        .filter(i => i[1])
+        .map(([label, value, sub]) => h('div', { className: 'glass build-item' }, [
+            h('div', { className: 'build-label', text: label }),
+            h('div', { className: 'build-value', text: value, style: tone(value) ? `color:${tone(value)}` : null }),
+            sub ? h('div', { className: 'build-sub', text: sub }) : null
+        ]));
+    (b.disks || []).forEach(d => {
+        const color = d.usedPercent >= 95 ? 'var(--critical)' : d.usedPercent >= 85 ? 'var(--warning)' : 'var(--good)';
+        const fill = h('div', { className: 'disk-fill', style: `background:${color};color:${color}` });
+        fill.dataset.width = `${Math.min(100, d.usedPercent)}%`;
+        items.push(h('div', { className: 'glass build-item' }, [
+            h('div', { className: 'build-label', text: `${d.bus} · ${d.size}` }),
+            h('div', { className: 'build-value', text: d.model, style: 'font-size:13px' }),
+            h('div', { className: 'build-sub', text: `${d.free} free · ${d.usedPercent.toFixed(0)}% used` }),
+            h('div', { className: 'disk-bar' }, [fill])
+        ]));
     });
-
-    if (build.disks && build.disks.length) {
-        build.disks.forEach(function(d) {
-            var color = d.usedPercent >= 95 ? 'var(--critical)' : d.usedPercent >= 85 ? 'var(--warning)' : 'var(--good)';
-            var card = h('div', {className:'build-item'});
-            card.appendChild(h('div', {className:'build-label'}, d.bus + ' · ' + d.size));
-            card.appendChild(h('div', {className:'build-value', style:'font-size:13px'}, d.model));
-            card.appendChild(h('div', {style:'color:var(--muted);font-size:12px;margin-top:2px'}, d.free + ' free · ' + d.usedPercent.toFixed(0) + '% used'));
-            var bar = h('div', {className:'disk-bar'}, [h('div', {className:'disk-fill', style:'width:'+d.usedPercent+'%;background:'+color})]);
-            card.appendChild(bar);
-            grid.appendChild(card);
-        });
-    }
-
-    sec.appendChild(grid);
-    return sec;
+    return h('section', null, [h('div', { className: 'section-title', text: 'Your build' }), h('div', { className: 'build-grid' }, items)]);
 }
 
 function renderDotNet(list) {
-    var sec = h('section', null, [h('div', {className:'section-title'}, '.NET VERSIONS')]);
-    if (!list || !list.length) { sec.appendChild(h('div', {className:'empty'}, 'No .NET runtimes detected')); return sec; }
-    var wrap = h('div', {className:'dotnet-list'});
-    list.forEach(function(d) {
-        wrap.appendChild(h('div', {className:'dotnet-pill'}, [
-            h('div', {className:'dotnet-name'}, d.name),
-            h('div', {className:'dotnet-ver'}, d.version)
-        ]));
-    });
-    sec.appendChild(wrap);
+    const sec = h('section', null, [h('div', { className: 'section-title', text: '.NET on this PC' })]);
+    if (!list || !list.length) { sec.appendChild(h('div', { className: 'glass empty', text: 'No .NET runtimes detected' })); return sec; }
+    const groups = new Map();
+    list.forEach(d => { const key = `${d.kind}|${d.name}`; if (!groups.has(key)) groups.set(key, { ...d, versions: [] }); groups.get(key).versions.push(d.version); });
+    sec.appendChild(h('div', { className: 'dotnet-list' }, Array.from(groups.values()).map(g => h('div', { className: `glass dotnet-pill kind-${g.kind}` }, [
+        h('div', { className: 'dotnet-name', text: g.kind === 'self' ? "BoardScout's own runtime" : g.name }),
+        h('div', { className: 'dotnet-ver', text: g.versions.join(' · ') })
+    ]))));
     return sec;
 }
 
-function renderPatches(list) {
-    return renderTable('INSTALLED PATCHES', list, ['id','description','installedOn','installedBy'],
-        ['KB','Description','Installed','By'], null, 'id');
+const SIZE_UNITS = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+function sortValue(v) {
+    const m = /^([\d.]+) (B|KB|MB|GB|TB)$/.exec(v || '');
+    return m ? parseFloat(m[1]) * SIZE_UNITS[m[2]] : null;
 }
 
-function renderSoftware(list) {
-    return renderTable('INSTALLED SOFTWARE', list, ['name','version','publisher','size'],
-        ['Name','Version','Publisher','Size'], null, 'name');
-}
-
-function renderTasks(list) {
-    return renderTable('SCHEDULED TASKS', list, ['name','status','category','nextRun'],
-        ['Task','Status','Source','Next Run'], ['All','User','Microsoft','Windows'], 'name');
-}
-
-function renderTable(title, list, keys, headers, filters, searchKey) {
-    var sec = h('section', null, [h('div', {className:'section-title'}, title)]);
-    var card = h('div', {className:'card', style:'padding:16px 20px'});
-
-    var header = h('div', {className:'table-header'});
-    var countLabel = h('span', {className:'count'}, list.length + ' items');
-    var search = h('input', {className:'search', type:'text', placeholder:'Search…'});
-    header.appendChild(countLabel);
-    header.appendChild(search);
-    card.appendChild(header);
-
-    var activeFilter = 'All';
-    var filterBar = null;
+function renderTable(title, list, columns, filters, sortColumn, ascending) {
+    list = list || [];
+    const count = h('span', { className: 'count' });
+    const search = h('input', { className: 'search', type: 'search', placeholder: 'Search…', 'aria-label': `Search ${title.toLowerCase()}` });
+    let activeFilter = 'All', sortCol = sortColumn, sortAsc = ascending;
+    const header = h('div', { className: 'table-header' });
+    let tabs = null;
     if (filters) {
-        filterBar = h('div', {className:'filter-tabs'});
-        filters.forEach(function(f) {
-            var btn = h('button', {className:'filter-tab' + (f === 'All' ? ' active' : ''), onClick: function() {
+        tabs = h('div', { className: 'tabs static', role: 'tablist' }, filters.map((f, i) => h('button', {
+            className: 'tab' + (i === 0 ? ' active' : ''), role: 'tab', 'aria-selected': i === 0 ? 'true' : 'false', text: f,
+            onClick: ev => {
                 activeFilter = f;
-                filterBar.querySelectorAll('.filter-tab').forEach(function(b) { b.className = 'filter-tab'; });
-                btn.className = 'filter-tab active';
-                applyFilter();
-            }}, f);
-            filterBar.appendChild(btn);
-        });
-        card.appendChild(filterBar);
+                tabs.querySelectorAll('.tab').forEach(t => { const on = t === ev.currentTarget; t.classList.toggle('active', on); t.setAttribute('aria-selected', on); });
+                const bar = state.tabBars.find(b => b.el === tabs);
+                if (bar && bar.api) state.motion ? bar.api.select(i) : bar.api.selectImmediate(i);
+                apply();
+            }
+        })));
+        header.appendChild(tabs);
+    } else {
+        header.appendChild(h('span'));
     }
+    header.appendChild(search);
 
-    var table = h('table');
-    var thead = h('thead');
-    var headRow = h('tr');
-    var sortCol = -1, sortAsc = true;
-    headers.forEach(function(hdr, i) {
-        var th = h('th', {onClick: function() {
-            if (sortCol === i) sortAsc = !sortAsc; else { sortCol = i; sortAsc = true; }
-            applyFilter();
-        }}, hdr);
+    const headRow = h('tr');
+    const ths = columns.map(([key, label], i) => {
+        const th = h('th', { scope: 'col', onClick: () => { if (sortCol === i) sortAsc = !sortAsc; else { sortCol = i; sortAsc = true; } apply(); } }, [h('span', { text: label }), h('span', { className: 'arrow' })]);
         headRow.appendChild(th);
+        return th;
     });
-    thead.appendChild(headRow);
-    table.appendChild(thead);
-    var tbody = h('tbody');
-    table.appendChild(tbody);
-    card.appendChild(table);
-    sec.appendChild(card);
+    const tbody = h('tbody');
+    const table = h('table', null, [h('thead', null, [headRow]), tbody]);
+    const card = h('div', { className: 'glass table-card' }, [header, table]);
 
-    function applyFilter() {
-        var q = search.value.toLowerCase();
-        var filtered = list.filter(function(item) {
-            if (filters && activeFilter !== 'All' && item.category !== activeFilter) return false;
-            if (q && searchKey) return (item[searchKey] || '').toLowerCase().includes(q);
-            if (q) return keys.some(function(k) { return (item[k] || '').toLowerCase().includes(q); });
-            return true;
+    function apply() {
+        const q = search.value.trim().toLowerCase();
+        const rows = list.filter(item =>
+            (!filters || activeFilter === 'All' || item.category === activeFilter) &&
+            (!q || columns.some(([key]) => String(item[key] || '').toLowerCase().includes(q))));
+        const key = columns[sortCol][0];
+        rows.sort((a, b) => {
+            const va = a[key] || '', vb = b[key] || '';
+            const na = sortValue(va), nb = sortValue(vb);
+            const cmp = na !== null && nb !== null ? na - nb : String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' });
+            return sortAsc ? cmp : -cmp;
         });
-        if (sortCol >= 0) {
-            var key = keys[sortCol];
-            filtered.sort(function(a, b) {
-                var va = (a[key] || '').toLowerCase(), vb = (b[key] || '').toLowerCase();
-                return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-            });
-        }
-        tbody.innerHTML = '';
-        countLabel.textContent = filtered.length + ' of ' + list.length + ' items';
-        if (!filtered.length) {
-            var td = h('td', {colspan: headers.length, className:'empty'}, 'No matching items');
-            tbody.appendChild(h('tr', null, [td]));
-            return;
-        }
-        filtered.forEach(function(item) {
-            var tr = h('tr');
-            keys.forEach(function(k) {
-                var td = h('td', null, item[k] || '—');
-                if (k === 'status') {
-                    var s = (item[k] || '').toLowerCase();
-                    td.className = s === 'ready' ? 'status-ready' : s === 'disabled' ? 'status-disabled'
-                        : s === 'running' ? 'status-running' : '';
-                }
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
-        });
+        ths.forEach((th, i) => { th.classList.toggle('sorted', i === sortCol); th.lastChild.textContent = i === sortCol ? (sortAsc ? '▲' : '▼') : ''; });
+        count.textContent = rows.length === list.length ? `${list.length}` : `${rows.length} of ${list.length}`;
+        tbody.replaceChildren(...(rows.length ? rows.map(item => h('tr', null, columns.map(([k]) => {
+            const value = item[k] || '—';
+            const td = h('td', { text: value });
+            if (k === 'status') { const s = value.toLowerCase(); td.className = s === 'ready' ? 'status-ready' : s === 'disabled' ? 'status-disabled' : s === 'running' ? 'status-running' : ''; }
+            return td;
+        }))) : [h('tr', null, [h('td', { colspan: columns.length, className: 'empty', text: 'No matching items' })])]));
     }
-
-    search.addEventListener('input', applyFilter);
-    applyFilter();
-    return sec;
+    search.addEventListener('input', apply);
+    apply();
+    if (tabs) state.tabBars.push({ el: tabs, api: null, glass: null });
+    return h('section', null, [h('div', { className: 'section-title' }, [h('span', { text: title }), count]), card]);
 }
 
-function emojiMap(key) {
-    var map = { rocket:'🚀', keyboard:'⌨️', shield:'🛡️', wrench:'🔧',
-        sparkles:'✨', hourglass:'⏳', art:'🎨', joystick:'🕹️', computer:'💻' };
-    return map[key] || '💻';
+function emoji(key) {
+    const map = { rocket: '\u{1F680}', keyboard: '⌨️', shield: '\u{1F6E1}️', wrench: '\u{1F527}', sparkles: '✨',
+        hourglass: '⏳', art: '\u{1F3A8}', joystick: '\u{1F579}️', computer: '\u{1F4BB}' };
+    return map[key] || '\u{1F4BB}';
+}
+
+// QuickLiquid is bundled (Assets/vendor) and loaded as a module; without it the CSS glass stays.
+async function loadQuickLiquid() {
+    if (!state.ql) state.ql = import('./vendor/quick-liquid/index.mjs').catch(err => { console.warn('QuickLiquid unavailable', err); return null; });
+    return state.ql;
+}
+
+function destroyGlass() {
+    if (state.engine) { state.engine.destroy(); state.engine = null; }
+    state.tabBars.forEach(b => { if (b.glass) b.glass.destroy(); if (b.api) b.api.destroy(); });
+    state.tabBars = [];
+    const hero = document.getElementById('hero');
+    if (hero) hero.classList.remove('ql-live');
+}
+
+async function syncGlass() {
+    const hero = document.getElementById('hero');
+    if (!hero) return;
+    const ql = await loadQuickLiquid();
+    if (!ql) return;
+    if (state.glass && !state.engine) {
+        state.engine = new ql.LiquidGlassEngine(hero, {
+            material: 'regular', appearance: 'dark', borderRadius: 22, quality: 'medium',
+            refractionStrength: 20, chromaticAberration: 0.12, blur: 10, saturation: 1.35,
+            tint: '61, 158, 255', tintOpacity: 0.05, dynamicLighting: state.motion, elevation: 1.1
+        });
+        hero.classList.add('ql-live');
+    } else if (!state.glass && state.engine) {
+        state.engine.destroy();
+        state.engine = null;
+        hero.classList.remove('ql-live');
+    } else if (state.engine) {
+        state.engine.updateConfig({ dynamicLighting: state.motion });
+    }
+    state.tabBars.forEach(bar => {
+        const tabs = Array.from(bar.el.querySelectorAll('.tab'));
+        if (!bar.api) {
+            bar.api = new ql.LiquidTabBar(bar.el, tabs, { spring: 'snappy' });
+            const active = tabs.findIndex(t => t.classList.contains('active'));
+            bar.api.selectImmediate(Math.max(0, active));
+            bar.el.classList.remove('static');
+        }
+        if (state.glass && !bar.glass) {
+            bar.glass = new ql.LiquidGlassEngine(bar.api.getIndicator(), {
+                material: 'clear', appearance: 'dark', borderRadius: 999, quality: 'low', refractionStrength: 10, chromaticAberration: 0.1
+            });
+        } else if (!state.glass && bar.glass) {
+            bar.glass.destroy();
+            bar.glass = null;
+        }
+    });
 }
 </script>
 </body>

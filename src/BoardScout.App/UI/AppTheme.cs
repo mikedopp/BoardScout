@@ -67,6 +67,25 @@ internal static class AppTheme
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(IntPtr window, string subAppName, string? subIdList);
+
+    /// <summary>Dark scrollbars instead of the default light ones (Windows 10 1809 and later).</summary>
+    public static void UseDarkScrollbars(Control control)
+    {
+        void Apply()
+        {
+            if (!IsDark) return;
+            SetWindowTheme(control.Handle, "DarkMode_Explorer", null);
+            // DataGridView draws its scrollbars as child ScrollBar controls.
+            foreach (var bar in control.Controls.OfType<ScrollBar>())
+                SetWindowTheme(bar.Handle, "DarkMode_Explorer", null);
+        }
+
+        if (control.IsHandleCreated) Apply();
+        else control.HandleCreated += (_, _) => Apply();
+    }
+
     public static void StyleButton(Button button, bool primary = false)
     {
         button.FlatStyle = FlatStyle.Flat;
@@ -109,7 +128,7 @@ internal static class AppTheme
     public static void StyleGrid(DataGridView grid)
     {
         grid.BackgroundColor = Surface;
-        grid.BorderStyle = BorderStyle.FixedSingle;
+        grid.BorderStyle = BorderStyle.None;
         grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
         grid.GridColor = Border;
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
