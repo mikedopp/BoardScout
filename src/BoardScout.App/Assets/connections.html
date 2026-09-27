@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BoardScout · Connections</title>
+<style>
+:root{--bg:#060b10;--s:#0c1620;--sr:#111e2c;--b:#1c2a3c;--t:#e8edf4;--ts:#8a9bb2;--tm:#4a6080;
+  --a:#3d9eff;--ok:#10b981;--w:#f59e0b;--cr:#ef4444;--p:#a78bfa;--tl:#2dd4bf;--or:#fb923c;--pk:#f472b6;--sky:#38bdf8;--in:#818cf8}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{color:var(--t);font-family:'Segoe UI',system-ui,sans-serif;overflow:auto;
+  background:
+    radial-gradient(rgba(255,255,255,.045) 1px,transparent 1.2px) 0 0/24px 24px,
+    radial-gradient(900px 520px at 50% -12%,rgba(61,158,255,.15),transparent 62%),
+    radial-gradient(640px 420px at 4% 92%,rgba(167,139,250,.10),transparent 62%),
+    radial-gradient(640px 420px at 98% 70%,rgba(16,185,129,.09),transparent 62%),
+    var(--s);
+  background-attachment:fixed}
+button{font:inherit;color:inherit}
+#head{position:sticky;top:0;left:0;z-index:6;display:flex;align-items:flex-start;gap:16px;padding:14px 22px 10px;
+  background:linear-gradient(180deg,rgba(12,22,32,.94),rgba(12,22,32,.78) 70%,rgba(12,22,32,0));pointer-events:none}
+#head > *{pointer-events:auto}
+#head .titles{flex:1;min-width:0}
+#head h1{font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--tm)}
+#head .sub{font-size:12.5px;color:var(--ts);margin-top:3px}
+#summary{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:11.5px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);color:var(--ts);white-space:nowrap}
+.pill.warn{color:var(--w);border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08);cursor:pointer}
+.pill.warn:hover{background:rgba(245,158,11,.16)}
+.pill.note{color:var(--a);border-color:rgba(61,158,255,.35);background:rgba(61,158,255,.07)}
+.btn{cursor:pointer;border-radius:12px;padding:7px 14px;font-size:12px;font-weight:600;
+  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(17,30,44,.8);
+  border:1px solid rgba(255,255,255,.12);border-top-color:rgba(255,255,255,.22);transition:filter .15s}
+.btn:hover{filter:brightness(1.25)}
+.btn:disabled{opacity:.55;cursor:default;filter:none}
+.btn.primary{border-color:rgba(61,158,255,.55);color:#cfe6ff}
+#stage{position:relative}
+svg{display:block;margin:0 auto}
+.link{fill:none;stroke-width:2;opacity:.5;stroke-linecap:round;stroke-linejoin:round}
+.link.hot{opacity:.85}
+#flow{position:fixed;left:0;top:0;pointer-events:none;z-index:3}
+body.no-motion #flow{display:none}
+.card{cursor:pointer;outline:none}
+.card .face{transition:filter .18s}
+.card:hover .face,.card:focus-visible .face{filter:brightness(1.3)}
+.card.sel .edge{stroke-width:2.6}
+.card .name{font-size:12.5px;font-weight:600;fill:var(--t)}
+.card .detail{font-size:11px;fill:var(--ts)}
+.card .rate{font-size:10.5px;fill:var(--tl);font-variant-numeric:tabular-nums}
+.chip text{font-size:10.5px;font-weight:600}
+.colhead{font-size:10px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;fill:var(--tm)}
+#empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ts);font-size:13px;pointer-events:none}
+#empty .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(61,158,255,.25);border-top-color:var(--a);
+  margin-right:10px;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Inspector */
+#inspector{position:fixed;top:92px;right:18px;bottom:18px;width:340px;border-radius:20px;z-index:7;display:none;
+  box-shadow:0 18px 44px rgba(0,0,0,.5);overflow:hidden}
+#inspector:not(.ql-live){background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(17,30,44,.8);
+  border:1px solid rgba(255,255,255,.09);border-top-color:rgba(255,255,255,.2);backdrop-filter:blur(16px) saturate(1.4)}
+body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px solid var(--b)}
+#inspector.open{display:block}
+#inspector > .ql-content{position:relative;z-index:10;height:100%}
+#insp{height:100%;overflow:auto;padding:16px 18px 18px}
+#insp .kind{font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+#insp h2{font-size:16px;margin:4px 0 2px;line-height:1.3;word-break:break-word}
+#insp .d{color:var(--ts);font-size:12px}
+#insp .close{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--ts);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}
+#insp .close:hover{background:rgba(255,255,255,.08);color:var(--t)}
+#insp .sec{margin-top:14px}
+#insp .sec h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tm);margin-bottom:6px}
+#insp .callout{border-radius:12px;padding:9px 11px;font-size:12px;line-height:1.5}
+#insp .callout.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);color:#fcd9a0}
+#insp .callout.note{background:rgba(61,158,255,.08);border:1px solid rgba(61,158,255,.3);color:#cfe3fb}
+#insp table{width:100%;border-collapse:collapse;font-size:12px}
+#insp td{padding:4px 0;vertical-align:top}
+#insp td:first-child{color:var(--ts);width:42%;padding-right:10px}
+#insp td:last-child{word-break:break-word}
+.bar{height:8px;border-radius:5px;background:rgba(255,255,255,.07);overflow:hidden;margin:6px 0 3px}
+.bar i{display:block;height:100%;border-radius:5px}
+.barlbl{display:flex;justify-content:space-between;font-size:11px;color:var(--ts)}
+#spark{width:100%;height:54px;display:block}
+.live{display:flex;gap:14px;font-size:12px;font-variant-numeric:tabular-nums}
+.live b{font-weight:600}
+.wanbox{margin-top:8px;font-size:11.5px;color:var(--ts);line-height:1.5}
+/* Legend */
+#legend{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin-top:9px;font-size:11px;color:var(--ts)}
+#legend .row{display:inline-flex;align-items:center;gap:6px}
+#legend .sw{width:16px;height:3px;border-radius:2px}
+#legend .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl)}
+#legend .dot.out{background:#e8edf4;box-shadow:0 0 6px #e8edf4}
+#legend .sep{width:1px;height:12px;background:var(--b)}
+</style>
+</head>
+<body>
+<div id="head">
+  <div class="titles">
+    <h1>Connections</h1>
+    <div class="sub">Where every device plugs in, the speed its link negotiated, and the data moving through it right now.</div>
+    <div id="summary"></div>
+    <div id="legend" aria-label="Legend">
+      <span class="row"><span class="sw" style="background:#3d9eff"></span>PCIe</span>
+      <span class="row"><span class="sw" style="background:#a78bfa"></span>Inside CPU or chipset</span>
+      <span class="row"><span class="sw" style="background:#2dd4bf"></span>USB</span>
+      <span class="row"><span class="sw" style="background:#fb923c"></span>SATA</span>
+      <span class="row"><span class="sw" style="background:#f472b6"></span>Display</span>
+      <span class="row"><span class="sw" style="background:#818cf8"></span>Bluetooth</span>
+      <span class="row"><span class="sw" style="background:#10b981"></span>Ethernet</span>
+      <span class="row"><span class="sw" style="background:#34d399"></span>Wi-Fi</span>
+      <span class="row"><span class="sw" style="background:#38bdf8"></span>Internet</span>
+      <span class="sep"></span>
+      <span class="row"><span class="dot"></span>toward the CPU (reads, downloads)</span>
+      <span class="row"><span class="dot out"></span>away from it (writes, uploads)</span>
+      <span class="row">⚠ / dashed: linked below what the device supports</span>
+    </div>
+  </div>
+  <button class="btn primary" id="refresh" title="Read the device tree and network again">Refresh</button>
+</div>
+<div id="empty"><span class="spin"></span>Reading devices and links…</div>
+<div id="stage"><svg id="map" role="img" aria-label="Device connection map"></svg></div>
+<canvas id="flow" aria-hidden="true"></canvas>
+<div id="inspector" aria-live="polite"><div class="ql-content"><div id="insp"></div></div></div>
+<script src="vendor/d3/d3.v7.min.js"></script>
+<script>
+'use strict';
+const BUS={pcie:'#3d9eff',internal:'#a78bfa',usb:'#2dd4bf',sata:'#fb923c',display:'#f472b6',bluetooth:'#818cf8',
+  ethernet:'#10b981',lan:'#10b981',wifi:'#34d399',wan:'#38bdf8'};
+const KIND={cpu:'Processor',chipset:'Chipset',integrated:'Inside the CPU',gpu:'Graphics card',monitor:'Monitor',nvme:'NVMe SSD',
+  sata:'SATA controller',disk:'SATA drive',optical:'Optical drive','usb-controller':'USB controller','usb-hub':'USB hub',storage:'External drive',
+  receiver:'Wireless receiver',gamepad:'Game controller',audio:'Audio',capture:'Video capture',rgb:'RGB lighting',keyboard:'Keyboard',
+  mouse:'Mouse',input:'Input device',printer:'Printer',serial:'Serial adapter',usb:'USB device',bluetooth:'Bluetooth radio',
+  'bt-device':'Bluetooth device',ethernet:'Ethernet adapter',wifi:'Wi-Fi adapter',router:'Router',internet:'Internet',dns:'DNS server',
+  'virtual-group':'Software adapters',virtual:'Software adapter',device:'Device'};
+// Hand-drawn 24×24 line icons.
+const ICON={
+  cpu:'M7 7h10v10H7zM10 10h4v4h-4zM9 3v4M12 3v4M15 3v4M9 17v4M12 17v4M15 17v4M3 9h4M3 12h4M3 15h4M17 9h4M17 12h4M17 15h4',
+  chipset:'M6 6h12v12H6zM9 9h6v6H9zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',
+  integrated:'M5 5h14v14H5zM9 9h6v6H9z',
+  gpu:'M3 6h18v12H3zM3 18v3M8 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M16 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0',
+  monitor:'M3 4h18v12H3zM12 16v4M8 20h8',
+  nvme:'M2 9h20v6H2zM5 12h2M9 11h4v2H9zM15 11h4v2h-4zM20 9v6',
+  disk:'M5 3h14v18H5zM8 7h8M8 17h3',
+  optical:'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+  storage:'M4 5h16v14H4zM4 15h16M16 17h1',
+  sata:'M4 8h16v8H4zM7 11h10M7 13h6',
+  'usb-controller':'M12 3v15M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M12 7l-2-3h4zM12 13l-5-3V8M12 11l5-3V6M6 7h2v2H6zM16 4h2v2h-2z',
+  'usb-hub':'M12 4v8M12 12l-7 5M12 12l7 5M12 12v6M3 17h4v4H3zM17 17h4v4h-4zM10 18h4v3h-4zM9 2h6v3H9z',
+  receiver:'M8 3h8v10H8zM10 13v4a2 2 0 0 0 4 0v-4M11 6h2',
+  gamepad:'M6 8h12a4 4 0 0 1 4 4l-1 5a2 2 0 0 1-3.5 1L15 16H9l-2.5 2A2 2 0 0 1 3 17l-1-5a4 4 0 0 1 4-4zM7 11v3M5.5 12.5h3M16 11h.01M18 13h.01',
+  audio:'M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11',
+  capture:'M3 6h13v12H3zM16 10l5-3v10l-5-3',
+  rgb:'M12 3a6 6 0 0 1 4 10.5V16H8v-2.5A6 6 0 0 1 12 3zM9 19h6M10 22h4',
+  keyboard:'M2 6h20v12H2zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10',
+  mouse:'M7 4h10v13a5 5 0 0 1-10 0zM12 4v5',
+  input:'M2 6h20v12H2zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10',
+  printer:'M6 9V3h12v6M6 17H3V9h18v8h-3M6 14h12v7H6z',
+  serial:'M3 8h18l-3 8H6zM8 11h.01M12 11h.01M16 11h.01',
+  usb:'M12 3v15M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M12 7l-2-3h4zM12 13l-5-3V8M12 11l5-3V6',
+  bluetooth:'M7 7l10 10-5 4V3l5 4L7 17',
+  'bt-device':'M7 7l10 10-5 4V3l5 4L7 17',
+  ethernet:'M4 6h16v10h-4v3H8v-3H4zM8 10v2M11 10v2M14 10v2',
+  wifi:'M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01',
+  router:'M3 13h18v6H3zM7 16h.01M11 16h.01M7 13l-2-8M17 13l2-8',
+  internet:'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+  dns:'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
+  'virtual-group':'M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-1 9z',
+  virtual:'M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-1 9z',
+  device:'M6 6h12v12H6zM10 10h4v4h-4z'
+};
+const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=18,SPINE=64,COL_INSET=30;
+const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
+  history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0};
+
+const post=m=>window.chrome?.webview?.postMessage(m);
+const $=id=>document.getElementById(id);
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function colorOf(n){return n.kind==='cpu'?'#3d9eff':n.kind==='chipset'?'#a78bfa':BUS[n.link?.bus]||'#4a6080'}
+const AGGREGATE=new Set(['chipset','integrated','usb-controller','usb-hub','sata','virtual-group','platform','bluetooth']);
+
+function fmtRate(b){
+  if(!b||b<1)return '0 B/s';
+  if(b>=1073741824)return (b/1073741824).toFixed(1)+' GB/s';
+  if(b>=1048576)return (b/1048576).toFixed(b>=104857600?0:1)+' MB/s';
+  if(b>=1024)return Math.round(b/1024)+' KB/s';
+  return Math.round(b)+' B/s';
+}
+
+// ---- Layout ------------------------------------------------------------------------------
+// The CPU sits at the top left. Each thing wired to it (graphics slot, M.2 socket, the chipset, the
+// CPU's own controllers) gets a horizontal band: its card, then its devices as indented lists in one
+// or more columns. The router and the Internet continue to the right of the adapter that reaches them.
+
+function prepare(root){
+  const all=[];
+  (function walk(n,parent,depth){
+    n.parent=parent;n.depth=depth;all.push(n);
+    n.children.forEach(c=>walk(c,n,depth+1));
+  })(root,null,0);
+  return all;
+}
+
+function rows(n,depth,out){out.push({node:n,depth});n.children.forEach(c=>{if(c.kind!=='router')rows(c,depth+1,out)});return out}
+const leadsToRouter=n=>n.kind==='router'||n.children.some(leadsToRouter);
+const colWidth=col=>20+CARD_W+INDENT*Math.max(0,...col.map(r=>r.depth));
+
+// Split a band's device groups into up to three columns, keeping each group whole, when that saves
+// real height. Network adapters come last, so their link to the router never crosses a column.
+function packColumns(groups,maxWidth){
+  const total=groups.reduce((a,g)=>a+g.length,0);
+  let best={cols:[groups.flat()],height:total};
+  const tryPack=k=>{
+    const target=Math.ceil(total/k);
+    const cols=[];let cur=[];
+    for(const g of groups){
+      if(cur.length&&cur.length+g.length>target&&cols.length<k-1){cols.push(cur);cur=[]}
+      cur.push(...g);
+    }
+    if(cur.length)cols.push(cur);
+    return {cols,height:Math.max(...cols.map(c=>c.length))};
+  };
+  for(const k of [2,3]){
+    if(total<=6)break;
+    const option=tryPack(k);
+    const width=option.cols.reduce((a,c)=>a+colWidth(c),0)+COL_GAP*(option.cols.length-1);
+    if(width>maxWidth)break;
+    if(option.height+2<=best.height)best=option;
+  }
+  return best.cols;
+}
+
+function layout(root,viewW){
+  const pos=new Map();
+  const place=(n,x,y,w=CARD_W,h=CARD_H)=>pos.set(n.id,{x,y,w,h});
+  place(root,LEFT,TOP,CARD_W,58);
+  const bandX=LEFT+CARD_W+SPINE;
+  const colsX=bandX+COL_INSET;
+  const netReserve=CARD_W+INDENT*2+80;
+  const maxWidth=Math.max(700,viewW-colsX-netReserve-LEFT);
+
+  // The band that reaches the router comes first, so the path to the Internet is on screen at once.
+  const order={chipset:0,gpu:1,nvme:2,integrated:4,platform:5,'virtual-group':6};
+  const bands=[...root.children].sort((a,b)=>(leadsToRouter(b)?1:0)-(leadsToRouter(a)?1:0)||(order[a.kind]??3)-(order[b.kind]??3));
+  let y=TOP,maxRight=bandX+CARD_W;
+  for(const band of bands){
+    place(band,bandX,y);
+    const kids=[...band.children].filter(c=>c.kind!=='router').sort((a,b)=>(leadsToRouter(a)?1:0)-(leadsToRouter(b)?1:0));
+    const cols=kids.length?packColumns(kids.map(k=>rows(k,0,[])),maxWidth):[];
+    let cx=colsX,right=bandX+CARD_W;
+    cols.forEach((col,i)=>{
+      // The first column tucks under the band's card like a file tree; the rest hang off a bus.
+      const x0=i===0?bandX+COL_INSET-20:cx;
+      col.forEach((r,j)=>{place(r.node,x0+20+r.depth*INDENT,y+(j+1)*ROW);r.node.col=i;r.node.rail=x0+9});
+      cx=(i===0?x0:cx)+colWidth(col)+COL_GAP;
+      right=Math.max(right,x0+colWidth(col));
+    });
+    let bottom=y+(1+Math.max(0,...cols.map(c=>c.length)))*ROW;
+
+    // Routers continue to the right of this band, level with the adapter that reaches them.
+    const routers=[];
+    band.children.forEach(function find(n){if(n.kind==='router')routers.push(n);n.children.forEach(find)});
+    const netX=right+54;
+    let ny=y;
+    for(const router of routers){
+      const nic=pos.get(router.parent.id);
+      const ry=Math.max(ny,nic?nic.y:y);
+      const list=rows(router,0,[]);
+      list.forEach((r,j)=>{place(r.node,netX+20+r.depth*INDENT,ry+j*ROW);r.node.rail=netX+9});
+      ny=ry+list.length*ROW+20;
+      right=Math.max(right,netX+colWidth(list));
+      bottom=Math.max(bottom,ry+list.length*ROW);
+    }
+    maxRight=Math.max(maxRight,right);
+    y=bottom+BAND_GAP;
+  }
+  let maxY=0;pos.forEach(p=>maxY=Math.max(maxY,p.y+p.h));
+  return {pos,width:maxRight+LEFT,height:maxY+110};
+}
+
+// ---- Paths -------------------------------------------------------------------------------
+
+const R=9;
+function turnDown(x0,y0,x1,y1){
+  // Horizontal to x1, then down (or up) to y1, with a rounded corner.
+  if(Math.abs(y1-y0)<1)return `H${x1}`;
+  const r=Math.min(R,Math.abs(y1-y0)/2,Math.abs(x1-x0)/2),sy=y1>y0?1:-1,sx=x1>x0?1:-1;
+  return `H${x1-sx*r}Q${x1},${y0} ${x1},${y0+sy*r}V${y1}`;
+}
+function turnRight(x0,y0,x1,y1){
+  // Vertical to y1, then right to x1.
+  if(Math.abs(x1-x0)<1)return `V${y1}`;
+  const r=Math.min(R,Math.abs(y1-y0)/2,Math.abs(x1-x0)/2),sy=y1>y0?1:-1,sx=x1>x0?1:-1;
+  return `V${y1-sy*r}Q${x0},${y1} ${x0+sx*r},${y1}H${x1}`;
+}
+
+function linkPath(n,pos){
+  const p=pos.get(n.parent.id),c=pos.get(n.id);
+  if(!p||!c)return null;
+  const cy=c.y+c.h/2;
+  if(n.parent.kind==='cpu'){
+    // Parallel lanes leave the CPU's right edge and drop down a spine to each band.
+    const sibs=n.parent.children.filter(s=>pos.has(s.id)).sort((a,b)=>pos.get(a.id).y-pos.get(b.id).y);
+    const i=sibs.indexOf(n),k=sibs.length;
+    const sy=p.y+14+(k>1?i*(p.h-28)/(k-1):(p.h-28)/2);
+    const spine=p.x+p.w+14+i*6;
+    if(Math.abs(cy-sy)<2)return `M${p.x+p.w},${sy}H${c.x}`;
+    return `M${p.x+p.w},${sy}`+turnDown(p.x+p.w,sy,spine,cy)+turnRight(spine,cy,c.x,cy);
+  }
+  if(n.kind==='router'){
+    const sx=p.x+p.w,sy=p.y+p.h/2,tx=c.x,mx=(sx+tx)/2;
+    return `M${sx},${sy}C${mx},${sy} ${mx},${cy} ${tx},${cy}`;
+  }
+  if(n.parent.depth===1&&n.parent.parent?.kind==='cpu'&&n.col>0){
+    // Later columns hang off a bus that runs along the band's first row, right of its card.
+    const busY=p.y+p.h/2,rail=n.rail;
+    return `M${p.x+p.w},${busY}`+turnDown(p.x+p.w,busY,rail,cy)+turnRight(rail,cy,c.x,cy);
+  }
+  // Tree-style: down from under the parent's icon, then across into the card.
+  const x0=p.x+14,y0=p.y+p.h;
+  return `M${x0},${y0}`+turnRight(x0,y0,c.x,cy);
+}
+
+// ---- Rendering ---------------------------------------------------------------------------
+
+function render(){
+  const data=state.data;if(!data)return;
+  $('empty').style.display='none';
+  const root=data.root;
+  const all=prepare(root);
+  state.nodes=new Map(all.map(n=>[n.id,n]));
+  const viewW=document.documentElement.clientWidth;
+  const {pos,width,height}=layout(root,viewW);
+  state.pos=pos;
+  const scale=Math.max(.72,Math.min(1,(viewW-8)/width));
+  state.scale=scale;
+  state.mapW=Math.ceil(width*scale);
+  const svg=d3.select('#map');
+  svg.selectAll('*').remove();
+  svg.attr('height',Math.ceil(height*scale));
+  padForInspector();
+
+  const defs=svg.append('defs');
+  const glass=defs.append('linearGradient').attr('id','glassFill').attr('x1',0).attr('y1',0).attr('x2',0).attr('y2',1);
+  glass.append('stop').attr('offset',0).attr('stop-color','#fff').attr('stop-opacity',.1);
+  glass.append('stop').attr('offset',.5).attr('stop-color','#fff').attr('stop-opacity',.02);
+  glass.append('stop').attr('offset',1).attr('stop-color','#000').attr('stop-opacity',.14);
+
+  const g=svg.append('g').attr('transform',`scale(${scale})`);
+  const linkLayer=g.append('g'),cardLayer=g.append('g');
+
+  if(state.anim){cancelAnimationFrame(state.anim);state.anim=0}
+  state.links=[];
+  for(const n of all){
+    if(!n.parent)continue;
+    const d=linkPath(n,pos);if(!d)continue;
+    const path=linkLayer.append('path').attr('class','link').attr('d',d).attr('stroke',colorOf(n))
+      .attr('stroke-dasharray',n.link?.degraded?'7 5':null);
+    const node=path.node(),len=node.getTotalLength();
+    const samples=[];for(let s=0;s<=len;s+=3){const pt=node.getPointAtLength(s);samples.push([pt.x,pt.y])}
+    state.links.push({node:n,path,len,samples,color:colorOf(n),dots:[],rateIn:0,rateOut:0});
+  }
+
+  const firstRouter=all.find(n=>n.kind==='router');
+  if(firstRouter&&pos.get(firstRouter.id)){
+    const p=pos.get(firstRouter.id);
+    g.append('text').attr('class','colhead').attr('x',p.x).attr('y',p.y-10).text('Your network');
+  }
+  for(const n of all){const p=pos.get(n.id);if(p)drawCard(cardLayer,n,p)}
+
+  renderSummary();
+  if(state.selected&&state.nodes.has(state.selected))select(state.selected,false);
+  else closeInspector(false);
+  applyFlow();
+}
+
+// While the details panel is open, the page gets room to scroll whatever it covers into view.
+function padForInspector(){
+  $('map').setAttribute('width',state.mapW+(state.selected?370:0));
+}
+
+function drawCard(layer,n,p){
+  const color=colorOf(n);
+  const warn=!!(n.warning||n.problem);
+  const g=layer.append('g').attr('class','card').attr('id','c-'+n.id).attr('transform',`translate(${p.x},${p.y})`)
+    .attr('tabindex',0).attr('role','button').attr('aria-label',`${n.name}. ${n.detail||''}${n.link?'. '+n.link.label:''}`)
+    .on('click',()=>select(n.id,true))
+    .on('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(n.id,true)}});
+  const face=g.append('g').attr('class','face');
+  const radius=n.kind==='cpu'?17:14;
+  face.append('rect').attr('width',p.w).attr('height',p.h).attr('rx',radius).attr('fill','#0c1620');
+  face.append('rect').attr('class','edge').attr('width',p.w).attr('height',p.h).attr('rx',radius).attr('fill','url(#glassFill)')
+    .attr('stroke',warn?'#f59e0b':color).attr('stroke-width',n.kind==='cpu'?1.8:1.4).attr('stroke-opacity',.85);
+  face.append('line').attr('x1',radius).attr('x2',p.w-radius).attr('y1',1.2).attr('y2',1.2).attr('stroke','#fff').attr('stroke-opacity',.2);
+  const cy=p.h/2;
+  face.append('circle').attr('cx',22).attr('cy',cy).attr('r',14).attr('fill',color).attr('fill-opacity',.14)
+    .attr('stroke',color).attr('stroke-opacity',.45);
+  face.append('path').attr('d',ICON[n.kind]||ICON.device).attr('transform',`translate(${22-7.8},${cy-7.8}) scale(.65)`)
+    .attr('fill','none').attr('stroke',color).attr('stroke-width',2.1).attr('stroke-linecap','round').attr('stroke-linejoin','round');
+
+  const line1=p.h/2-5,line2=p.h/2+13;
+  face.append('text').attr('class','name').attr('x',44).attr('y',line1).attr('data-full',n.name).text(n.name);
+  face.append('text').attr('class','detail').attr('x',44).attr('y',line2).attr('data-full',n.detail||'').text(n.detail||'');
+  // Line 1 right: temperature (and CPU load); line 2 right: the link this device came in on.
+  face.append('g').attr('class','chip tchip');
+  face.append('g').attr('class','chip uchip');
+  if(n.link&&n.parent){
+    const degraded=n.link.degraded;
+    chip(face.append('g').attr('class','chip lchip'),(degraded?'⚠ ':'')+n.link.short,degraded?'#f59e0b':color,p.w-10,line2-12);
+  }
+  if(n.tempC!=null)chip(face.select('.tchip'),Math.round(n.tempC)+'°',tempColor(n,n.tempC),p.w-10,line1-12);
+  fitCard(g.node(),n,p);
+  if(n.id===state.selected)g.classed('sel',true);
+}
+
+// A small rounded label, right-aligned at x.
+function chip(sel,text,color,right,top){
+  sel.selectAll('*').remove();
+  if(!text){sel.attr('data-w',0);return 0}
+  const t=sel.append('text').attr('y',top+11.5).attr('fill',color).text(text);
+  const w=t.node().getComputedTextLength()+14;
+  sel.insert('rect','text').attr('x',right-w).attr('y',top).attr('width',w).attr('height',16).attr('rx',8)
+    .attr('fill',color).attr('fill-opacity',.12).attr('stroke',color).attr('stroke-opacity',.45);
+  t.attr('x',right-w+7);
+  sel.attr('data-w',w);
+  return w;
+}
+
+function fitCard(card,n,p){
+  const w=sel=>+(card.querySelector(sel)?.getAttribute('data-w')||0);
+  const t=w('.tchip'),u=w('.uchip'),l=w('.lchip');
+  // The load chip sits left of the temperature chip.
+  const uchip=card.querySelector('.uchip');
+  if(uchip&&u){const shift=t?-(t+5):0;uchip.setAttribute('transform',`translate(${shift},0)`)}
+  fit(card.querySelector('.name'),p.w-54-(t?t+6:0)-(u?u+6:0));
+  fit(card.querySelector('.detail'),p.w-54-(l?l+6:0));
+}
+
+function hasFlow(n){return n.disk!=null||!!n.net||n.children.some(c=>c.kind!=='router'&&hasFlow(c))}
+
+function tempColor(n,t){
+  if(t==null)return '#8a9bb2';
+  const [warm,hot]=n.kind==='cpu'?[85,95]:n.kind==='gpu'?[80,88]:n.kind==='chipset'?[75,85]:[60,70];
+  return t>=hot?'#ef4444':t>=warm?'#f59e0b':'#10b981';
+}
+
+function fit(text,max){
+  if(!text)return;
+  const full=text.getAttribute('data-full')??text.textContent;
+  text.textContent=full;
+  if(max<24){text.textContent='';return}
+  let s=full;
+  while(s.length>1&&text.getComputedTextLength()>max){s=s.slice(0,-1);text.textContent=s.trimEnd()+'…'}
+}
+
+function renderSummary(){
+  const data=state.data,box=$('summary');box.replaceChildren();
+  const all=[...state.nodes.values()];
+  const devices=all.filter(n=>!['cpu','chipset','integrated','platform','virtual-group','router','internet','dns'].includes(n.kind)).length;
+  box.append(el('span','pill',`${devices} devices`));
+  for(const n of all.filter(n=>n.warning||n.problem)){
+    const text=n.link?.degraded?`${n.name} · ${n.link.short} of ${(n.link.max||'').replace(/^PCIe |^USB 3\.2 /,'')}`:n.name;
+    const p=el('span','pill warn','⚠ '+text);
+    p.title='Show '+n.name;p.onclick=()=>{select(n.id,true);scrollToNode(n.id)};
+    box.append(p);
+  }
+  for(const note of data.notes||[])box.append(el('span','pill note',note));
+  box.append(el('span','pill',`Updated ${data.gatheredAt} · read in ${data.gatheredMs} ms`));
+  if(data.privacy)box.append(el('span','pill','Privacy on: MAC addresses, Wi-Fi names, IPv6, and the public IP are hidden'));
+}
+
+function scrollToNode(id){
+  const p=state.pos?.get(id);if(!p)return;
+  const s=state.scale,head=$('head').offsetHeight;
+  window.scrollTo({top:Math.max(0,p.y*s+head-window.innerHeight/2),left:Math.max(0,p.x*s-window.innerWidth/3),behavior:state.motion?'smooth':'auto'});
+}
+
+// ---- Live flow ---------------------------------------------------------------------------
+
+// Rates for one node: its own adapter or disk, plus everything that reaches the CPU through it.
+// The router and Internet carry their adapter's traffic.
+function ratesOf(n,flow){
+  const net=n.net?flow.net?.[n.net]:null;
+  if(n.kind==='router'||n.kind==='internet')return net?[net[0],net[1]]:[0,0];
+  let rin=0,rout=0;
+  if(n.disk!=null&&flow.disk?.[n.disk]){rin+=flow.disk[n.disk][0];rout+=flow.disk[n.disk][1]}
+  if(net){rin+=net[0];rout+=net[1]}
+  for(const c of n.children){if(c.kind==='router')continue;const [a,b]=ratesOf(c,flow);rin+=a;rout+=b}
+  return [rin,rout];
+}
+
+function liveText(n){
+  const rin=n.rin||0,rout=n.rout||0;
+  if(rin+rout<1024)return null;
+  if(n.kind==='cpu')return null;
+  if(AGGREGATE.has(n.kind))return `⇅ ${fmtRate(rin+rout)}`;
+  if(n.disk!=null&&!n.net)return `Read ${fmtRate(rin)} · Write ${fmtRate(rout)}`;
+  return `↓ ${fmtRate(rin)} · ↑ ${fmtRate(rout)}`;
+}
+
+function applyFlow(){
+  const flow=state.flow;if(!flow||!state.data)return;
+  const now=performance.now();
+  for(const n of state.nodes.values()){
+    const [rin,rout]=ratesOf(n,flow);
+    n.rin=rin;n.rout=rout;
+    const h=state.history.get(n.id)||[];h.push([rin,rout]);if(h.length>60)h.shift();state.history.set(n.id,h);
+    const card=document.getElementById('c-'+n.id);if(!card)continue;
+    const p=state.pos.get(n.id);
+    // While data moves, the second line shows the rate; it falls back to the detail after 3 s idle.
+    const live=liveText(n);
+    if(live){n.liveUntil=now+3000;n.liveText=live}
+    const detail=card.querySelector('.detail');
+    const showLive=n.liveUntil>now;
+    detail.setAttribute('data-full',showLive?n.liveText:(n.detail||''));
+    detail.classList.toggle('rate',showLive);
+    if(n.sensor&&flow.temps?.[n.sensor]!=null)n.tempC=flow.temps[n.sensor];
+    if(n.tempC!=null)chip(d3.select(card).select('.tchip'),Math.round(n.tempC)+'°',tempColor(n,n.tempC),p.w-10,p.h/2-17);
+    if(n.kind==='cpu'&&flow.cpu!=null)chip(d3.select(card).select('.uchip'),Math.round(flow.cpu)+'% load','#3d9eff',p.w-10,p.h/2-17);
+    fitCard(card,n,p);
+  }
+  for(const link of state.links){
+    link.rateIn=link.node.rin||0;link.rateOut=link.node.rout||0;
+    link.path.classed('hot',link.rateIn+link.rateOut>=1024);
+    syncDots(link);
+  }
+  if(state.selected)updateLive();
+  startAnimation();
+}
+
+function dotsFor(rate){return rate<512?0:Math.min(6,1+Math.floor(Math.log10(rate/1024+1)*1.4))}
+function speedFor(rate){return 36+26*Math.log10(rate/1024+1)}
+
+function syncDots(link){
+  for(const dir of ['in','out']){
+    const count=dotsFor(dir==='in'?link.rateIn:link.rateOut);
+    const have=link.dots.filter(d=>d.dir===dir);
+    // New dots slot into the largest gap, so the ones already moving never jump.
+    for(let i=have.length;i<count;i++){
+      const phases=link.dots.filter(d=>d.dir===dir).map(d=>d.phase).sort((a,b)=>a-b);
+      let phase=Math.random();
+      if(phases.length){
+        let gap=0;
+        phases.forEach((p,j)=>{const next=j+1<phases.length?phases[j+1]:phases[0]+1;if(next-p>gap){gap=next-p;phase=(p+gap/2)%1}});
+      }
+      link.dots.push({dir,phase});
+    }
+    for(let i=count;i<have.length;i++)link.dots.splice(link.dots.indexOf(have[i]),1);
+  }
+}
+
+// Moving dots are drawn on one viewport-sized canvas over the map: redrawing a few dozen circles is far
+// cheaper than letting the browser repaint the whole SVG map every frame.
+function sizeFlowCanvas(){
+  const c=$('flow'),dpr=window.devicePixelRatio||1;
+  c.width=Math.round(innerWidth*dpr);c.height=Math.round(innerHeight*dpr);
+  c.style.width=innerWidth+'px';c.style.height=innerHeight+'px';
+  state.dpr=dpr;
+}
+
+function startAnimation(){
+  if(state.anim||!state.motion)return;
+  if(!state.flowCtx){sizeFlowCanvas();state.flowCtx=$('flow').getContext('2d')}
+  state.lastFrame=performance.now();
+  const frame=now=>{
+    state.anim=0;
+    if(!state.motion){clearFlow();return}
+    // About 30 frames a second is smooth enough for dots and halves the work.
+    if(now-state.lastFrame<30){state.anim=requestAnimationFrame(frame);return}
+    const dt=Math.min(.1,(now-state.lastFrame)/1000);state.lastFrame=now;
+    const ctx=state.flowCtx,s=state.scale,rect=$('map').getBoundingClientRect();
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    let any=false;
+    for(const link of state.links){
+      if(!link.dots.length)continue;any=true;
+      for(const dot of link.dots){
+        const rate=dot.dir==='in'?link.rateIn:link.rateOut;
+        dot.phase=(dot.phase+speedFor(rate)*dt/Math.max(40,link.len))%1;
+        // "In" travels from the device toward the CPU: backwards along the path.
+        const u=dot.dir==='in'?1-dot.phase:dot.phase;
+        const pt=link.samples[Math.min(link.samples.length-1,Math.floor(u*(link.samples.length-1)))];
+        if(!pt)continue;
+        const x=rect.left+pt[0]*s,y=rect.top+pt[1]*s;
+        if(x<-8||y<-8||x>innerWidth+8||y>innerHeight+8)continue;
+        const color=dot.dir==='in'?link.color:'#e8edf4';
+        ctx.fillStyle=color;
+        ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(x,y,5.5*s,0,Math.PI*2);ctx.fill();
+        ctx.globalAlpha=.95;ctx.beginPath();ctx.arc(x,y,(dot.dir==='in'?2.7:2.2)*s,0,Math.PI*2);ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+    if(any)state.anim=requestAnimationFrame(frame);
+  };
+  state.anim=requestAnimationFrame(frame);
+}
+
+function clearFlow(){
+  const c=$('flow');const ctx=state.flowCtx;
+  if(ctx){ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,c.width,c.height)}
+}
+
+// ---- Inspector ---------------------------------------------------------------------------
+
+function select(id,user){
+  const n=state.nodes.get(id);if(!n)return;
+  const wasOpen=!!state.selected;
+  state.selected=id;
+  d3.selectAll('.card').classed('sel',false);
+  d3.select('#c-'+id).classed('sel',true);
+  const insp=$('insp');insp.replaceChildren();
+  const color=colorOf(n);
+  const close=el('button','close','×');close.title='Close';close.setAttribute('aria-label','Close details');close.onclick=()=>closeInspector(true);
+  insp.append(close);
+  const kind=el('div','kind',KIND[n.kind]||n.kind);kind.style.color=color;insp.append(kind);
+  insp.append(el('h2',null,n.name));
+  if(n.detail)insp.append(el('div','d',n.detail));
+  if(n.warning){const s=el('div','sec');s.append(el('div','callout warn',n.warning));insp.append(s)}
+  if(n.note){const s=el('div','sec');s.append(el('div','callout note',n.note));insp.append(s)}
+
+  if(n.link&&n.parent){
+    const s=el('div','sec');s.append(el('h3',null,'Connection'));
+    s.append(el('div',null,n.link.label));
+    if(n.link.gbps&&n.link.maxGbps){
+      const bar=el('div','bar'),fill=el('i');fill.style.width=Math.max(4,Math.min(100,n.link.gbps/n.link.maxGbps*100))+'%';
+      fill.style.background=n.link.degraded?'#f59e0b':color;bar.append(fill);s.append(bar);
+      const lbl=el('div','barlbl');lbl.append(el('span',null,'Now: '+n.link.label),el('span',null,'Best: '+n.link.max));s.append(lbl);
+    }
+    s.append(el('div','d',`Connected to ${n.parent.name}`));
+    insp.append(s);
+  }
+
+  if(hasFlow(n)){
+    const s=el('div','sec');s.append(el('h3',null,n.disk!=null?'Disk activity':'Live traffic'));
+    const live=el('div','live');live.id='live';s.append(live);
+    const canvas=el('canvas');canvas.id='spark';s.append(canvas);
+    const use=el('div','d');use.id='use';s.append(use);
+    insp.append(s);
+  }
+  if(n.kind==='internet')insp.append(wanSection(n));
+
+  if(n.facts?.length){
+    const s=el('div','sec');s.append(el('h3',null,'Details'));
+    const t=el('table');
+    for(const f of n.facts){
+      if(n.kind==='internet'&&f.label==='Public IP')continue;
+      const tr=el('tr');tr.append(el('td',null,f.label),el('td',null,f.value));t.append(tr);
+    }
+    s.append(t);insp.append(s);
+  }
+  if(n.children.length){
+    const s=el('div','sec');s.append(el('h3',null,`Connected here (${n.children.length})`));
+    const t=el('table');
+    for(const c of n.children){
+      const tr=el('tr');const a=el('td',null,c.name);a.style.color='var(--t)';a.style.cursor='pointer';a.onclick=()=>{select(c.id,true);scrollToNode(c.id)};
+      tr.append(a,el('td',null,c.link?.label||''));t.append(tr);
+    }
+    s.append(t);insp.append(s);
+  }
+  $('inspector').classList.add('open');
+  if(!wasOpen)padForInspector();
+  updateLive();
+  syncGlass();
+  if(user)$('insp').scrollTop=0;
+}
+
+function closeInspector(user){
+  const wasOpen=!!state.selected;
+  state.selected=null;
+  $('inspector').classList.remove('open');
+  d3.selectAll('.card').classed('sel',false);
+  if(wasOpen)padForInspector();
+  syncGlass();
+}
+
+function wanSection(n){
+  const s=el('div','sec');s.append(el('h3',null,'Public IP address'));
+  const box=el('div');box.id='wan';s.append(box);
+  fillWan(box);
+  return s;
+}
+
+function fillWan(box){
+  box.replaceChildren();
+  const w=state.wan;
+  if(w&&w.ok){
+    const t=el('table');
+    const rows=[['Public IP',w.ip],['Country',w.location],['Cloudflare edge',w.edge],['Checked',w.checkedAt]];
+    for(const [k,v] of rows){if(!v)continue;const tr=el('tr');tr.append(el('td',null,k),el('td',null,v));t.append(tr)}
+    box.append(t);
+  }else if(w&&!w.ok){box.append(el('div','callout warn',w.error||'The lookup failed.'))}
+  const btn=el('button','btn',state.wanBusy?'Asking Cloudflare…':w?.ok?'Look up again':'Look up my public IP');
+  btn.disabled=state.wanBusy;btn.style.marginTop='8px';
+  btn.onclick=()=>{state.wanBusy=true;fillWan(box);post({type:'wan'})};
+  box.append(btn);
+  box.append(el('div','wanbox',
+    'This sends one HTTPS request to Cloudflare (1.1.1.1/cdn-cgi/trace), which answers with the address your network uses on the Internet. '+
+    'Nothing else is sent, and BoardScout never looks it up on its own.'+(state.privacy?' Privacy mode is on, so the address stays hidden.':'')));
+}
+
+function updateLive(){
+  const n=state.nodes.get(state.selected);const live=$('live');if(!n||!live)return;
+  const isDisk=n.disk!=null&&!n.net;
+  live.replaceChildren();
+  const a=el('span');a.append(isDisk?'Read ':'Down ',el('b',null,fmtRate(n.rin||0)));
+  const b=el('span');b.append(isDisk?'Write ':'Up ',el('b',null,fmtRate(n.rout||0)));
+  live.append(a,b);
+  const use=$('use');
+  if(use){
+    const bps=((n.rin||0)+(n.rout||0))*8;
+    use.textContent=n.link?.gbps&&state.flow?`Using ${Math.min(100,bps/(n.link.gbps*1e9)*100).toFixed(bps>0&&bps<n.link.gbps*1e7?2:1)}% of this ${n.link.short} link`:'';
+  }
+  const canvas=$('spark');if(!canvas)return;
+  const h=state.history.get(n.id)||[];
+  const w=canvas.clientWidth||300,hh=54;canvas.width=w*devicePixelRatio;canvas.height=hh*devicePixelRatio;
+  const ctx=canvas.getContext('2d');ctx.scale(devicePixelRatio,devicePixelRatio);
+  const max=Math.max(1024,...h.map(v=>Math.max(v[0],v[1])));
+  const draw=(i,color)=>{
+    ctx.beginPath();
+    h.forEach((v,j)=>{const x=w-(h.length-1-j)*(w/59);const y=hh-3-(v[i]/max)*(hh-8);j?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+    ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.stroke();
+  };
+  draw(0,colorOf(n));draw(1,'#e8edf4');
+}
+
+// ---- Glass -------------------------------------------------------------------------------
+
+function applySettings(s){
+  // A public IP shown before privacy mode was switched on must not stay on screen.
+  if(s.privacy&&!state.privacy){state.wan=null;const box=$('wan');if(box)fillWan(box)}
+  state.glass=!!s.glass;state.motion=!!s.motion;state.privacy=!!s.privacy;
+  document.body.classList.toggle('no-glass',!state.glass);
+  document.body.classList.toggle('no-motion',!state.motion);
+  if(!state.motion&&state.anim){cancelAnimationFrame(state.anim);state.anim=0;clearFlow()}
+  else startAnimation();
+  syncGlass();
+}
+
+// The details panel is QuickLiquid glass while it is open (created on first open: a hidden element has no size).
+async function syncGlass(){
+  const panel=$('inspector');
+  const want=state.glass&&panel.classList.contains('open');
+  if(!want&&!state.inspGlass)return;
+  if(!state.ql)state.ql=import('./vendor/quick-liquid/index.mjs').catch(err=>{console.warn('QuickLiquid unavailable',err);return null});
+  const ql=await state.ql;if(!ql)return;
+  if(want&&!state.inspGlass){
+    state.inspGlass=new ql.LiquidGlassEngine(panel,{material:'clear',appearance:'dark',borderRadius:20,quality:'medium',
+      refractionStrength:12,chromaticAberration:0.1,blur:6,dynamicLighting:state.motion});
+    panel.classList.add('ql-live');
+  }else if(!want&&state.inspGlass){state.inspGlass.destroy();state.inspGlass=null;panel.classList.remove('ql-live')}
+  else if(state.inspGlass)state.inspGlass.updateConfig({dynamicLighting:state.motion});
+}
+
+// ---- Messages ----------------------------------------------------------------------------
+
+window.chrome?.webview?.addEventListener('message',e=>{
+  const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
+  if(!msg)return;
+  if(msg.type==='settings')applySettings(msg);
+  else if(msg.type==='connections'&&msg.data){state.data=msg.data;$('refresh').disabled=false;$('refresh').textContent='Refresh';render()}
+  else if(msg.type==='flow'){state.flow=msg;applyFlow()}
+  else if(msg.type==='wan'){
+    state.wanBusy=false;state.wan=msg;
+    const n=[...state.nodes.values()].find(x=>x.kind==='internet');
+    if(n&&msg.ok){const f=n.facts.find(f=>f.label==='Public IP');if(f)f.value=msg.ip}
+    const box=$('wan');if(box)fillWan(box);
+  }
+  else if(msg.type==='busy'){$('refresh').disabled=true;$('refresh').textContent='Reading…'}
+});
+$('refresh').onclick=()=>{$('refresh').disabled=true;$('refresh').textContent='Reading…';post({type:'refresh'})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.selected)closeInspector(true)});
+let resizeTimer=0;
+window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.flowCtx)sizeFlowCanvas();render()},140)});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')startAnimation()});
+</script>
+</body>
+</html>

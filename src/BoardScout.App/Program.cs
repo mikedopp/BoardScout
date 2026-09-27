@@ -13,6 +13,9 @@ internal static class Program
         if (args.Contains("--system-json", StringComparer.OrdinalIgnoreCase))
             return PrintSystemJsonAsync().GetAwaiter().GetResult();
 
+        if (args.Contains("--connections-json", StringComparer.OrdinalIgnoreCase))
+            return PrintConnectionsJsonAsync(args.Contains("--privacy", StringComparer.OrdinalIgnoreCase)).GetAwaiter().GetResult();
+
         if (args.Contains("--scan", StringComparer.OrdinalIgnoreCase) ||
             args.Contains("--check-drivers", StringComparer.OrdinalIgnoreCase))
         {
@@ -78,6 +81,25 @@ internal static class Program
             var scanPath = service.GetLatestScanPath();
             var scan = scanPath is null ? null : await service.LoadScanAsync(scanPath, CancellationToken.None);
             Console.WriteLine(await SystemInfoService.GatherJsonAsync(scan));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            return 1;
+        }
+    }
+
+    // Prints what the Connections tab receives. Contains local addresses and MACs unless --privacy is given.
+    private static async Task<int> PrintConnectionsJsonAsync(bool privacy)
+    {
+        try
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Privacy.Learn(null);
+            var json = await ConnectionsService.GatherJsonAsync(privacy);
+            Console.WriteLine(System.Text.Json.Nodes.JsonNode.Parse(json)?.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
             return 0;
         }
         catch (Exception ex)

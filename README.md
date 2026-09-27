@@ -4,7 +4,7 @@ A portable Windows app that maps your motherboard, bandwidth, drivers, storage, 
 system in one place: what is plugged in where, what each part is good for, what needs attention,
 and how long Windows will keep patching it. It never installs drivers or firmware.
 
-**Status:** v1.2.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.3.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +15,9 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.2.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.2.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.2.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.3.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.3.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.3.0-SHA256SUMS.txt` | Checksums for both. |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -37,6 +37,21 @@ move faster on wider buses. Board-specific slot names and lane sharing appear on
 board; other boards get generic labels and the slots their firmware reports.
 
 ![Bandwidth topology with flowing links and a QuickLiquid glass legend](docs/screenshots/topology.png)
+
+**Connections** — every device in the PC and exactly where it plugs in, read live from Windows'
+device tree: the CPU, the chipset and what hangs off it, each USB controller, hub, and port, drives,
+monitors, Bluetooth devices, network adapters, and on out through your router to the Internet.
+Each card shows the link that device actually negotiated — PCIe generation and lanes, USB speed,
+HDMI/DisplayPort mode, Ethernet or Wi-Fi rate — and flags links running below what the device
+supports (a PCIe 4.0 SSD on PCIe 3.0 lanes, an NVMe drive given 2 of its 4 lanes, a USB 3 drive on a
+USB 2 port) with the likely reason. Dots flow along the real paths as data moves: disk reads and
+writes, and network traffic from the Internet through the router, the adapter, and the chipset to
+the CPU. Click any card for details: link now versus best, live traffic, firmware and driver
+versions, drive temperature where Windows reports it, IP and DNS settings, and the Wi-Fi network,
+signal, band, and security. The router card shows its address, name, and round trip; the Internet
+card can look up your public IP on request. Plug something in and the map redraws itself.
+
+![Connections: CPU, chipset, USB, SATA, and NVMe devices with negotiated link speeds, live traffic, and the path through the router to the Internet](docs/screenshots/connections.png)
 
 **System** — "What your OS says about you": a personality verdict (The Power Developer, The
 Reliable Holdout, The Battle Station, …), Windows support status from Microsoft's lifecycle
@@ -69,10 +84,17 @@ BoardScout as administrator. Everything else in BoardScout works without either.
 Only these, and only when you ask:
 
 - **Check drivers** and **Download drivers** contact vendor, OEM, and Microsoft catalog sources.
+- **Look up my public IP** on the Connections tab's Internet card sends one HTTPS request to
+  Cloudflare (`https://1.1.1.1/cdn-cgi/trace`), which answers with the address your network uses on
+  the Internet. BoardScout never makes this request on its own, and the Scan Log records each time
+  it does.
 - Links you click (official update pages, PawnIO, Report issue) open in your browser.
 
-Everything else is local. Scans use built-in Windows tools, and the Topology and System views
-load their scripts (QuickLiquid, D3) from the app folder, not a CDN.
+Everything else is local. Scans use built-in Windows tools, and the Topology, Connections, and
+System views load their scripts (QuickLiquid, D3) from the app folder, not a CDN. To draw your
+network path, the Connections tab pings your router and asks your own DNS servers for the names
+of your router and DNS servers; nothing else leaves your network. "Internet access" on that tab is
+what Windows' own connectivity check already concluded.
 
 ## Privacy mode: screenshots and exports you can share
 
@@ -89,6 +111,8 @@ Turn it on under the version button → Settings, or press **Ctrl+Shift+P**. Whi
 - Storage shows `Volume D:` instead of volume labels you named yourself.
 - Spec sheet and JSON exports leave out the PC name, machine ID, serial numbers, system UUID,
   and volume labels. JSON exports stay importable.
+- Connections hides MAC addresses, Wi-Fi network names and access-point addresses, IPv6
+  addresses, Bluetooth device names that look like someone's ("Sam's AirPods"), and the public IP.
 
 Two protections apply even with privacy mode off: JSON exports never include the Windows owner or
 product ID, and **Copy diagnostics** always masks your PC name, user folder, serials, emails, and
@@ -100,18 +124,23 @@ MAC addresses.
 2. **Scan now** is a local inventory (about 10 s). Run it after hardware or firmware changes.
 3. **Check drivers** is a separate, cancellable online step.
 4. Live telemetry (CPU, memory, sensors, network) runs on a background thread at the refresh rate
-   you choose, so the window never waits on hardware.
-5. BoardScout presents updates for review and **never installs or flashes anything**.
+   you choose, so the window never waits on hardware. Per-disk and per-adapter rates are sampled
+   only while the Connections map is on screen.
+5. Web views on tabs you are not looking at, or while the window is minimized, are paused.
+6. BoardScout presents updates for review and **never installs or flashes anything**.
 
 ## Troubleshooting
 
 - **Version button → Copy diagnostics** puts version, runtime, Windows build, WebView2, sensor
   state, and settings on the clipboard for an issue report.
 - Unexpected errors are written to `crash.log` in the data folder.
-- `BoardScout.exe --system-json` prints the System tab's data; `--scan` runs a headless scan;
+- `BoardScout.exe --system-json` prints the System tab's data; `--connections-json` prints the
+  Connections map (add `--privacy` to mask it as privacy mode does); `--scan` runs a headless scan;
   `--check-drivers` also checks drivers.
-- Topology and System need the Microsoft Edge WebView2 Runtime (built into Windows 11 and current
-  Windows 10). Without it those two views say so; the rest works.
+- Topology, Connections, and System need the Microsoft Edge WebView2 Runtime (built into Windows 11
+  and current Windows 10). Without it those views say so; the rest works.
+- A drive with no temperature on Connections is normal: without administrator rights, Windows
+  reports temperature only for some drives (usually NVMe).
 
 ## Build from source
 
@@ -128,8 +157,9 @@ Source layout:
 
 - `src\BoardScout.App` — the .NET 10 Windows Forms application
 - `src\BoardScout.App\UI` — board map, liquid sidebar, glass controls, version pop-out
-- `src\BoardScout.App\Services` — scanning, driver checks, telemetry, System tab data
-- `src\BoardScout.App\Assets` — Topology and System web views, plus `vendor\` (QuickLiquid, D3)
+- `src\BoardScout.App\Services` — scanning, driver checks, telemetry, System tab data, the device
+  tree, network probe, and Connections map
+- `src\BoardScout.App\Assets` — Topology, Connections, and System web views, plus `vendor\` (QuickLiquid, D3)
 - `src\BoardScout.App\DriverScout` — the bundled PowerShell scan engine and its notices
 
 ## License and legal

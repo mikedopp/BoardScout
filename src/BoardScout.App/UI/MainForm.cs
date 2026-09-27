@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text;
 using BoardScout.Models;
@@ -17,10 +18,22 @@ public sealed class MainForm : Form
     private readonly WebView2 _systemWebView = new() { Dock = DockStyle.Fill };
     private readonly GlassCard _topologyCard = new() { Dock = DockStyle.Fill };
     private readonly GlassCard _systemCard = new() { Dock = DockStyle.Fill };
+    private readonly WebView2 _connectionsWebView = new() { Dock = DockStyle.Fill };
+    private readonly GlassCard _connectionsCard = new() { Dock = DockStyle.Fill };
     private bool _topologyReady;
     private bool _systemReady;
+    private bool _connectionsReady;
     private string? _topologyPayload;
     private string? _systemPayload;
+    private string? _connectionsPayload;
+    private TabPage? _connectionsPage;
+    private bool _connectionsStale = true;
+    private bool _connectionsLoading;
+    private bool _connectionsReloadQueued;
+    private CancellationTokenSource? _wanLookupCts;
+    private readonly System.Windows.Forms.Timer _deviceChangeTimer = new() { Interval = 1500 };
+    private readonly Dictionary<string, string> _netKeys = [];
+    private readonly List<(TabPage Page, WebView2 View)> _webTabs = [];
     private readonly GlassMetricTile _tempTile = new("TEMP", "—");
     private readonly GlassMetricTile _fanTile = new("FANS", "—");
     private readonly GlassMetricTile _networkTile = new("NET", "—");
@@ -123,9 +136,43 @@ public sealed class MainForm : Form
             _operationCts?.Cancel();
             _telemetryCts?.Cancel();
             _telemetryService.Dispose();
+            _wanLookupCts?.Cancel();
+            NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+            _deviceChangeTimer.Dispose();
             _topologyWebView.Dispose();
             _systemWebView.Dispose();
+            _connectionsWebView.Dispose();
         };
+        _deviceChangeTimer.Tick += (_, _) =>
+        {
+            _deviceChangeTimer.Stop();
+            _connectionsStale = true;
+            if (ConnectionsVisible) _ = LoadConnectionsAsync();
+        };
+        NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+    }
+
+    // Plugging or unplugging a device, or a network change, redraws the Connections map (once things settle).
+    private const int WmDeviceChange = 0x0219;
+    private const int DbtDevNodesChanged = 0x0007;
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmDeviceChange && m.WParam == DbtDevNodesChanged) QueueConnectionsRefresh();
+        base.WndProc(ref m);
+    }
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try { BeginInvoke(QueueConnectionsRefresh); } catch (InvalidOperationException) { }
+    }
+
+    private void QueueConnectionsRefresh()
+    {
+        _connectionsStale = true;
+        _deviceChangeTimer.Stop();
+        _deviceChangeTimer.Start();
     }
 
     private void BuildTrayIcon()
@@ -166,10 +213,31 @@ public sealed class MainForm : Form
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        SyncWebViewVisibility();
         if (WindowState == FormWindowState.Minimized && AppSettings.Current.MinimizeToTray)
         {
             _trayIcon.Visible = true;
             Hide();
+        }
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        SyncWebViewVisibility();
+    }
+
+    // A WebView2 keeps rendering after its tab is hidden: the tab page disappears before the view hears
+    // about it, so the browser still thinks the page is on screen and the Topology and Connections
+    // animations kept using CPU and GPU on every other tab. Hiding the view itself while it is still
+    // on screen (Deselecting, or before minimizing) tells the browser the page is in the background.
+    private void SyncWebViewVisibility()
+    {
+        var onScreen = Visible && WindowState != FormWindowState.Minimized;
+        foreach (var (page, view) in _webTabs)
+        {
+            var show = onScreen && _tabs.SelectedTab == page;
+            if (view.Visible != show) view.Visible = show;
         }
     }
 
@@ -186,6 +254,7 @@ public sealed class MainForm : Form
 
         _tabs.TabPages.Add(BuildOverviewTab());
         _tabs.TabPages.Add(BuildWebTab("Topology", _topologyCard, _topologyWebView));
+        _tabs.TabPages.Add(_connectionsPage = BuildWebTab("Connections", _connectionsCard, _connectionsWebView));
         _tabs.TabPages.Add(BuildDriversTab());
         _tabs.TabPages.Add(BuildStorageTab());
         _tabs.TabPages.Add(BuildSuggestionsTab());
@@ -196,10 +265,19 @@ public sealed class MainForm : Form
             if (_tabs.SelectedIndex != _navigation.SelectedIndex)
                 _tabs.SelectedIndex = _navigation.SelectedIndex;
         };
+        _tabs.Deselecting += (_, e) =>
+        {
+            foreach (var (page, view) in _webTabs)
+                if (page == e.TabPage) view.Visible = false;
+        };
         _tabs.SelectedIndexChanged += (_, _) =>
         {
             if (_navigation.SelectedIndex != _tabs.SelectedIndex)
                 _navigation.SelectedIndex = _tabs.SelectedIndex;
+            SyncWebViewVisibility();
+            // Per-disk and per-adapter rates are only sampled while the Connections map is on screen.
+            _telemetryService.DetailedRates = ConnectionsVisible;
+            if (ConnectionsVisible && _connectionsStale) _ = LoadConnectionsAsync();
         };
 
         _progress.Dock = DockStyle.Bottom;
@@ -423,9 +501,11 @@ public sealed class MainForm : Form
     {
         var page = NewPage(name);
         view.DefaultBackgroundColor = AppTheme.Surface;
+        view.Visible = false;
         card.Padding = new Padding(6);
         card.Controls.Add(view);
         page.Controls.Add(card);
+        _webTabs.Add((page, view));
         return page;
     }
 
@@ -437,12 +517,106 @@ public sealed class MainForm : Form
             PostSettings(_topologyWebView);
             if (_topologyPayload is not null) _topologyWebView.CoreWebView2.PostWebMessageAsJson(_topologyPayload);
         });
+        await InitializeWebViewAsync(_connectionsWebView, _connectionsCard, "connections.html", () =>
+        {
+            _connectionsReady = true;
+            PostSettings(_connectionsWebView);
+            if (_connectionsPayload is not null) _connectionsWebView.CoreWebView2.PostWebMessageAsJson(_connectionsPayload);
+        });
+        if (_connectionsWebView.CoreWebView2 is { } connections)
+            connections.WebMessageReceived += OnConnectionsMessage;
         await InitializeWebViewAsync(_systemWebView, _systemCard, "system.html", () =>
         {
             _systemReady = true;
             PostSettings(_systemWebView);
             if (_systemPayload is not null) _systemWebView.CoreWebView2.PostWebMessageAsJson(_systemPayload);
         });
+    }
+
+    private bool ConnectionsVisible => _connectionsPage is not null && _tabs.SelectedTab == _connectionsPage && Visible;
+
+    private async Task LoadConnectionsAsync()
+    {
+        if (_connectionsLoading)
+        {
+            _connectionsReloadQueued = true;
+            return;
+        }
+        _connectionsLoading = true;
+        try
+        {
+            do
+            {
+                _connectionsReloadQueued = false;
+                if (_connectionsReady) _connectionsWebView.CoreWebView2.PostWebMessageAsJson("{\"type\":\"busy\"}");
+                var json = await ConnectionsService.GatherJsonAsync(Privacy.Enabled);
+                if (IsDisposed) return;
+                _connectionsPayload = $"{{\"type\":\"connections\",\"data\":{json}}}";
+                _connectionsStale = false;
+                if (_connectionsReady) _connectionsWebView.CoreWebView2.PostWebMessageAsJson(_connectionsPayload);
+            }
+            while (_connectionsReloadQueued && !IsDisposed);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("CONNECTIONS: " + ex.Message);
+        }
+        finally
+        {
+            _connectionsLoading = false;
+        }
+    }
+
+    private async void OnConnectionsMessage(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using var message = System.Text.Json.JsonDocument.Parse(e.WebMessageAsJson);
+            var type = message.RootElement.TryGetProperty("type", out var value) ? value.GetString() : null;
+            if (type == "refresh")
+            {
+                await LoadConnectionsAsync();
+            }
+            else if (type == "wan")
+            {
+                _wanLookupCts?.Cancel();
+                _wanLookupCts = new CancellationTokenSource();
+                AppendLog($"PUBLIC IP: asked Cloudflare ({NetworkProbe.WanLookupUrl}) at your request.");
+                var result = await NetworkProbe.LookupPublicAddressAsync(_wanLookupCts.Token);
+                if (result.Ok && Privacy.Enabled)
+                {
+                    result.Ip = "Hidden (privacy mode)";
+                    result.Location = null;
+                    result.Edge = null;
+                }
+                if (!IsDisposed && _connectionsReady)
+                    _connectionsWebView.CoreWebView2.PostWebMessageAsJson(
+                        System.Text.Json.JsonSerializer.Serialize(result, BoardScoutJson.Default.WanLookup));
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            AppendLog("CONNECTIONS: " + ex.Message);
+        }
+    }
+
+    private void PostConnectionFlow(SystemTelemetry telemetry)
+    {
+        if (!_connectionsReady || !ConnectionsVisible || telemetry.InterfaceRates is null) return;
+        var flow = new ConnectionFlow { CpuPercent = Math.Round(telemetry.CpuUsagePercent, 1) };
+        foreach (var (id, rate) in telemetry.InterfaceRates)
+        {
+            if (!_netKeys.TryGetValue(id, out var key)) _netKeys[id] = key = ConnectionsService.NetKey(id);
+            flow.Network[key] = [Math.Round(rate.In), Math.Round(rate.Out)];
+        }
+        foreach (var (number, rate) in telemetry.DiskRates ?? new Dictionary<int, LinkRate>())
+            flow.Disks[number.ToString(System.Globalization.CultureInfo.InvariantCulture)] = [Math.Round(rate.In), Math.Round(rate.Out)];
+        foreach (var (zone, key) in new[] { ("CPU", "cpu"), ("GPU", "gpu"), ("Chipset", "chipset") })
+            if (telemetry.Thermals.FirstOrDefault(t => t.Zone == zone) is { } reading)
+                flow.Temperatures[key] = reading.TemperatureCelsius;
+        _connectionsWebView.CoreWebView2.PostWebMessageAsJson(
+            System.Text.Json.JsonSerializer.Serialize(flow, BoardScoutJson.Default.ConnectionFlow));
     }
 
     private async Task InitializeWebViewAsync(WebView2 view, GlassCard card, string page, Action ready)
@@ -1315,12 +1489,16 @@ public sealed class MainForm : Form
         _header.RefreshAurora();
         if (_topologyReady) PostSettings(_topologyWebView);
         if (_systemReady) PostSettings(_systemWebView);
+        if (_connectionsReady) PostSettings(_connectionsWebView);
         if (_privacyShown != Privacy.Enabled)
         {
             _privacyShown = Privacy.Enabled;
             _privacyChip.Visible = Privacy.Enabled;
             RenderLog();
             BindStorage();
+            // The map masks MACs, Wi-Fi names, and IPv6 on the C# side, so it is read again.
+            _connectionsStale = true;
+            if (ConnectionsVisible) _ = LoadConnectionsAsync();
             _status.Text = Privacy.Enabled
                 ? "Privacy mode on — PC name, owner details, serial numbers, paths, and app lists are hidden in screens and exports."
                 : "Privacy mode off.";
@@ -1590,6 +1768,7 @@ public sealed class MainForm : Form
         var netDown = telemetry.NetworkReceivedBytesPerSec;
         _networkTile.Value = $"{FormatRate(netDown)}↓  {FormatRate(telemetry.NetworkSentBytesPerSec)}↑";
         _networkTile.ValueColor = netDown > 100_000_000 ? AppTheme.Warning : null;
+        PostConnectionFlow(telemetry);
     }
 
     private static string FormatRate(double bytesPerSec)

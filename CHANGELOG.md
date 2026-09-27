@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.3.0 — 2026-09-27
+
+A Connections map: every device in the PC, where it plugs in, the speed its link negotiated, and the
+data moving through it, out through the router to the Internet.
+
+### Added
+- **Connections tab**, read live from Windows' device tree without admin rights: the CPU, the
+  chipset and its shared uplink, each USB controller, hub, and port, SATA and NVMe drives, monitors,
+  Bluetooth devices, and network adapters, each with the link it negotiated (PCIe generation and
+  lanes, USB speed, HDMI or DisplayPort mode, Ethernet or Wi-Fi rate).
+  - Links running below what the device supports are flagged with the likely reason. On the test
+    PC it found a GeForce RTX 3050 at PCIe 3.0 x8 (the card supports 4.0 x16), a Crucial P3 Plus at
+    PCIe 3.0 x4 (Ryzen 5000G APUs run their lanes at 3.0), and a WD SN570 given 2 of its 4 lanes.
+  - USB 3 devices running at USB 2 speed are flagged. The USB 2 half of a USB 3 hub is labeled as
+    such instead of being flagged.
+  - Live data movement: dots flow along the real paths as disks read and write and as network
+    traffic moves from the Internet through the router, the adapter, and the chipset to the CPU.
+    Cards show live rates; the CPU, GPU, and chipset cards show temperatures when the sensors are
+    readable.
+  - Your network: the router's address, name, MAC, and round trip; DNS servers by name (Pi-hole is
+    recognized); Wi-Fi network, signal, band, standard, link rate, and security; and whether
+    Windows' own connectivity check sees Internet access.
+  - **Look up my public IP** on the Internet card asks Cloudflare, only when clicked, and the Scan
+    Log records that it did.
+  - A details panel (QuickLiquid glass) with the link now versus its best, live traffic over the
+    last minute, firmware and driver versions, capacity, and drive temperature where Windows
+    reports it without admin rights.
+  - The map redraws itself when a device is plugged in or removed, or the network changes.
+  - Privacy mode hides MAC addresses, Wi-Fi network names and access points, IPv6 addresses,
+    Bluetooth names that look like someone's ("Sam's AirPods"), and the public IP.
+  - `BoardScout.exe --connections-json` prints the map's data; add `--privacy` to mask it.
+
+### Fixed
+- **The NET tile counted network traffic up to four times.** Windows lists packet-filter layers
+  (WFP, QoS Packet Scheduler) as extra adapters that repeat the real adapter's byte counters, and
+  BoardScout added them all. On the test PC one Ethernet adapter was counted four times. Only
+  adapters with an IP address are counted now.
+- **Topology kept animating after you left it.** A WebView2 on a hidden tab never learned it was
+  hidden, so after one visit to Topology its animation ran on every other tab. Measured on 1.2.0:
+  about 1.26 CPU cores (mostly the WebView2 GPU process) with the Overview tab showing. Web views
+  on hidden tabs, and all of them while the window is minimized, are now paused.
+
+### Changed
+- Sidebar items shrink slightly on shorter windows so all eight fit.
+- The version pop-out and README list Connections among the views that need the WebView2 Runtime.
+
 ## 1.2.0 — 2026-09-27
 
 Privacy mode, so screenshots and exports can be shared without giving away who or where you are.

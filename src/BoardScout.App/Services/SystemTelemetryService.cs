@@ -31,6 +31,10 @@ internal sealed class SystemTelemetryService : IDisposable
     private long _previousNetReceived;
     private bool _hasNetworkBaseline;
     private DateTime _previousSampleUtc = DateTime.UtcNow;
+    private readonly Dictionary<string, (long Sent, long Received)> _interfaceCounters = [];
+    private readonly Dictionary<int, (long Read, long Written)> _diskCounters = [];
+    private int[] _diskNumbers = [];
+    private DateTime _disksReadUtc = DateTime.MinValue;
 
     private Computer? _computer;
     private bool _sensorsFailed;
@@ -43,6 +47,9 @@ internal sealed class SystemTelemetryService : IDisposable
 
     public SensorStatus SensorStatus { get; private set; } = SensorStatus.Pending;
 
+    /// <summary>When set, samples also carry per-adapter and per-disk rates for the Connections view.</summary>
+    public bool DetailedRates { get; set; }
+
     public SystemTelemetry Sample()
     {
         lock (_gate)
@@ -51,18 +58,48 @@ internal sealed class SystemTelemetryService : IDisposable
             var now = DateTime.UtcNow;
             var elapsed = Math.Max(0.05, (now - _previousSampleUtc).TotalSeconds);
             _previousSampleUtc = now;
+            var detailed = DetailedRates;
 
             var cpuUsage = SampleCpu();
             var (memTotal, memAvailable) = SampleMemory();
             var (thermals, fans) = SampleSensors();
-            var (netSent, netReceived) = SampleNetwork(now, elapsed);
+            var (netSent, netReceived, interfaceRates) = SampleNetwork(now, elapsed, detailed);
 
             return new SystemTelemetry(
                 cpuUsage, memTotal, memAvailable,
                 thermals, fans,
                 netSent, netReceived,
-                DateTimeOffset.Now);
+                DateTimeOffset.Now)
+            {
+                InterfaceRates = interfaceRates,
+                DiskRates = SampleDisks(now, elapsed, detailed)
+            };
         }
+    }
+
+    // Cumulative byte counters from each physical disk, read through zero-access handles (no admin needed).
+    private Dictionary<int, LinkRate>? SampleDisks(DateTime now, double elapsed, bool detailed)
+    {
+        if (!detailed)
+        {
+            _diskCounters.Clear();
+            return null;
+        }
+        if (now - _disksReadUtc > InterfaceRefresh)
+        {
+            try { _diskNumbers = [.. DeviceTree.DiskNumbers().Values.Distinct().Order()]; } catch { _diskNumbers = []; }
+            _disksReadUtc = now;
+        }
+
+        var rates = new Dictionary<int, LinkRate>();
+        foreach (var number in _diskNumbers)
+        {
+            if (DeviceTree.DiskCounters(number) is not { } counters) continue;
+            if (_diskCounters.TryGetValue(number, out var previous) && counters.Read >= previous.Read && counters.Written >= previous.Written)
+                rates[number] = new LinkRate((counters.Read - previous.Read) / elapsed, (counters.Written - previous.Written) / elapsed);
+            _diskCounters[number] = counters;
+        }
+        return rates;
     }
 
     private (List<ThermalReading> Thermals, List<FanReading> Fans) SampleSensors()
@@ -217,27 +254,39 @@ internal sealed class SystemTelemetryService : IDisposable
         return (memory.TotalPhysical, memory.AvailablePhysical);
     }
 
-    private (double SentBytesPerSec, double ReceivedBytesPerSec) SampleNetwork(DateTime now, double elapsed)
+    private (double SentBytesPerSec, double ReceivedBytesPerSec, Dictionary<string, LinkRate>? PerInterface) SampleNetwork(
+        DateTime now, double elapsed, bool detailed)
     {
         try
         {
             // Enumerating adapters is the slow part (~30 ms); their byte counters are cheap to re-read.
             if (now - _interfacesReadUtc > InterfaceRefresh)
             {
+                // Packet-filter layers (WFP, QoS) enumerate as extra "Up" adapters that repeat the real
+                // adapter's byte counters; they have no IP addresses, so requiring one skips them.
                 _interfaces = NetworkInterface.GetAllNetworkInterfaces()
                     .Where(i => i.OperationalStatus == OperationalStatus.Up &&
-                                i.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel))
+                                i.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) &&
+                                HasAddress(i))
                     .ToArray();
                 _interfacesReadUtc = now;
                 _hasNetworkBaseline = false; // a changed adapter set would otherwise read as one huge spike
             }
 
             long totalSent = 0, totalReceived = 0;
+            var perInterface = detailed ? new Dictionary<string, LinkRate>() : null;
+            if (!detailed) _interfaceCounters.Clear();
             foreach (var iface in _interfaces)
             {
                 var stats = iface.GetIPStatistics();
                 totalSent += stats.BytesSent;
                 totalReceived += stats.BytesReceived;
+                if (perInterface is null) continue;
+                if (_interfaceCounters.TryGetValue(iface.Id, out var previous))
+                    perInterface[iface.Id] = new LinkRate(
+                        Math.Max(0, stats.BytesReceived - previous.Received) / elapsed,
+                        Math.Max(0, stats.BytesSent - previous.Sent) / elapsed);
+                _interfaceCounters[iface.Id] = (stats.BytesSent, stats.BytesReceived);
             }
 
             var rates = _hasNetworkBaseline
@@ -247,13 +296,19 @@ internal sealed class SystemTelemetryService : IDisposable
             _previousNetSent = totalSent;
             _previousNetReceived = totalReceived;
             _hasNetworkBaseline = true;
-            return rates;
+            return (rates.Item1, rates.Item2, perInterface);
         }
         catch
         {
             _interfacesReadUtc = DateTime.MinValue;
-            return (0, 0);
+            return (0, 0, null);
         }
+    }
+
+    private static bool HasAddress(NetworkInterface nic)
+    {
+        try { return nic.GetIPProperties().UnicastAddresses.Count > 0; }
+        catch (NetworkInformationException) { return false; }
     }
 
     public void Dispose()

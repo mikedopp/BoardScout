@@ -16,6 +16,7 @@ public sealed class SidebarNavigationControl : Control
     [
         new("Overview", "Hover parts · zoom and pan"),
         new("Topology", "Follow lanes and shared bandwidth"),
+        new("Connections", "Every device, its link, live traffic"),
         new("Drivers", "Review official update links"),
         new("Storage", "Find full and external drives"),
         new("Efficiency", "See fixes and upgrade ideas"),
@@ -69,8 +70,15 @@ public sealed class SidebarNavigationControl : Control
         Invalidate();
     }
 
-    private Rectangle ItemRect(int index) =>
-        new(12, ItemTop + index * (ItemHeight + ItemGap), Math.Max(40, ClientSize.Width - 24), ItemHeight);
+    // Items shrink a little on shorter windows so all of them stay visible.
+    private int CurrentItemHeight =>
+        Math.Clamp((ClientSize.Height - ItemTop - 16) / _items.Count - ItemGap, 54, ItemHeight);
+
+    private Rectangle ItemRect(int index)
+    {
+        var height = CurrentItemHeight;
+        return new(12, ItemTop + index * (height + ItemGap), Math.Max(40, ClientSize.Width - 24), height);
+    }
 
     protected override void OnPaint(PaintEventArgs e)
     {

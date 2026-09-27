@@ -90,7 +90,7 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         Add(Detail($".NET {Environment.Version} · {(Environment.Is64BitProcess ? "64-bit" : "32-bit")} · self-contained"));
         Add(Detail(Services.SystemInfoService.WindowsDescription()));
         var webView = WebViewHost.RuntimeVersion;
-        Add(Detail(webView is null ? "WebView2 Runtime: not found — Topology and System need it" : $"WebView2 Runtime {webView}",
+        Add(Detail(webView is null ? "WebView2 Runtime: not found — Topology, Connections, and System need it" : $"WebView2 Runtime {webView}",
             webView is null ? AppTheme.Warning : null));
 
         Add(Section("Sensors"));
@@ -154,7 +154,7 @@ internal sealed class VersionPopout : Panel, IMessageFilter
 
         Add(Section("Requirements"));
         Add(Detail("Windows 10 or 11, x64 or ARM64"));
-        Add(Detail("WebView2 Runtime (Evergreen) for Topology and System"));
+        Add(Detail("WebView2 Runtime (Evergreen) for Topology, Connections, and System"));
         Add(Detail("Administrator + PawnIO for CPU, VRM, and fan sensors"));
 
         Add(Section("Legal"));

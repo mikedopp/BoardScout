@@ -4,7 +4,7 @@ BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self
 they also redistribute the components below. Each keeps its own license. Nothing here is
 modified from the published version.
 
-Last reviewed for BoardScout 1.2.0 (2026-09-27).
+Last reviewed for BoardScout 1.3.0 (2026-09-27).
 
 ## Libraries compiled into BoardScout.exe
 
@@ -31,8 +31,8 @@ without warranties or conditions of any kind.
 
 ## Web libraries bundled in `Assets/vendor`
 
-These run inside the Topology and System views. They are loaded from disk, not from a CDN, so
-the views work offline. The files are byte-identical to the npm packages; the tarball SHA-1
+These run inside the Topology, Connections, and System views. They are loaded from disk, not from
+a CDN, so the views work offline. The files are byte-identical to the npm packages; the tarball SHA-1
 matched the registry's published `shasum` when they were added.
 
 | File | Package | License | SHA-256 |
@@ -127,7 +127,15 @@ publishes the corresponding source at https://3rdpartysource.microsoft.com.
 ## Bundled DriverScout engine
 
 The PowerShell scanner in `DriverScout/` is part of this project (MIT). Its own notices, including
-the PCI and USB ID databases, are in `src/BoardScout.App/DriverScout/THIRD-PARTY-NOTICES.md`.
+the PCI and USB ID databases, are in `src/BoardScout.App/DriverScout/THIRD-PARTY-NOTICES.md`. The
+Connections view also reads that same bundled `usb.ids` file (the USB ID Repository, 3-clause BSD)
+to name USB devices; nothing else is added for it.
+
+## Online service used on request
+
+The Connections view's **Look up my public IP** button requests `https://1.1.1.1/cdn-cgi/trace`
+from Cloudflare, Inc. only when clicked. No Cloudflare code or data is bundled; Cloudflare's own
+terms and privacy policy govern that request.
 
 ## Not bundled
 
@@ -148,12 +156,19 @@ respective owners and are used for identification only.
 - **Intel** and **Intel Core** are trademarks of Intel Corporation.
 - **NVIDIA**, **GeForce**, and **RTX** are trademarks of NVIDIA Corporation.
 - **ASRock** is a trademark of ASRock Inc.
-- **Microsoft**, **Windows**, **Windows 11**, and **WebView2** are trademarks of Microsoft Corporation.
+- **Microsoft**, **Windows**, **Windows 11**, **WebView2**, and **Xbox** are trademarks of Microsoft Corporation.
 - **Crucial** and **Micron** are trademarks of Micron Technology, Inc.
 - **Samsung** is a trademark of Samsung Electronics Co., Ltd.
-- **Western Digital** and **WD** are trademarks of Western Digital Corporation.
+- **Western Digital**, **WD**, **WD Blue**, **My Passport**, and **My Book** are trademarks of Western Digital Corporation.
 - **Lexar** is a trademark of Longsys Electronics.
 - **Noctua** is a trademark of Rascom Computerdistribution GmbH.
+- **Cloudflare** is a trademark of Cloudflare, Inc.
+- **Logitech** and **Logi Bolt** are trademarks of Logitech International S.A.
+- **Elgato** is a trademark of Corsair Memory, Inc.
+- **Dell** is a trademark of Dell Inc.
+- **Realtek** is a trademark of Realtek Semiconductor Corp.
+- **Bluetooth** is a trademark of Bluetooth SIG, Inc.
+- **Pi-hole** is a trademark of Pi-hole LLC.
 - **Amazon** and **Newegg** are trademarks of their respective owners; the upgrade report links to
   their public search pages without affiliation.
 

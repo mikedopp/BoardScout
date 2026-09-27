@@ -4,6 +4,9 @@ public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 
 public sealed record FanReading(string Name, int Rpm, bool Active);
 
+/// <summary>Bytes per second toward the CPU (received or read) and away from it (sent or written).</summary>
+public readonly record struct LinkRate(double In, double Out);
+
 public sealed record SystemTelemetry(
     double CpuUsagePercent,
     ulong MemoryTotalBytes,
@@ -14,6 +17,12 @@ public sealed record SystemTelemetry(
     double NetworkReceivedBytesPerSec,
     DateTimeOffset SampledAt)
 {
+    /// <summary>Per network interface (by NetworkInterface.Id), when detailed rates are on.</summary>
+    public IReadOnlyDictionary<string, LinkRate>? InterfaceRates { get; init; }
+
+    /// <summary>Per physical disk number, when detailed rates are on.</summary>
+    public IReadOnlyDictionary<int, LinkRate>? DiskRates { get; init; }
+
     public ulong MemoryUsedBytes => MemoryTotalBytes > MemoryAvailableBytes
         ? MemoryTotalBytes - MemoryAvailableBytes
         : 0;
