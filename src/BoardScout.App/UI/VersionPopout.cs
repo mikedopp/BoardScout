@@ -25,6 +25,9 @@ internal sealed class VersionPopout : Panel, IMessageFilter
     private const int PopoutWidth = 410;
     private readonly Control _anchor;
     private readonly FlowLayoutPanel _flow;
+    private readonly string _dataFolder;
+    private Label? _dataFolderLabel;
+    private GlassToggle? _privacyToggle;
     private bool _closed;
 
     public VersionPopout(Control anchor, VersionPopoutActions actions)
@@ -48,7 +51,20 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         };
         Controls.Add(_flow);
         AppTheme.UseDarkScrollbars(_flow);
+        _dataFolder = actions.DataFolder;
         Build(actions);
+        AppSettings.Changed += OnSettingsChanged;
+    }
+
+    private string DataFolderText() =>
+        $"Data folder: {CompactPath(Services.Privacy.Enabled ? Services.Privacy.Scrub(_dataFolder) : _dataFolder)}";
+
+    // Ctrl+Shift+P can flip privacy mode while the pop-out is open.
+    private void OnSettingsChanged(object? sender, EventArgs e)
+    {
+        if (_closed) return;
+        if (_dataFolderLabel is not null) _dataFolderLabel.Text = DataFolderText();
+        _privacyToggle?.SetCheckedSilently(AppSettings.Current.PrivacyMode);
     }
 
     public event EventHandler? Closed;
@@ -103,13 +119,23 @@ internal sealed class VersionPopout : Panel, IMessageFilter
             Add(Detail($"Sensor library error: {sensors.Error}", AppTheme.Critical, PopoutWidth - 44));
 
         Add(Section("Troubleshooting"));
-        Add(Detail($"Data folder: {CompactPath(actions.DataFolder)}", width: PopoutWidth - 44));
+        _dataFolderLabel = Detail(DataFolderText(), width: PopoutWidth - 44);
+        Add(_dataFolderLabel);
         Add(Link("Open data folder", actions.OpenDataFolder));
         Add(Link("Copy diagnostics to clipboard", actions.CopyDiagnostics));
         Add(Link("Report an issue on GitHub  ↗", actions.ReportIssue));
 
         Add(Section("Settings"));
         var settings = AppSettings.Current;
+        _privacyToggle = new GlassToggle("Privacy mode", settings.PrivacyMode,
+            on => AppSettings.Update(s => s.PrivacyMode = on))
+        {
+            AccessibleDescription = "Hides your PC name, owner details, serial numbers, paths, and app lists in screens and exports"
+        };
+        Add(_privacyToggle);
+        Add(Detail("Hides your PC name, Windows owner email, product ID, serial numbers, paths, and app lists " +
+                   "in screens and exports, for screenshots and sharing. Ctrl+Shift+P toggles it.",
+            width: PopoutWidth - 44));
         Add(new GlassToggle("Glass effects", settings.GlassEffects,
             on => AppSettings.Update(s => s.GlassEffects = on)) { AccessibleDescription = "Liquid glass surfaces and QuickLiquid refraction" });
         Add(new GlassToggle("Motion", settings.Motion,
@@ -158,6 +184,7 @@ internal sealed class VersionPopout : Panel, IMessageFilter
     {
         if (_closed) return;
         _closed = true;
+        AppSettings.Changed -= OnSettingsChanged;
         Application.RemoveMessageFilter(this);
         if (FindForm() is { } form) form.Deactivate -= OnFormDeactivate;
         Parent?.Controls.Remove(this);
@@ -296,6 +323,7 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         if (disposing && !_closed)
         {
             _closed = true;
+            AppSettings.Changed -= OnSettingsChanged;
             Application.RemoveMessageFilter(this);
         }
         base.Dispose(disposing);
@@ -344,6 +372,16 @@ internal sealed class GlassToggle : Control
             else { _position = value ? 1 : 0; Invalidate(); }
             _changed(value);
         }
+    }
+
+    /// <summary>Shows a state changed elsewhere without reporting it back as a new change.</summary>
+    public void SetCheckedSilently(bool value)
+    {
+        if (_checked == value) return;
+        _checked = value;
+        AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
+        if (Motion.Enabled) Motion.Start(_animate);
+        else { _position = value ? 1 : 0; Invalidate(); }
     }
 
     protected override AccessibleObject CreateAccessibilityInstance() => new ToggleAccessible(this);

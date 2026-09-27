@@ -4,7 +4,7 @@ BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self
 they also redistribute the components below. Each keeps its own license. Nothing here is
 modified from the published version.
 
-Last reviewed for BoardScout 1.1.0 (2026-09-26).
+Last reviewed for BoardScout 1.2.0 (2026-09-27).
 
 ## Libraries compiled into BoardScout.exe
 

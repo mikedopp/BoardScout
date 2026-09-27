@@ -10,6 +10,7 @@ internal sealed class AppSettings
     public bool Motion { get; set; } = true;
     public int TelemetryIntervalMs { get; set; } = 1000;
     public bool MinimizeToTray { get; set; } = true;
+    public bool PrivacyMode { get; set; }
 
     private static readonly JsonSerializerOptions WriteOptions =
         new(BoardScoutJson.Default.Options) { WriteIndented = true };

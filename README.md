@@ -4,7 +4,7 @@ A portable Windows app that maps your motherboard, bandwidth, drivers, storage, 
 system in one place: what is plugged in where, what each part is good for, what needs attention,
 and how long Windows will keep patching it. It never installs drivers or firmware.
 
-**Status:** v1.1.0 (2026-09-26) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.2.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +15,9 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.1.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.1.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.1.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.2.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.2.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.2.0-SHA256SUMS.txt` | Checksums for both. |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -49,9 +49,9 @@ and SDK, and searchable tables of patches, installed software, and scheduled tas
 update pages; every volume with its usage; and suggestions such as enabling XMP/DOCP/EXPO,
 freeing space, or reviewing BIOS updates.
 
-**Version button** — the chasing-colors `v1.1.0` pill opens runtime details, sensor
-troubleshooting, settings (glass effects, motion, live refresh, minimize to tray), dependencies,
-requirements, and legal notices. *Copy diagnostics* gathers what an issue report needs.
+**Version button** — the chasing-colors version pill opens runtime details, sensor
+troubleshooting, settings (privacy mode, glass effects, motion, live refresh, minimize to tray),
+dependencies, requirements, and legal notices. *Copy diagnostics* gathers what an issue report needs.
 
 ![Version pop-out: runtime, sensor status with PawnIO guidance, and settings](docs/screenshots/version-popout.png)
 
@@ -73,6 +73,26 @@ Only these, and only when you ask:
 
 Everything else is local. Scans use built-in Windows tools, and the Topology and System views
 load their scripts (QuickLiquid, D3) from the app folder, not a CDN.
+
+## Privacy mode: screenshots and exports you can share
+
+A scan knows things about your PC that a hardware report doesn't need: the PC name, the Windows
+registered owner (often an email address), the Windows product ID, and motherboard, drive, and
+memory serial numbers. Scans keep them on disk, and privacy mode keeps them out of what you share.
+
+Turn it on under the version button → Settings, or press **Ctrl+Shift+P**. While it is on:
+
+- A purple **Privacy on** chip appears in the header, so a screenshot shows it was taken masked.
+  Click it to turn privacy mode off.
+- The System tab hides the installed-software, patch, and scheduled-task lists (counts stay).
+- The Scan Log shows `THIS-PC` and `%USERPROFILE%` instead of your PC name and user folder.
+- Storage shows `Volume D:` instead of volume labels you named yourself.
+- Spec sheet and JSON exports leave out the PC name, machine ID, serial numbers, system UUID,
+  and volume labels. JSON exports stay importable.
+
+Two protections apply even with privacy mode off: JSON exports never include the Windows owner or
+product ID, and **Copy diagnostics** always masks your PC name, user folder, serials, emails, and
+MAC addresses.
 
 ## How BoardScout keeps work cheap
 

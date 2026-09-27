@@ -25,6 +25,9 @@ public sealed class MainForm : Form
     private readonly GlassMetricTile _fanTile = new("FANS", "—");
     private readonly GlassMetricTile _networkTile = new("NET", "—");
     private readonly ToolTip _toolTip = new() { InitialDelay = 300, AutoPopDelay = 12000 };
+    private readonly RoundedButton _privacyChip = new();
+    private readonly List<string> _logLines = [];
+    private bool _privacyShown;
     private readonly Label _title = new();
     private readonly Label _subtitle = new();
     private readonly FlowLayoutPanel _metrics = new();
@@ -101,6 +104,8 @@ public sealed class MainForm : Form
         _boardMap.ZoomChanged += (_, _) => _zoomResetButton.Text = $"{_boardMap.ZoomPercent}%";
         _versionButton.Click += (_, _) => ToggleVersionPopout();
         AppSettings.Changed += OnSettingsChanged;
+        Privacy.Learn(null);
+        _privacyShown = Privacy.Enabled;
         Shown += async (_, _) =>
         {
             await LoadCachedDataAsync();
@@ -145,6 +150,17 @@ public sealed class MainForm : Form
         WindowState = FormWindowState.Maximized;
         _trayIcon.Visible = false;
         Activate();
+    }
+
+    // Ctrl+Shift+P flips privacy mode from anywhere in the native UI, e.g. right before a screenshot.
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == (Keys.Control | Keys.Shift | Keys.P))
+        {
+            AppSettings.Update(s => s.PrivacyMode = !s.PrivacyMode);
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     protected override void OnResize(EventArgs e)
@@ -228,9 +244,32 @@ public sealed class MainForm : Form
         _metrics.Location = new Point(0, 70);
         _metrics.BackColor = Color.Transparent;
         _metrics.Margin = new Padding(0);
-        _title.Resize += (_, _) => _versionButton.Location = new Point(_title.Right + 10, _title.Top + (_title.Height - _versionButton.Height) / 2);
+        _title.Resize += (_, _) =>
+        {
+            _versionButton.Location = new Point(_title.Right + 10, _title.Top + (_title.Height - _versionButton.Height) / 2);
+            _privacyChip.Location = new Point(_versionButton.Right + 8, _versionButton.Top);
+        };
         _versionButton.Location = new Point(_title.PreferredSize.Width + 10, 6);
         textPanel.Controls.Add(_versionButton);
+
+        // Visible whenever privacy mode is on, so a screenshot shows it was taken masked.
+        _privacyChip.Text = "Privacy on";
+        _privacyChip.Font = new Font("Segoe UI Semibold", 8.5f);
+        _privacyChip.Size = new Size(104, 30);
+        _privacyChip.Location = new Point(_versionButton.Right + 8, _versionButton.Top);
+        _privacyChip.BackColor = Color.FromArgb(38, 28, 62);
+        _privacyChip.ForeColor = AppTheme.Purple;
+        _privacyChip.FlatAppearance.BorderColor = AppTheme.Purple;
+        _privacyChip.FlatAppearance.MouseOverBackColor = Color.FromArgb(56, 42, 90);
+        _privacyChip.FlatAppearance.MouseDownBackColor = Color.FromArgb(28, 20, 46);
+        _privacyChip.Cursor = Cursors.Hand;
+        _privacyChip.Visible = Privacy.Enabled;
+        _privacyChip.AccessibleName = "Privacy mode is on. Press to turn it off.";
+        _privacyChip.Click += (_, _) => AppSettings.Update(s => s.PrivacyMode = false);
+        _toolTip.SetToolTip(_privacyChip,
+            "Privacy mode hides your PC name, Windows owner details, serial numbers, paths, and app lists " +
+            "in screens and exports. Click to turn it off (Ctrl+Shift+P).");
+        textPanel.Controls.Add(_privacyChip);
         textPanel.Controls.Add(_title);
         textPanel.Controls.Add(_subtitle);
         textPanel.Controls.Add(_metrics);
@@ -843,7 +882,7 @@ public sealed class MainForm : Form
         {
             Filter = "Spec sheet (*.html)|*.html|Upgrade planner (*.html)|*.html|JSON file (*.json)|*.json",
             FilterIndex = 1,
-            FileName = $"{_scan.Scan.Hostname}-specsheet",
+            FileName = Privacy.Enabled ? "BoardScout-specsheet" : $"{_scan.Scan.Hostname}-specsheet",
             Title = "Export hardware scan"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -856,15 +895,19 @@ public sealed class MainForm : Form
         }
         else if (dialog.FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
         {
-            var html = SpecSheetGenerator.Generate(_scan, _report);
+            var html = SpecSheetGenerator.Generate(_scan, _report, Privacy.Enabled);
             File.WriteAllText(dialog.FileName, html, Encoding.UTF8);
             Process.Start(new ProcessStartInfo(dialog.FileName) { UseShellExecute = true });
         }
         else
         {
-            File.Copy(_scanPath, dialog.FileName, overwrite: true);
+            // Never a raw copy: the scan file carries the Windows owner email and product ID.
+            File.WriteAllText(dialog.FileName,
+                Privacy.SanitizeScanJson(File.ReadAllText(_scanPath), Privacy.Enabled), new UTF8Encoding(false));
         }
-        _status.Text = $"Exported to {dialog.FileName}.";
+        _status.Text = Privacy.Enabled
+            ? $"Exported {Path.GetFileName(dialog.FileName)} with privacy mode on — PC name, owner details, and serial numbers removed."
+            : $"Exported to {dialog.FileName}.";
     }
 
     private async Task RunOperationAsync(string message, Func<CancellationToken, Task> operation)
@@ -907,7 +950,7 @@ public sealed class MainForm : Form
         _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {cpu.Name}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
         _boardMap.SetSnapshot(_scan);
         _boardMap.SetDriverReport(_report);
-        SendScanToTopology();
+        _ = SendScanToTopologyAsync();
         BindMetrics();
         BindQuickFacts();
         BindDrivers();
@@ -920,13 +963,24 @@ public sealed class MainForm : Form
         _pimpButton.Enabled = true;
     }
 
-    private void SendScanToTopology()
+    private async Task SendScanToTopologyAsync()
     {
         if (_scanPath is null) return;
+        var path = _scanPath;
         try
         {
-            _topologyPayload = $"{{\"type\":\"scan\",\"scan\":{File.ReadAllText(_scanPath)}}}";
+            // Learn this PC's identifiers for privacy mode, and send the topology view hardware only:
+            // it never needs the PC name, owner details, or serial numbers.
+            var scan = await Task.Run(() =>
+            {
+                var raw = File.ReadAllText(path);
+                Privacy.Learn(raw);
+                return Privacy.SanitizeScanJson(raw, full: true);
+            });
+            if (path != _scanPath || IsDisposed) return;
+            _topologyPayload = $"{{\"type\":\"scan\",\"scan\":{scan}}}";
             if (_topologyReady) _topologyWebView.CoreWebView2.PostWebMessageAsJson(_topologyPayload);
+            if (Privacy.Enabled) RenderLog();
         }
         catch (Exception ex)
         {
@@ -934,12 +988,11 @@ public sealed class MainForm : Form
         }
     }
 
-    private void PostSettings(WebView2 view)
+    private static void PostSettings(WebView2 view)
     {
-        var settings = AppSettings.Current;
-        var motion = Motion.Enabled ? "true" : "false";
-        var glass = settings.GlassEffects ? "true" : "false";
-        view.CoreWebView2?.PostWebMessageAsJson($"{{\"type\":\"settings\",\"glass\":{glass},\"motion\":{motion}}}");
+        static string Flag(bool on) => on ? "true" : "false";
+        view.CoreWebView2?.PostWebMessageAsJson(
+            $"{{\"type\":\"settings\",\"glass\":{Flag(AppSettings.Current.GlassEffects)},\"motion\":{Flag(Motion.Enabled)},\"privacy\":{Flag(Privacy.Enabled)}}}");
     }
 
     private void BindMetrics()
@@ -1119,7 +1172,10 @@ public sealed class MainForm : Form
         if (_scan is null) return;
         foreach (var volume in _scan.Volumes.OrderByDescending(v => v.UsedPercent))
         {
-            var rowIndex = _storage.Rows.Add(volume.Letter, volume.DiskModel ?? volume.Label ?? "Local disk",
+            // Volume labels are names people pick ("Mike's backups"); privacy mode shows the letter instead.
+            var name = volume.DiskModel ??
+                       (Privacy.Enabled || string.IsNullOrWhiteSpace(volume.Label) ? $"Volume {volume.Letter}" : volume.Label);
+            var rowIndex = _storage.Rows.Add(volume.Letter, name,
                 volume.BusType ?? "Unknown", volume.FileSystem, FormatBytes(volume.SizeBytes),
                 FormatBytes(volume.FreeBytes), $"{volume.UsedPercent:0}%");
             _storage.Rows[rowIndex].Cells[6].Style.ForeColor =
@@ -1215,8 +1271,9 @@ public sealed class MainForm : Form
             .ToString();
         try
         {
-            Clipboard.SetText(text);
-            _status.Text = "Diagnostics copied to the clipboard — paste them into a GitHub issue.";
+            // Diagnostics are meant for public issue reports, so they are always scrubbed.
+            Clipboard.SetText(Privacy.Scrub(text));
+            _status.Text = "Diagnostics copied without your PC name, paths, or serial numbers — paste them into a GitHub issue.";
         }
         catch (ExternalException)
         {
@@ -1258,6 +1315,16 @@ public sealed class MainForm : Form
         _header.RefreshAurora();
         if (_topologyReady) PostSettings(_topologyWebView);
         if (_systemReady) PostSettings(_systemWebView);
+        if (_privacyShown != Privacy.Enabled)
+        {
+            _privacyShown = Privacy.Enabled;
+            _privacyChip.Visible = Privacy.Enabled;
+            RenderLog();
+            BindStorage();
+            _status.Text = Privacy.Enabled
+                ? "Privacy mode on — PC name, owner details, serial numbers, paths, and app lists are hidden in screens and exports."
+                : "Privacy mode off.";
+        }
         Invalidate(true);
     }
 
@@ -1544,10 +1611,17 @@ public sealed class MainForm : Form
         AppendLog(line);
     }
 
+    // The log keeps the raw lines; what it shows depends on privacy mode.
     private void AppendLog(string line)
     {
-        _log.AppendText(line + Environment.NewLine);
+        _logLines.Add(line);
+        _log.AppendText(ForDisplay(line) + Environment.NewLine);
     }
+
+    private void RenderLog() =>
+        _log.Text = string.Concat(_logLines.Select(line => ForDisplay(line) + Environment.NewLine));
+
+    private static string ForDisplay(string text) => Privacy.Enabled ? Privacy.Scrub(text) : text;
 
     private static string FormatBytes(long bytes)
     {

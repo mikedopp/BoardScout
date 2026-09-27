@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0 — 2026-09-27
+
+Privacy mode, so screenshots and exports can be shared without giving away who or where you are.
+
+### Fixed
+- **Exporting a scan as JSON shared the Windows owner's email and product ID.** Export copied the
+  raw scan file, which records the Windows registered owner (often an email address) and the
+  Windows product ID. JSON exports now always leave both out; nothing in a hardware report needs them.
+- **Copy diagnostics could include your user folder path.** Diagnostics are meant for public issue
+  reports, so they now always replace your PC name, user folder, serial numbers, email addresses,
+  and MAC addresses with placeholders.
+
+### Added
+- **Privacy mode** (version button → Settings, or Ctrl+Shift+P). While it is on:
+  - the header shows a purple **Privacy on** chip, so a screenshot shows it was taken masked;
+    clicking the chip turns privacy mode off;
+  - the System tab hides the installed-software, patch, and scheduled-task lists and shows their
+    counts only;
+  - the Scan Log shows `THIS-PC` for the PC name and `%USERPROFILE%` for your user folder;
+  - the Storage tab shows `Volume D:` instead of volume labels you named yourself;
+  - spec sheet exports say "This PC" and omit the PC name, machine ID, serial numbers, system UUID,
+    and volume labels from the embedded scan data; JSON exports omit the same and stay importable.
+- Scans on disk are unchanged; privacy mode only changes what is shown and exported.
+
+### Changed
+- The Topology view now receives hardware details only (no PC name, owner details, or serials).
+- The Storage tab shows `Volume <letter>` when a volume has no disk model or label (it showed a blank).
+
 ## 1.1.0 — 2026-09-26
 
 .NET 10, the QuickLiquid glass look, a UI that no longer freezes, and a System tab that tells the

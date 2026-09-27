@@ -138,6 +138,11 @@ tbody tr { transition: background .15s; }
 tbody tr:hover { background: rgba(61,158,255,.06); }
 .status-ready { color: var(--good); } .status-disabled { color: var(--faint); } .status-running { color: var(--accent); }
 .empty { color: var(--muted); font-style: italic; padding: 20px; text-align: center; }
+/* Privacy mode: the lists that name installed apps, patches, and tasks stay out of screenshots. */
+.private-note { display: none; color: var(--muted); font-size: 13px; padding: 6px 2px; }
+.private-note b { color: #c4b5fd; font-weight: 600; }
+body.privacy .table-card.private .private-body { display: none; }
+body.privacy .table-card.private .private-note { display: block; }
 .foot { color: var(--faint); font-size: 11.5px; text-align: center; margin-top: 10px; }
 
 /* Entrance: sections rise in one after another. */
@@ -181,6 +186,7 @@ function applySettings(s) {
     state.motion = !!s.motion;
     document.body.classList.toggle('no-glass', !state.glass);
     document.body.classList.toggle('no-motion', !state.motion);
+    document.body.classList.toggle('privacy', !!s.privacy);
     syncGlass();
 }
 
@@ -335,7 +341,11 @@ function renderTable(title, list, columns, filters, sortColumn, ascending) {
     });
     const tbody = h('tbody');
     const table = h('table', null, [h('thead', null, [headRow]), tbody]);
-    const card = h('div', { className: 'glass table-card' }, [header, table]);
+    const note = h('div', { className: 'private-note' }, [
+        h('b', { text: 'Hidden while privacy mode is on. ' }),
+        h('span', { text: `${list.length} entries · turn privacy mode off under the version button to see them.` })
+    ]);
+    const card = h('div', { className: 'glass table-card private' }, [h('div', { className: 'private-body' }, [header, table]), note]);
 
     function apply() {
         const q = search.value.trim().toLowerCase();

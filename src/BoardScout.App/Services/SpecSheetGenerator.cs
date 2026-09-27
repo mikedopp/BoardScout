@@ -6,7 +6,8 @@ namespace BoardScout.Services;
 
 internal static class SpecSheetGenerator
 {
-    public static string Generate(ScanManifest scan, DriverReport? report)
+    /// <param name="privacy">Show "This PC" instead of the PC name and strip identifiers from the embedded JSON.</param>
+    public static string Generate(ScanManifest scan, DriverReport? report, bool privacy)
     {
         var cpu = scan.Cpu;
         var board = scan.SystemInfo.Baseboard;
@@ -24,13 +25,13 @@ internal static class SpecSheetGenerator
         var updates = report?.Results.Count(r => r.Status == "update-available") ?? 0;
         var totalStorageTb = scan.Volumes.Sum(v => v.SizeBytes) / 1_099_511_627_776d;
         var usedStorageTb = scan.Volumes.Sum(v => v.SizeBytes - v.FreeBytes) / 1_099_511_627_776d;
-        var hostname = scan.Scan.Hostname;
+        var hostname = privacy ? "This PC" : scan.Scan.Hostname;
         var scanDate = scan.Scan.TimestampUtc?.ToLocalTime().ToString("g") ?? "Unknown";
-        var jsonData = JsonSerializer.Serialize(scan, new JsonSerializerOptions
+        var jsonData = Privacy.SanitizeScanJson(JsonSerializer.Serialize(scan, new JsonSerializerOptions
         {
             WriteIndented = true,
             PropertyNameCaseInsensitive = true
-        });
+        }), privacy);
 
         var sb = new StringBuilder();
         sb.AppendLine("<!doctype html>");
@@ -155,7 +156,8 @@ internal static class SpecSheetGenerator
         foreach (var vol in scan.Volumes.OrderByDescending(v => v.UsedPercent))
         {
             var usedClass = vol.UsedPercent >= 95 ? "crit" : vol.UsedPercent >= 85 ? "warn" : "good";
-            sb.AppendLine($"<tr><td>{Esc(vol.Letter)}</td><td>{Esc(vol.DiskModel ?? vol.Label)}</td>");
+            var disk = vol.DiskModel ?? (privacy ? $"Volume {vol.Letter}" : vol.Label);
+            sb.AppendLine($"<tr><td>{Esc(vol.Letter)}</td><td>{Esc(disk)}</td>");
             sb.AppendLine($"<td>{Esc(vol.BusType ?? "—")}</td><td>{FormatBytes(vol.SizeBytes)}</td>");
             sb.AppendLine($"<td>{FormatBytes(vol.FreeBytes)}</td><td class=\"{usedClass}\">{vol.UsedPercent:0}%</td></tr>");
         }
