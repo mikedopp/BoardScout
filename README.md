@@ -4,7 +4,7 @@ A portable Windows app that maps your motherboard, bandwidth, drivers, storage, 
 system in one place: what is plugged in where, what each part is good for, what needs attention,
 and how long Windows will keep patching it. It never installs drivers or firmware.
 
-**Status:** v1.5.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.5.1 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +15,9 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.5.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.5.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.5.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.5.1-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.5.1-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.5.1-SHA256SUMS.txt` | Checksums for both. |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -149,6 +149,27 @@ local protocols (multicast DNS, NetBIOS, UPnP), asks your own DNS servers for re
 labels makers from the IEEE registry bundled with the app. **Find more devices** pings every address
 on your local network, only when you click it. "Internet access" on that tab is what Windows' own
 connectivity check already concluded.
+
+## Data safety: what BoardScout does to your drives
+
+BoardScout only reads, and only what Windows already knows:
+
+- **Your files are never opened.** It never opens a volume, folder, or file outside its own `Data`
+  folder, and never formats, repairs, defragments, TRIMs, or sends SMART commands to a drive.
+- **Drives are opened with no access rights**, which can't read or write data, to ask Windows for the
+  model, size, bus, whether it is an SSD, and the read and write counters Windows keeps (the ones Task
+  Manager shows). Temperature is asked only of internal drives.
+- **USB hubs** say which device is on which port and at what speed, from what the hub driver already
+  knows; nothing is sent to the devices for that.
+- **One question reaches a USB device itself:** its 9-byte configuration descriptor, which says how
+  much power it needs, once per session. Phones and cameras are never asked, so BoardScout stays off the
+  link they copy files over, and a drive is asked only while Windows' counters show it idle, never in
+  the middle of a copy.
+- **Its own writes** go only to its `Data` folder: scans, reports, settings, and the web views' profile.
+- **The interrupt measurement** (administrator) is a kernel trace kept in memory; nothing is saved.
+
+Copying from a phone? Windows doesn't double-check files copied over MTP. For big copies, plug the
+phone straight into the PC with a good cable, and keep the originals on the phone until the copies open.
 
 ## Privacy mode: screenshots and exports you can share
 

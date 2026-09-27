@@ -34,6 +34,10 @@ internal sealed class DeviceNode
     /// <summary>Most recent device power state: 0 = D0 (fully on) … 3 = D3 (off or asleep).</summary>
     public int? PowerState { get; init; }
 
+    /// <summary>For USB devices: why BoardScout did not ask the device for its power needs (a phone or camera,
+    /// or a drive that was busy), or null when it asked or had the answer already.</summary>
+    public string? PowerNotAsked { get; set; }
+
     /// <summary>Interrupts assigned to the device; negative numbers are message-signaled (MSI/MSI-X).</summary>
     public IReadOnlyList<(int Irq, bool Shareable)> Irqs { get; init; } = [];
     public DeviceNode? Parent { get; set; }
@@ -140,12 +144,15 @@ internal static class DeviceTree
             (int)(UIntProperty(handle, PciPropertyKeys, 12) ?? width.Value));
     }
 
-    // Asks every USB hub which device sits on which port, at what speed, and what each port supports.
+    // Asks every USB hub which device sits on which port, at what speed, and what each port supports. The hub
+    // driver answers these from what it already knows; nothing reaches the devices except the power question
+    // below, which phones and cameras are never asked and drives are asked only while idle.
     private static void AttachUsbPorts(DeviceNode tree)
     {
         var hubs = new Dictionary<uint, DeviceNode>();
         foreach (var node in tree.Descendants())
             if (node.IdStarts(@"USB\")) hubs[node.Handle] = node;
+        var idle = new DriveIdleCheck();
 
         foreach (var (devInst, path) in InterfacePaths(UsbHubInterface))
         {
@@ -164,8 +171,18 @@ internal static class DeviceTree
                 var child = hub.Children.FirstOrDefault(c =>
                     driverKey is not null && string.Equals(c.DriverKey, driverKey, StringComparison.OrdinalIgnoreCase));
                 if (child is null) continue;
-                var (power, selfPowered) = DevicePower(handle, port, child.InstanceId, connection.SuperSpeed);
-                child.Usb = connection with { PowerMa = power, SelfPowered = selfPowered };
+                var key = $"{child.InstanceId}|{connection.SuperSpeed}";
+                if (!PowerCache.TryGetValue(key, out var power))
+                {
+                    child.PowerNotAsked = idle.WhyNotAsk(child);
+                    if (child.PowerNotAsked is not null)
+                    {
+                        child.Usb = connection;
+                        continue;
+                    }
+                    PowerCache[key] = power = DevicePower(handle, port, connection.SuperSpeed);
+                }
+                child.Usb = connection with { PowerMa = power.Power, SelfPowered = power.Self };
             }
         }
     }
@@ -174,10 +191,53 @@ internal static class DeviceTree
     // a request to the device itself, so each device is asked once per BoardScout session, never on a timer.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int? Power, bool? Self)> PowerCache = new(StringComparer.OrdinalIgnoreCase);
 
-    private static (int? PowerMa, bool? SelfPowered) DevicePower(SafeFileHandle hub, int port, string instanceId, bool superSpeed)
+    /// <summary>
+    /// Decides whether a USB device may be asked for its power needs. Phones and cameras never are: they move
+    /// files over MTP/PTP, and BoardScout stays off that link entirely. Drives are asked only when their
+    /// read and write counters (kept by Windows, not the drive) haven't moved for a quarter second.
+    /// </summary>
+    private sealed class DriveIdleCheck
     {
-        var key = $"{instanceId}|{superSpeed}";
-        if (PowerCache.TryGetValue(key, out var cached)) return cached;
+        private static readonly string[] PhoneClasses = ["WPD", "Image", "Modem", "AndroidUsbDeviceClass"];
+        private static readonly string[] StorageServices = ["USBSTOR", "UASPStor"];
+        private readonly System.Diagnostics.Stopwatch _since = new();
+        private Dictionary<uint, int>? _numbers;
+        private Dictionary<int, DiskCounterSample?>? _before;
+
+        public string? WhyNotAsk(DeviceNode device)
+        {
+            var functions = device.Descendants().Append(device).ToList();
+            if (functions.Any(f => PhoneClasses.Any(f.IsClass)))
+                return "phone or camera: BoardScout never sends requests to devices that transfer files over MTP or PTP";
+            var disks = functions.Where(f => f.IsClass("DiskDrive") || f.IsClass("CDROM")).ToList();
+            var storage = disks.Count > 0 || functions.Any(f => StorageServices.Any(s => string.Equals(f.Service, s, StringComparison.OrdinalIgnoreCase)));
+            if (!storage) return null;
+
+            // Baseline every disk once, then compare this drive's counters a quarter second or more later.
+            if (_before is null)
+            {
+                _numbers = DiskNumbers();
+                _before = _numbers.Values.Distinct().ToDictionary(n => n, DiskCounters);
+                _since.Start();
+            }
+            var numbers = disks.Select(d => _numbers!.TryGetValue(d.Handle, out var n) ? n : -1).Where(n => n >= 0).ToList();
+            if (numbers.Count == 0) return "drive still starting up: asked once it is ready";
+            var wait = 250 - (int)_since.ElapsedMilliseconds;
+            if (wait > 0) Thread.Sleep(wait);
+            foreach (var number in numbers)
+            {
+                var then = _before.GetValueOrDefault(number);
+                var now = DiskCounters(number);
+                if (then is null || now is null) return "drive activity unknown: not asked";
+                if (now.Value.Reads != then.Value.Reads || now.Value.Writes != then.Value.Writes || now.Value.QueueDepth > 0)
+                    return "drive was busy: BoardScout asks drives only while they are idle";
+            }
+            return null;
+        }
+    }
+
+    private static (int? Power, bool? Self) DevicePower(SafeFileHandle hub, int port, bool superSpeed)
+    {
         // USB_DESCRIPTOR_REQUEST: ConnectionIndex, then the setup packet GET_DESCRIPTOR(CONFIGURATION, 0), 9 bytes.
         var request = new byte[12 + 9];
         BitConverter.GetBytes(port).CopyTo(request, 0);
@@ -194,7 +254,6 @@ internal static class DeviceTree
             // bMaxPower counts 8 mA units on SuperSpeed and 2 mA units on USB 2.
             result = (maxPower * (superSpeed ? 8 : 2), (attributes & 0x40) != 0);
         }
-        PowerCache[key] = result;
         return result;
     }
 
@@ -366,9 +425,12 @@ internal static class DeviceTree
         if (DeviceIoControl(handle, IoctlDiskGetDriveGeometryEx, [], 0, geometry, geometry.Length, out var returned, IntPtr.Zero) && returned >= 32)
             size = BitConverter.ToInt64(geometry, 24); // DISK_GEOMETRY (24 bytes), then DiskSize
 
+        // Temperature only from internal drives (SCSI, ATA, RAID, SAS, SATA, NVMe): USB and card-reader bridges
+        // rarely answer it, and BoardScout doesn't send them questions they may have to pass to the drive.
         double? temperature = null;
         var thermal = new byte[512];
-        if (DeviceIoControl(handle, IoctlStorageQueryProperty, PropertyQuery(52), 12, thermal, thermal.Length, out _, IntPtr.Zero) &&
+        if (bus is 1 or 3 or 8 or 10 or 11 or 17 &&
+            DeviceIoControl(handle, IoctlStorageQueryProperty, PropertyQuery(52), 12, thermal, thermal.Length, out _, IntPtr.Zero) &&
             BitConverter.ToUInt16(thermal, 12) > 0)
         {
             // STORAGE_TEMPERATURE_DATA_DESCRIPTOR: InfoCount @12, first STORAGE_TEMPERATURE_INFO @24 (Temperature at +2).

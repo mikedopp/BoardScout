@@ -271,9 +271,24 @@ internal static class PlanService
                 Tone = "improve",
                 Title = $"Move {context.NameOf(device)} to a USB 3 port",
                 Detail = $"It supports USB 3 (5 Gbps or more) but is connected at USB 2 speed (480 Mbps)" +
-                         (device.Parent is { } hub && !hub.IdStarts(@"USB\ROOT_HUB") ? $", through {context.HubName(hub)}" : "") + ".",
+                         (device.Parent is { } hub && !hub.IdStarts(@"USB\ROOT_HUB") ? $", through {context.HubName(hub)}" : "") + "." +
+                         (IsPhone(device) ? " A direct port also matters for big copies: Windows doesn't double-check files copied from a phone, so the fewer links in between, the better." : ""),
                 Action = cpuFree + chipsetFree > 0 ? "Plug it straight into a free USB 3 port (often blue, or marked SS)." : "Use a USB 3 port or hub.",
                 Nodes = [ConnectionsService.DeviceNodeId(device)]
+            });
+        }
+
+        // Phones behind a hub that the USB 3 advice above didn't already cover.
+        foreach (var phone in context.All.Where(d => d.IdStarts(@"USB\VID_") && IsPhone(d) && d.Parent is { } hub && !hub.IdStarts(@"USB\ROOT_HUB") &&
+                                                     d.Usb is not { SuperSpeedCapable: true, SuperSpeed: false }))
+        {
+            section.Items.Add(new PlanItem
+            {
+                Tone = "info",
+                Title = $"{context.NameOf(phone)} is plugged in through {context.HubName(phone.Parent!)}",
+                Detail = "Windows doesn't double-check files copied from a phone, so for big copies plug it straight into the PC with a good " +
+                         "cable, and keep the originals on the phone until the copies open.",
+                Nodes = [ConnectionsService.DeviceNodeId(phone)]
             });
         }
 
@@ -761,6 +776,19 @@ internal static class PlanService
             : $"USB devices ask for up to {busPowered.Sum(d => d.Usb!.PowerMa ?? 0):N0} mA from their ports (about {busPowered.Sum(d => d.Usb!.PowerMa ?? 0) * 5 / 1000.0:0} W at 5 V); " +
               $"{usb.Count - busPowered.Count} have their own power supply.";
 
+        var busyDrives = context.Storage.Where(s => s.Device.PowerNotAsked?.StartsWith("drive", StringComparison.Ordinal) == true).ToList();
+        if (busyDrives.Count > 0)
+        {
+            section.Items.Add(new PlanItem
+            {
+                Tone = "info",
+                Title = $"{Join(busyDrives.Select(d => d.Name))} {(busyDrives.Count == 1 ? "wasn't" : "weren't")} asked for {(busyDrives.Count == 1 ? "its" : "their")} power needs",
+                Detail = "BoardScout asks a drive how much power it needs only while the drive is idle, so it never adds a request in the middle " +
+                         "of a copy. Check again once the copying is done.",
+                Nodes = busyDrives.Select(d => d.Id).ToList()
+            });
+        }
+
         var hungry = busPowered.Where(d => d.Usb!.PowerMa >= 400).ToList();
         if (hungry.Count > 0)
         {
@@ -922,6 +950,10 @@ internal static class PlanService
             _ => $"{string.Join(", ", list.Take(list.Count - 1))}, and {list[^1]}"
         };
     }
+
+    /// <summary>Phones and cameras: devices that transfer files over MTP or PTP.</summary>
+    private static bool IsPhone(DeviceNode device) =>
+        device.Descendants().Append(device).Any(f => f.IsClass("WPD") || f.IsClass("Image") || f.IsClass("Modem") || f.IsClass("AndroidUsbDeviceClass"));
 
     private static string Rate(UsbPort port) =>
         port.SuperSpeedPlus ? "10 Gbps" : port.SuperSpeed ? "5 Gbps" : port.Speed == 2 ? "480 Mbps" : port.Speed == 1 ? "12 Mbps" : "1.5 Mbps";

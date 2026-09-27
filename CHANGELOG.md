@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.1 — 2026-09-27
+
+Data safety: BoardScout now stays off phones and cameras entirely, and never questions a drive while it
+is busy.
+
+### Changed
+- **Phones and cameras** (anything that copies files over MTP or PTP) are never sent BoardScout's one
+  USB request, the power question; their cards say why.
+- **Drives** are asked that question only when Windows' own read and write counters show them idle; a
+  busy drive is skipped and asked on a later look, so a request never lands in the middle of a copy.
+- **Drive temperature** is asked only of internal drives (SATA, NVMe, and similar), not USB drives or
+  card readers.
+- The plan points out a phone plugged in through a hub: Windows doesn't double-check files copied from
+  a phone, so big copies are safest on a direct port with a good cable.
+- The README has a **Data safety** section listing exactly what BoardScout reads from drives and
+  devices, and what it never does.
+
+### Notes
+- A phone backup that came out damaged while BoardScout was running was checked byte by byte: the
+  damage sat inside two USB 2 packets of the phone's own file transfer, a link the running version
+  never touched. This release makes that boundary explicit.
+
 ## 1.5.0 — 2026-09-27
 
 An optimization plan on the Connections map: where to plug things in, how to make every drive faster on

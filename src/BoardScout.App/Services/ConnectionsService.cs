@@ -604,6 +604,8 @@ internal static partial class ConnectionsService
                 node.Facts.Add(new("Hub port", $"{port.Port} ({((port.Protocols & 4) != 0 ? "USB 3" : "USB 2")} port)"));
                 if (port.PowerMa is { } power)
                     node.Facts.Add(new("Power", $"Asks for up to {power} mA from the port{(port.SelfPowered == true ? "; has its own power supply" : "")}"));
+                else if (device.PowerNotAsked is { } reason)
+                    node.Facts.Add(new("Power", "Not asked: " + reason));
             }
             if (device.PowerState is > 0) node.Facts.Add(new("Power state", $"Asleep (D{device.PowerState}): Windows suspended it while idle"));
             if (isHub) node.Facts.Add(new("Hub power", device.HubBusPowered ? "Bus-powered: shares one port's power with everything plugged into it" : "Self-powered or built in"));
