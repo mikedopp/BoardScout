@@ -62,7 +62,7 @@ internal sealed class SystemTelemetryService : IDisposable
 
             var cpuUsage = SampleCpu();
             var (memTotal, memAvailable) = SampleMemory();
-            var (thermals, fans) = SampleSensors();
+            var (thermals, fans, power) = SampleSensors();
             var network = SampleNetwork(now, elapsed, detailed);
             var disks = SampleDisks(now, elapsed, detailed);
 
@@ -75,7 +75,8 @@ internal sealed class SystemTelemetryService : IDisposable
                 InterfaceRates = network.Rates,
                 InterfaceCounters = network.Counters,
                 DiskRates = disks.Rates,
-                DiskQueues = disks.Queues
+                DiskQueues = disks.Queues,
+                Power = power
             };
         }
     }
@@ -114,11 +115,12 @@ internal sealed class SystemTelemetryService : IDisposable
         return (rates, queues);
     }
 
-    private (List<ThermalReading> Thermals, List<FanReading> Fans) SampleSensors()
+    private (List<ThermalReading> Thermals, List<FanReading> Fans, List<PowerReading> Power) SampleSensors()
     {
         var thermals = new List<ThermalReading>();
         var fans = new List<FanReading>();
-        if (_sensorsFailed) return (thermals, fans);
+        var power = new List<PowerReading>();
+        if (_sensorsFailed) return (thermals, fans, power);
 
         try
         {
@@ -138,11 +140,11 @@ internal sealed class SystemTelemetryService : IDisposable
             {
                 var before = thermals.Count + fans.Count;
                 hw.Update();
-                CollectSensors(hw, thermals, fans);
+                CollectSensors(hw, thermals, fans, power);
                 foreach (var sub in hw.SubHardware)
                 {
                     sub.Update();
-                    CollectSensors(sub, thermals, fans);
+                    CollectSensors(sub, thermals, fans, power);
                 }
                 if (_lockedSensorHardware is null && thermals.Count + fans.Count > before)
                     _sensorHardware.Add(hw);
@@ -158,7 +160,7 @@ internal sealed class SystemTelemetryService : IDisposable
             _sensorsFailed = true;
             UpdateStatus(0, 0, ex.Message);
         }
-        return (thermals, fans);
+        return (thermals, fans, power);
     }
 
     private void UpdateStatus(int temperatureZones, int fans, string? error)
@@ -167,7 +169,7 @@ internal sealed class SystemTelemetryService : IDisposable
         SensorStatus = new SensorStatus(true, IsElevated, installed, version, temperatureZones, fans, error);
     }
 
-    private static void CollectSensors(IHardware hw, List<ThermalReading> thermals, List<FanReading> fans)
+    private static void CollectSensors(IHardware hw, List<ThermalReading> thermals, List<FanReading> fans, List<PowerReading> power)
     {
         foreach (var sensor in hw.Sensors)
         {
@@ -188,6 +190,21 @@ internal sealed class SystemTelemetryService : IDisposable
                 {
                     var rpm = (int)sensor.Value.Value;
                     fans.Add(new FanReading(ClassifyFan(hw, sensor), rpm, rpm > 0));
+                    break;
+                }
+                case SensorType.Power:
+                {
+                    // The CPU's package power, and the graphics card's whole-card (or chip) power.
+                    var watts = sensor.Value.Value;
+                    if (watts is <= 0 or > 1500) break;
+                    var device = hw.HardwareType is HardwareType.Cpu && sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) ? "CPU"
+                        : hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel &&
+                          (sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) || sensor.Name.Contains("Board", StringComparison.OrdinalIgnoreCase) ||
+                           sensor.Name.Contains("PPT", StringComparison.OrdinalIgnoreCase))
+                            ? "GPU"
+                            : null;
+                    if (device is not null && !power.Exists(p => p.Device == device))
+                        power.Add(new PowerReading(device, Math.Round(watts, 1)));
                     break;
                 }
             }

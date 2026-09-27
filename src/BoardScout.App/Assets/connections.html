@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <title>BoardScout · Connections</title>
 <style>
-:root{--bg:#060b10;--s:#0c1620;--sr:#111e2c;--b:#1c2a3c;--t:#e8edf4;--ts:#8a9bb2;--tm:#4a6080;
+:root{color-scheme:dark;--bg:#060b10;--s:#0c1620;--sr:#111e2c;--b:#1c2a3c;--t:#e8edf4;--ts:#8a9bb2;--tm:#4a6080;
   --a:#3d9eff;--ok:#10b981;--w:#f59e0b;--cr:#ef4444;--p:#a78bfa;--tl:#2dd4bf;--or:#fb923c;--pk:#f472b6;--sky:#38bdf8;--in:#818cf8}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+html{height:100%}
+body{min-height:100%}
 body{color:var(--t);font-family:'Segoe UI',system-ui,sans-serif;overflow:auto;
   background:
     radial-gradient(rgba(255,255,255,.045) 1px,transparent 1.2px) 0 0/24px 24px,
@@ -92,6 +93,87 @@ body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px so
 #legend .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl)}
 #legend .dot.out{background:#e8edf4;box-shadow:0 0 6px #e8edf4}
 #legend .sep{width:1px;height:12px;background:var(--b)}
+/* Memory slots on the map */
+.card.empty .face{opacity:.62}
+/* Cards a plan item points at */
+.card.flash .edge{stroke:#fde047;stroke-width:3;animation:flash .6s ease-in-out 6 alternate}
+@keyframes flash{from{stroke-opacity:1}to{stroke-opacity:.2}}
+body.no-motion .card.flash .edge{animation:none}
+/* Optimization plan */
+#head .actions{display:flex;gap:8px}
+#plan{position:fixed;top:92px;left:18px;bottom:18px;width:480px;max-width:calc(100vw - 36px);border-radius:20px;z-index:8;display:none;
+  flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.5);overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(15,27,40,.94);
+  border:1px solid rgba(255,255,255,.09);border-top-color:rgba(255,255,255,.2);backdrop-filter:blur(16px) saturate(1.4)}
+body.no-glass #plan{background:var(--sr);backdrop-filter:none;border:1px solid var(--b)}
+#plan.open{display:flex}
+body.plan-open #stage{padding-left:510px}
+#planHead{position:relative;padding:16px 18px 12px;border-bottom:1px solid rgba(255,255,255,.07)}
+#planHead .kind{font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#a3e635}
+#planHead h2{font-size:16px;margin:4px 0 2px;line-height:1.3}
+#planHead .d{color:var(--ts);font-size:12px}
+.xclose{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--ts);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}
+.xclose:hover{background:rgba(255,255,255,.08);color:var(--t)}
+#planNav{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#planNav button{border-radius:999px;padding:3px 10px;font-size:11.5px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);
+  color:var(--ts);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+#planNav button:hover{color:var(--t);background:rgba(255,255,255,.1)}
+#planNav .n{min-width:17px;height:17px;border-radius:9px;background:rgba(245,158,11,.2);color:var(--w);font-size:10.5px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
+#planNav .n.warn{background:rgba(239,68,68,.2);color:#fca5a5}
+#planBody{flex:1;overflow:auto;padding:2px 18px 18px}
+.psec{margin-top:16px;scroll-margin-top:10px}
+.psec h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tm);margin-bottom:4px}
+.psec .sum{font-size:12px;color:var(--ts);line-height:1.5;margin-bottom:8px}
+.pitem{display:grid;grid-template-columns:20px 1fr;gap:2px 9px;padding:9px 11px;border-radius:12px;margin-bottom:6px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+.pitem .ic{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:1px}
+.pitem.good .ic{background:rgba(16,185,129,.15);color:var(--ok)}
+.pitem.info .ic{background:rgba(61,158,255,.14);color:var(--a)}
+.pitem.improve{border-color:rgba(245,158,11,.3)}
+.pitem.improve .ic{background:rgba(245,158,11,.16);color:var(--w)}
+.pitem.warn{border-color:rgba(239,68,68,.38);background:rgba(239,68,68,.05)}
+.pitem.warn .ic{background:rgba(239,68,68,.18);color:#fca5a5}
+.pitem .t{font-size:12.5px;font-weight:600;line-height:1.4}
+.pitem .dt{grid-column:2;font-size:12px;color:var(--ts);line-height:1.5}
+.pitem .act{grid-column:2;font-size:12px;line-height:1.5;margin-top:4px;color:#cfe3fb}
+.pitem.improve .act,.pitem.warn .act{color:#fcd9a0}
+.pitem .act b{font-weight:600}
+.pitem .show{grid-column:2;justify-self:start;margin-top:3px;background:none;border:none;color:var(--a);font-size:11.5px;cursor:pointer;padding:0}
+.pitem .show:hover{text-decoration:underline}
+.ptable{width:100%;border-collapse:collapse;font-size:11.5px;margin:4px 0 10px}
+.ptable th{font-weight:600;color:var(--tm);text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:4px 8px 4px 0;
+  border-bottom:1px solid rgba(255,255,255,.08)}
+.ptable td{padding:5px 8px 5px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04)}
+.ptable td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ptable tr.sub td{color:var(--ts);font-size:11px;padding-top:0}
+.ptable .sm{display:block;color:var(--ts);font-size:11px}
+.ptable .lnk{color:var(--t);cursor:pointer}
+.ptable .lnk:hover{text-decoration:underline}
+.slots{display:flex;gap:8px;margin:4px 0 10px}
+.slot{flex:1;border-radius:12px;padding:9px 6px 8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);
+  font-size:11px;color:var(--ts);text-align:center}
+.slot .stick{height:44px;width:16px;border-radius:4px;margin:0 auto 7px}
+.slot.on .stick{background:linear-gradient(180deg,#bef264,#65a30d);box-shadow:0 0 12px rgba(163,230,53,.35)}
+.slot.off .stick{border:1.5px dashed rgba(255,255,255,.2)}
+.slot.rec{border-color:rgba(163,230,53,.6);background:rgba(163,230,53,.06)}
+.slot.rec.off .stick{border-color:rgba(163,230,53,.7)}
+.slot .lbl{font-weight:600;color:var(--t);font-size:12.5px}
+.slot .rtag{font-size:10.5px;color:#bef264;margin-top:2px}
+.cores{display:flex;align-items:flex-end;gap:3px;height:58px;margin:6px 0 3px}
+.cores .bar2{flex:1;display:flex;flex-direction:column-reverse;height:100%}
+.cores .bar2 i{display:block;border-radius:2px}
+.cores .bar2 .isr{background:var(--a)}
+.cores .bar2 .dpc{background:var(--p);margin-bottom:1px}
+.corelbl{display:flex;justify-content:space-between;font-size:10.5px;color:var(--tm)}
+.corekey{font-size:11px;color:var(--ts);margin:4px 0 8px}
+.corekey i{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 4px -1px 0}
+.measure{margin:6px 0 12px}
+.measure .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pbusy{display:flex;align-items:center;gap:10px;color:var(--ts);font-size:12.5px;padding:10px 0;line-height:1.5}
+.pbusy .spin{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid rgba(61,158,255,.25);border-top-color:var(--a);animation:spin 1s linear infinite}
+.callout{border-radius:12px;padding:9px 11px;font-size:12px;line-height:1.5}
+.callout.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);color:#fcd9a0}
 </style>
 </head>
 <body>
@@ -110,23 +192,28 @@ body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px so
       <span class="row"><span class="sw" style="background:#10b981"></span>Ethernet</span>
       <span class="row"><span class="sw" style="background:#34d399"></span>Wi-Fi</span>
       <span class="row"><span class="sw" style="background:#38bdf8"></span>Internet</span>
+      <span class="row"><span class="sw" style="background:#a3e635"></span>Memory</span>
       <span class="sep"></span>
       <span class="row"><span class="dot"></span>toward the CPU (reads, downloads)</span>
       <span class="row"><span class="dot out"></span>away from it (writes, uploads)</span>
       <span class="row">⚠ / dashed: linked below what the device supports</span>
     </div>
   </div>
-  <button class="btn primary" id="refresh" title="Read the device tree and network again">Refresh</button>
+  <div class="actions">
+    <button class="btn" id="planBtn" title="Where to plug things in, faster drives, memory placement, interrupts, and power">Optimization plan</button>
+    <button class="btn primary" id="refresh" title="Read the device tree and network again">Refresh</button>
+  </div>
 </div>
 <div id="empty"><span class="spin"></span>Reading devices and links…</div>
 <div id="stage"><svg id="map" role="img" aria-label="Device connection map"></svg></div>
 <canvas id="flow" aria-hidden="true"></canvas>
 <div id="inspector" aria-live="polite"><div class="ql-content"><div id="insp"></div></div></div>
+<div id="plan" role="region" aria-label="Optimization plan"><div id="planHead"></div><div id="planBody"></div></div>
 <script src="vendor/d3/d3.v7.min.js"></script>
 <script>
 'use strict';
 const BUS={pcie:'#3d9eff',internal:'#a78bfa',usb:'#2dd4bf',sata:'#fb923c',display:'#f472b6',bluetooth:'#818cf8',
-  ethernet:'#10b981',lan:'#10b981',wifi:'#34d399',wan:'#38bdf8'};
+  ethernet:'#10b981',lan:'#10b981',wifi:'#34d399',wan:'#38bdf8',memory:'#a3e635'};
 const KIND={cpu:'Processor',chipset:'Chipset',integrated:'Inside the CPU',gpu:'Graphics card',monitor:'Monitor',nvme:'NVMe SSD',
   sata:'SATA controller',disk:'SATA drive',optical:'Optical drive','usb-controller':'USB controller','usb-hub':'USB hub',storage:'External drive',
   receiver:'Wireless receiver',gamepad:'Game controller',audio:'Audio',capture:'Video capture',rgb:'RGB lighting',keyboard:'Keyboard',
@@ -134,7 +221,7 @@ const KIND={cpu:'Processor',chipset:'Chipset',integrated:'Inside the CPU',gpu:'G
   'bt-device':'Bluetooth device',ethernet:'Ethernet adapter',wifi:'Wi-Fi adapter',router:'Router',internet:'Internet',dns:'DNS server',
   'virtual-group':'Software adapters',virtual:'Software adapter',device:'Device','lan-group':'Your local network',mesh:'Mesh access point',
   tv:'TV or streamer',console:'Game console',pc:'Computer',phone:'Phone, tablet, or laptop',pi:'Raspberry Pi',speaker:'Smart speaker',
-  camera:'Camera',iot:'Smart home device',server:'Server'};
+  camera:'Camera',iot:'Smart home device',server:'Server',memory:'Memory',dimm:'Memory stick','dimm-empty':'Empty memory slot'};
 // Hand-drawn 24×24 line icons.
 const ICON={
   cpu:'M7 7h10v10H7zM10 10h4v4h-4zM9 3v4M12 3v4M15 3v4M9 17v4M12 17v4M15 17v4M3 9h4M3 12h4M3 15h4M17 9h4M17 12h4M17 15h4',
@@ -180,12 +267,15 @@ const ICON={
   speaker:'M7 3h10v18H7zM12 16m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M12 7h.01',
   camera:'M3 8h4l2-3h6l2 3h4v11H3zM12 13.5m-3.5 0a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0',
   iot:'M12 3v3M12 18v3M3 12h3M18 12h3M7 7h10v10H7zM10 10h4v4h-4z',
-  server:'M4 4h16v5H4zM4 11h16v5H4zM7 6.5h.01M7 13.5h.01M8 20h8'
+  server:'M4 4h16v5H4zM4 11h16v5H4zM7 6.5h.01M7 13.5h.01M8 20h8',
+  memory:'M2 7h20v9H2zM5 10h3v3H5zM10.5 10h3v3h-3zM16 10h3v3h-3zM4 16v2M7 16v2M10 16v2M14 16v2M17 16v2M20 16v2',
+  dimm:'M2 7h20v9H2zM5 10h3v3H5zM10.5 10h3v3h-3zM16 10h3v3h-3zM4 16v2M7 16v2M10 16v2M14 16v2M17 16v2M20 16v2',
+  'dimm-empty':'M2 7h20v9H2zM4 16v2M7 16v2M10 16v2M14 16v2M17 16v2M20 16v2'
 };
 const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=18,SPINE=64,COL_INSET=30;
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
   history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
-  speed:null,discoveryBusy:false,sweepBusy:false};
+  speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false};
 
 const post=m=>window.chrome?.webview?.postMessage(m);
 const $=id=>document.getElementById(id);
@@ -365,7 +455,7 @@ function render(){
   const root=data.root;
   const all=prepare(root);
   state.nodes=new Map(all.map(n=>[n.id,n]));
-  const viewW=document.documentElement.clientWidth;
+  const viewW=document.documentElement.clientWidth-(state.planOpen?510:0);
   const {pos,width,height}=layout(root,viewW);
   state.pos=pos;
   const scale=Math.max(.72,Math.min(1,(viewW-8)/width));
@@ -405,9 +495,16 @@ function render(){
   for(const n of all){const p=pos.get(n.id);if(p)drawCard(cardLayer,n,p)}
 
   renderSummary();
+  placePanels();
   if(state.selected&&state.nodes.has(state.selected))select(state.selected,false);
   else closeInspector(false);
   applyFlow();
+}
+
+// The side panels start just below the header, which grows when the summary pills wrap.
+function placePanels(){
+  const top=Math.round($('head').getBoundingClientRect().bottom)+2;
+  for(const id of ['inspector','plan'])$(id).style.top=top+'px';
 }
 
 // While the details panel is open, the page gets room to scroll whatever it covers into view.
@@ -418,7 +515,7 @@ function padForInspector(){
 function drawCard(layer,n,p){
   const color=colorOf(n);
   const warn=!!(n.warning||n.problem);
-  const g=layer.append('g').attr('class','card').attr('id','c-'+n.id).attr('transform',`translate(${p.x},${p.y})`)
+  const g=layer.append('g').attr('class','card'+(n.kind==='dimm-empty'?' empty':'')).attr('id','c-'+n.id).attr('transform',`translate(${p.x},${p.y})`)
     .attr('tabindex',0).attr('role','button').attr('aria-label',`${n.name}. ${n.detail||''}${n.link?'. '+n.link.label:''}`)
     .on('click',()=>select(n.id,true))
     .on('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(n.id,true)}});
@@ -426,7 +523,8 @@ function drawCard(layer,n,p){
   const radius=n.kind==='cpu'?17:14;
   face.append('rect').attr('width',p.w).attr('height',p.h).attr('rx',radius).attr('fill','#0c1620');
   face.append('rect').attr('class','edge').attr('width',p.w).attr('height',p.h).attr('rx',radius).attr('fill','url(#glassFill)')
-    .attr('stroke',warn?'#f59e0b':color).attr('stroke-width',n.kind==='cpu'?1.8:1.4).attr('stroke-opacity',.85);
+    .attr('stroke',warn?'#f59e0b':color).attr('stroke-width',n.kind==='cpu'?1.8:1.4).attr('stroke-opacity',.85)
+    .attr('stroke-dasharray',n.kind==='dimm-empty'?'5 4':null);
   face.append('line').attr('x1',radius).attr('x2',p.w-radius).attr('y1',1.2).attr('y2',1.2).attr('stroke','#fff').attr('stroke-opacity',.2);
   const cy=p.h/2;
   face.append('circle').attr('cx',22).attr('cy',cy).attr('r',14).attr('fill',color).attr('fill-opacity',.14)
@@ -512,7 +610,9 @@ function renderSummary(){
 function scrollToNode(id){
   const p=state.pos?.get(id);if(!p)return;
   const s=state.scale,head=$('head').offsetHeight;
-  window.scrollTo({top:Math.max(0,p.y*s+head-window.innerHeight/2),left:Math.max(0,p.x*s-window.innerWidth/3),behavior:state.motion?'smooth':'auto'});
+  const rect=$('map').getBoundingClientRect(),mapLeft=rect.left+window.scrollX;
+  const room=state.planOpen?510:0;
+  window.scrollTo({top:Math.max(0,p.y*s+head-window.innerHeight/2),left:Math.max(0,mapLeft+p.x*s-room-(window.innerWidth-room)/3),behavior:state.motion?'smooth':'auto'});
 }
 
 // ---- Live flow ---------------------------------------------------------------------------
@@ -890,6 +990,184 @@ async function syncGlass(){
   else if(state.inspGlass)state.inspGlass.updateConfig({dynamicLighting:state.motion});
 }
 
+// ---- Optimization plan -------------------------------------------------------------------
+
+const TONE={good:'✓',info:'i',improve:'↑',warn:'!'};
+
+function openPlan(){
+  if(!state.planOpen){state.planOpen=true;$('plan').classList.add('open');document.body.classList.add('plan-open');render()}
+  if(!state.plan&&!state.planBusy)requestPlan();else renderPlan();
+}
+function closePlan(){
+  state.planOpen=false;state.confirmElevate=false;
+  $('plan').classList.remove('open');document.body.classList.remove('plan-open');render();
+}
+function requestPlan(){state.planBusy={measuring:false};state.planError=null;renderPlan();post({type:'plan'})}
+function measure(){state.planBusy={measuring:true};state.planError=null;renderPlan();post({type:'irqprofile'})}
+
+function busyRow(text){const d=el('div','pbusy');d.append(el('span','spin'),el('span',null,text));return d}
+
+function renderPlan(){
+  if(!state.planOpen)return;
+  const p=state.plan,busy=state.planBusy;
+  const head=$('planHead');head.replaceChildren();
+  const close=el('button','xclose','×');close.title='Close';close.setAttribute('aria-label','Close the plan');close.onclick=closePlan;
+  head.append(close,el('div','kind','Optimization plan'),el('h2',null,'Getting the most from this PC'));
+  if(p){
+    const todo=p.sections.reduce((a,s)=>a+s.items.filter(i=>i.tone==='improve'||i.tone==='warn').length,0);
+    head.append(el('div','d',`${p.formFactor} · ${todo?`${todo} thing${todo===1?'':'s'} to improve`:'nothing to fix'} · checked at ${state.planAt}`));
+    const nav=el('div');nav.id='planNav';
+    for(const sec of p.sections){
+      const b=el('button',null,sec.title);
+      const warn=sec.items.filter(i=>i.tone==='warn').length,improve=sec.items.filter(i=>i.tone==='improve').length;
+      if(warn+improve){const n=el('span','n'+(warn?' warn':''),String(warn+improve));b.append(n)}
+      b.onclick=()=>scrollPlanTo('ps-'+sec.id);
+      nav.append(b);
+    }
+    const again=el('button',null,busy&&!busy.measuring?'Checking…':'Check again');again.disabled=!!busy;again.onclick=requestPlan;
+    nav.append(again);
+    head.append(nav);
+  }else head.append(el('div','d','Where to plug things in, how to make drives faster, memory placement, interrupts, and power.'));
+
+  // A plan that refreshes while you read it (a device plugged in) keeps your place.
+  const body=$('planBody'),keep=body.scrollTop;body.replaceChildren();
+  if(state.planError){const c=el('div','callout warn',state.planError);c.style.marginTop='14px';body.append(c)}
+  if(!p){if(busy)body.append(busyRow('Checking every port, drive, and memory slot, and sampling interrupts for a second…'));return}
+  for(const sec of p.sections){
+    const box=el('div','psec');box.id='ps-'+sec.id;
+    box.append(el('h3',null,sec.title));
+    if(sec.summary)box.append(el('div','sum',sec.summary));
+    if(sec.id==='usb-ports'&&p.usbControllers?.length)box.append(usbTable(p));
+    if(sec.id==='memory'&&p.memorySlots?.length)box.append(slotGrid(p));
+    if(sec.id==='interrupts'&&p.cores?.length)box.append(coreChart(p));
+    for(const item of sec.items)box.append(planItem(item));
+    if(sec.id==='interrupts'){box.append(measureBlock(p,busy));if(p.drivers?.length)box.append(driverTable(p))}
+    body.append(box);
+  }
+  body.scrollTop=keep;
+}
+
+// Scrolls only the plan's own list (scrollIntoView would drag the map along with it).
+function scrollPlanTo(id){
+  const body=$('planBody'),target=document.getElementById(id);if(!target)return;
+  const top=target.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-6;
+  body.scrollTo({top,behavior:state.motion?'smooth':'auto'});
+}
+
+function planItem(item){
+  const d=el('div','pitem '+item.tone);
+  d.append(el('span','ic',TONE[item.tone]||'i'),el('div','t',item.title));
+  if(item.detail)d.append(el('div','dt',item.detail));
+  if(item.action){const a=el('div','act');a.append(el('b',null,'Do this: '),item.action);d.append(a)}
+  const ids=(item.nodes||[]).filter(id=>state.nodes.has(id));
+  if(ids.length){const b=el('button','show',ids.length>1?`Show all ${ids.length} on the map`:'Show on the map');b.onclick=()=>showNodes(ids);d.append(b)}
+  return d;
+}
+
+// Highlight the cards a plan item is about, open the first, and bring it into view.
+function showNodes(ids){
+  d3.selectAll('.card').classed('flash',false);
+  requestAnimationFrame(()=>ids.forEach(id=>d3.select('#c-'+id).classed('flash',true)));
+  clearTimeout(state.flashTimer);
+  state.flashTimer=setTimeout(()=>d3.selectAll('.card').classed('flash',false),4200);
+  select(ids[0],true);scrollToNode(ids[0]);
+}
+
+function usbTable(p){
+  const t=el('table','ptable');
+  const hr=el('tr');['Controller','USB 3 ports','USB 2-only ports'].forEach(h=>hr.append(el('th',null,h)));t.append(hr);
+  const where={CPU:'Straight to the CPU',chipset:'Through the chipset'};
+  for(const c of p.usbControllers){
+    const tr=el('tr');
+    const name=el('td');const a=el('span','lnk',c.name);a.onclick=()=>showNodes([c.node]);
+    name.append(a,el('span','sm',where[c.where]||'Add-in card'));
+    const free=(n,u)=>n?`${n-u} free of ${n}`:'none';
+    tr.append(name,el('td','num',free(c.usb3Ports,c.usb3Used)),el('td','num',free(c.usb2Ports,c.usb2Used)));
+    t.append(tr);
+    const sub=el('tr','sub');const cell=el('td',null,c.devices.length?c.devices.join(' · '):'Nothing plugged in');cell.colSpan=3;sub.append(cell);t.append(sub);
+  }
+  return t;
+}
+
+function slotGrid(p){
+  const g=el('div','slots');
+  for(const s of p.memorySlots){
+    const d=el('div','slot '+(s.populated?'on':'off')+(s.recommended?' rec':''));
+    d.append(el('div','stick'),el('div','lbl',s.slot),el('div',null,s.populated?`${s.sizeGb} GB`:'empty'));
+    if(s.recommended)d.append(el('div','rtag','recommended'));
+    d.title=[s.locator,s.part,s.configured?`${s.configured} MT/s`:null].filter(Boolean).join(' · ');
+    g.append(d);
+  }
+  return g;
+}
+
+function coreChart(p){
+  const box=el('div');
+  const max=Math.max(1,...p.cores.map(c=>c.interruptsPerSec+c.dpcsPerSec));
+  const bars=el('div','cores');
+  for(const c of p.cores){
+    const b=el('div','bar2');
+    const isr=el('i','isr');isr.style.height=Math.max(2,c.interruptsPerSec/max*100)+'%';
+    const dpc=el('i','dpc');dpc.style.height=(c.dpcsPerSec/max*100)+'%';
+    b.append(isr,dpc);
+    b.title=`Processor ${c.core}: ${fmtCount(c.interruptsPerSec)} interrupts and ${fmtCount(c.dpcsPerSec)} DPCs a second, ${(c.interruptPct+c.dpcPct).toFixed(2)}% of its time`;
+    bars.append(b);
+  }
+  const lbl=el('div','corelbl');lbl.append(el('span',null,'Processor 0'),el('span',null,`Processor ${p.cores.length-1}`));
+  const key=el('div','corekey');
+  const k1=el('i');k1.style.background='var(--a)';const k2=el('i');k2.style.background='var(--p)';k2.style.marginLeft='12px';
+  key.append(k1,'Interrupts',k2,'DPCs (the follow-up work drivers queue) per second, over one second');
+  box.append(bars,lbl,key);
+  return box;
+}
+
+function measureBlock(p,busy){
+  const d=el('div','measure');
+  if(busy?.measuring){
+    d.append(busyRow('Timing every interrupt and DPC for 10 seconds. Keep using the PC as usual: play audio, a video, or a game to catch drivers that stall it.'));
+    return d;
+  }
+  const row=el('div','row');
+  if(p.elevated){
+    const btn=el('button','btn primary',p.drivers?.length?'Measure again (10 s)':'Measure interrupt time per driver (10 s)');
+    btn.onclick=measure;row.append(btn);d.append(row);
+    d.append(el('div','wanbox','Runs a 10-second Windows kernel trace of interrupts and DPCs, the same events LatencyMon and Windows Performance Analyzer read. Nothing leaves this PC.'));
+  }else if(state.confirmElevate){
+    d.append(el('div','callout warn','BoardScout closes and reopens with administrator rights (Windows asks first), comes back to this plan, and measures for 10 seconds.'));
+    const go=el('button','btn primary','Restart as administrator');go.onclick=()=>{state.confirmElevate=false;post({type:'elevate'})};
+    const no=el('button','btn','Cancel');no.onclick=()=>{state.confirmElevate=false;renderPlan()};
+    row.append(go,no);d.append(row);
+  }else{
+    const btn=el('button','btn primary','Measure interrupt time per driver');
+    btn.onclick=()=>{state.confirmElevate=true;renderPlan()};row.append(btn);d.append(row);
+    d.append(el('div','wanbox','Windows only shows administrators which driver each interrupt belongs to, so this needs a restart with administrator rights. Everything else in this plan works without them.'));
+  }
+  if(p.profileError){const c=el('div','callout warn',p.profileError);c.style.marginTop='8px';d.append(c)}
+  return d;
+}
+
+function driverTable(p){
+  const box=el('div');
+  const t=el('table','ptable');
+  const hr=el('tr');['Driver','Share','Longest run','Count'].forEach(h=>hr.append(el('th',null,h)));t.append(hr);
+  for(const d of p.drivers){
+    const tr=el('tr');
+    const name=el('td');name.append(el('span',null,d.driver));
+    if(d.description)name.append(el('span','sm',d.description));
+    if(d.devices?.length)name.append(el('span','sm',d.devices.slice(0,2).join(', ')+(d.devices.length>2?` +${d.devices.length-2} more`:'')));
+    const longest=Math.max(d.isrMaxUs,d.dpcMaxUs);
+    const run=el('td','num',longest>=1000?(longest/1000).toFixed(2)+' ms':Math.round(longest)+' µs');
+    if(longest>2000)run.style.color='#fca5a5';else if(longest>1000)run.style.color='var(--w)';
+    tr.append(name,el('td','num',d.cpuPct<0.01?'<0.01%':d.cpuPct.toFixed(2)+'%'),run,el('td','num',`${fmtCount(d.isrCount+d.dpcCount)}`));
+    t.append(tr);
+  }
+  box.append(t);
+  box.append(el('div','sum',`Measured for ${p.profileSeconds??10} s. Share is the part of all processors' time a driver spent in interrupts and DPCs. `+
+    'Longest run is its longest single stretch; over 1 ms can cause audio crackles, dropped frames, or input lag.'+
+    (p.eventsLost?` ${fmtCount(p.eventsLost)} events were dropped because the trace buffers filled, so counts are slightly low.`:'')));
+  return box;
+}
+
 // ---- Messages ----------------------------------------------------------------------------
 
 window.chrome?.webview?.addEventListener('message',e=>{
@@ -901,7 +1179,17 @@ window.chrome?.webview?.addEventListener('message',e=>{
     if(msg.data.discovery==='done'){state.discoveryBusy=false;state.sweepBusy=false}
     $('refresh').disabled=false;$('refresh').textContent='Refresh';
     render();
+    // The plan follows the map: a device plugged in or a privacy toggle rebuilds it.
+    if(state.planOpen&&state.plan&&!state.planBusy){clearTimeout(state.planTimer);state.planTimer=setTimeout(requestPlan,1200)}
   }
+  else if(msg.type==='plan'){
+    state.plan=msg;state.planBusy=null;state.planError=null;
+    state.planAt=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    renderPlan();
+  }
+  else if(msg.type==='planbusy'){state.planBusy={measuring:!!msg.measuring};renderPlan()}
+  else if(msg.type==='planerror'){state.planBusy=null;state.planError=msg.error;renderPlan()}
+  else if(msg.type==='openplan'){openPlan();if(msg.measure)measure()}
   else if(msg.type==='flow'){state.flow=msg;applyFlow()}
   else if(msg.type==='wan'){
     state.wanBusy=false;state.wan=msg;
@@ -919,7 +1207,11 @@ window.chrome?.webview?.addEventListener('message',e=>{
   }
 });
 $('refresh').onclick=()=>{$('refresh').disabled=true;$('refresh').textContent='Reading…';post({type:'refresh'})};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.selected)closeInspector(true)});
+$('planBtn').onclick=()=>state.planOpen?closePlan():openPlan();
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+  if(state.selected)closeInspector(true);else if(state.planOpen)closePlan();
+});
 let resizeTimer=0;
 window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.flowCtx)sizeFlowCanvas();render()},140)});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')startAnimation()});

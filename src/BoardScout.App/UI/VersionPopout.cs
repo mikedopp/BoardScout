@@ -143,9 +143,9 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         Add(new GlassToggle("Minimize to tray", settings.MinimizeToTray,
             on => AppSettings.Update(s => s.MinimizeToTray = on)));
         Add(Detail("Live telemetry refresh", AppTheme.Muted));
-        int[] intervals = [1000, 2000, 5000];
+        int[] intervals = [500, 1000, 2000, 5000];
         var selected = Array.IndexOf(intervals, settings.TelemetryIntervalMs);
-        Add(new GlassSegmented(["1 s", "2 s", "5 s"], selected < 0 ? 0 : selected,
+        Add(new GlassSegmented(["0.5 s", "1 s", "2 s", "5 s"], selected < 0 ? 1 : selected,
             index => AppSettings.Update(s => s.TelemetryIntervalMs = intervals[index])) { AccessibleName = "Live telemetry refresh" });
 
         Add(Section("Dependencies"));

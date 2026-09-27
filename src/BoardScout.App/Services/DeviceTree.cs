@@ -21,6 +21,21 @@ internal sealed class DeviceNode
 
     /// <summary>Number of downstream ports, for USB hubs (root hubs included).</summary>
     public int? HubPorts { get; set; }
+
+    /// <summary>For hubs: what each port supports (bit 0 USB 1.1, bit 1 USB 2, bit 2 USB 3) and whether it is in use.</summary>
+    public List<(int Port, int Protocols, bool InUse)> PortMap { get; } = [];
+
+    /// <summary>For hubs: powered by the port above it instead of its own adapter.</summary>
+    public bool HubBusPowered { get; set; }
+
+    /// <summary>CM_REMOVAL_POLICY: 1 not removable, 2 orderly removal (write caching on), 3 surprise removal (quick removal).</summary>
+    public int? RemovalPolicy { get; init; }
+
+    /// <summary>Most recent device power state: 0 = D0 (fully on) … 3 = D3 (off or asleep).</summary>
+    public int? PowerState { get; init; }
+
+    /// <summary>Interrupts assigned to the device; negative numbers are message-signaled (MSI/MSI-X).</summary>
+    public IReadOnlyList<(int Irq, bool Shareable)> Irqs { get; init; } = [];
     public DeviceNode? Parent { get; set; }
     public List<DeviceNode> Children { get; } = [];
 
@@ -43,8 +58,12 @@ internal sealed record PciLink(int Speed, int Width, int MaxSpeed, int MaxWidth)
     public bool BelowMax => Speed < MaxSpeed || Width < MaxWidth;
 }
 
-/// <summary>What a USB hub reports for one of its ports. Flags are USB_NODE_CONNECTION_INFORMATION_EX_V2 flags.</summary>
-internal sealed record UsbPort(int Port, int Speed, int Flags, bool IsHub)
+/// <summary>
+/// What a USB hub reports for one of its ports. Flags are USB_NODE_CONNECTION_INFORMATION_EX_V2 flags;
+/// Protocols is what the port itself supports (bit 0 USB 1.1, bit 1 USB 2, bit 2 USB 3). PowerMa and
+/// SelfPowered come from the device's configuration descriptor.
+/// </summary>
+internal sealed record UsbPort(int Port, int Speed, int Flags, bool IsHub, int Protocols = 0, int? PowerMa = null, bool? SelfPowered = null)
 {
     public bool SuperSpeedPlus => (Flags & 4) != 0;
     public bool SuperSpeed => (Flags & 1) != 0;
@@ -55,8 +74,10 @@ internal sealed record UsbPort(int Port, int Speed, int Flags, bool IsHub)
 /// <summary>A disk's counters since boot. The operation counts are 32-bit and wrap.</summary>
 internal readonly record struct DiskCounterSample(long BytesRead, long BytesWritten, uint Reads, uint Writes, int QueueDepth);
 
-/// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe).</summary>
-internal sealed record DiskFacts(int Number, string? Vendor, string? Product, string? Firmware, int Bus, long? SizeBytes, double? TemperatureC);
+/// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe);
+/// Spinning is true for hard drives (the disk reports a seek penalty).</summary>
+internal sealed record DiskFacts(int Number, string? Vendor, string? Product, string? Firmware, int Bus, long? SizeBytes,
+    double? TemperatureC, bool? Spinning = null);
 
 /// <summary>One active display output. Technology is DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY.</summary>
 internal sealed record DisplayTarget(string? MonitorInstance, string? FriendlyName, uint Technology, int Connector, int? Width, int? Height, double? RefreshHz);
@@ -96,6 +117,9 @@ internal static class DeviceTree
             Service = Registry(handle, CmDrpService),
             Problem = problem,
             Pci = id.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase) ? ReadPciLink(handle) : null,
+            RemovalPolicy = IntRegistry(handle, CmDrpRemovalPolicy),
+            PowerState = ReadPowerState(handle),
+            Irqs = ReadIrqs(handle),
             Parent = parent
         };
         if (depth < 32 && CM_Get_Child(out var child, handle, 0) == 0)
@@ -116,7 +140,7 @@ internal static class DeviceTree
             (int)(UIntProperty(handle, PciPropertyKeys, 12) ?? width.Value));
     }
 
-    // Asks every USB hub which device sits on which port and at what speed.
+    // Asks every USB hub which device sits on which port, at what speed, and what each port supports.
     private static void AttachUsbPorts(DeviceNode tree)
     {
         var hubs = new Dictionary<uint, DeviceNode>();
@@ -128,18 +152,50 @@ internal static class DeviceTree
             if (!hubs.TryGetValue(devInst, out var hub)) continue;
             using var handle = CreateFile(path, GenericWrite, FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
             if (handle.IsInvalid) continue;
-            var ports = PortCount(handle);
+            var (ports, busPowered) = HubInformation(handle);
             hub.HubPorts = ports;
+            hub.HubBusPowered = busPowered;
             for (var port = 1; port <= ports; port++)
             {
-                var connection = ConnectionInfo(handle, port);
+                var connection = ConnectionInfo(handle, port, out var protocols);
+                hub.PortMap.Add((port, protocols, connection is not null));
                 if (connection is null) continue;
                 var driverKey = PortDriverKey(handle, port);
                 var child = hub.Children.FirstOrDefault(c =>
                     driverKey is not null && string.Equals(c.DriverKey, driverKey, StringComparison.OrdinalIgnoreCase));
-                if (child is not null) child.Usb = connection;
+                if (child is null) continue;
+                var (power, selfPowered) = DevicePower(handle, port, child.InstanceId, connection.SuperSpeed);
+                child.Usb = connection with { PowerMa = power, SelfPowered = selfPowered };
             }
         }
+    }
+
+    // How much current a USB device asks for, from its configuration descriptor. Reading the descriptor is
+    // a request to the device itself, so each device is asked once per BoardScout session, never on a timer.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int? Power, bool? Self)> PowerCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static (int? PowerMa, bool? SelfPowered) DevicePower(SafeFileHandle hub, int port, string instanceId, bool superSpeed)
+    {
+        var key = $"{instanceId}|{superSpeed}";
+        if (PowerCache.TryGetValue(key, out var cached)) return cached;
+        // USB_DESCRIPTOR_REQUEST: ConnectionIndex, then the setup packet GET_DESCRIPTOR(CONFIGURATION, 0), 9 bytes.
+        var request = new byte[12 + 9];
+        BitConverter.GetBytes(port).CopyTo(request, 0);
+        request[4] = 0x80;
+        request[5] = 6;
+        request[7] = 2;
+        BitConverter.GetBytes((ushort)9).CopyTo(request, 10);
+        (int?, bool?) result = (null, null);
+        if (DeviceIoControl(hub, IoctlUsbGetDescriptorFromNodeConnection, request, request.Length, request, request.Length, out var returned, IntPtr.Zero) &&
+            returned >= 21 && request[13] == 2)
+        {
+            var attributes = request[12 + 7];
+            var maxPower = request[12 + 8];
+            // bMaxPower counts 8 mA units on SuperSpeed and 2 mA units on USB 2.
+            result = (maxPower * (superSpeed ? 8 : 2), (attributes & 0x40) != 0);
+        }
+        PowerCache[key] = result;
+        return result;
     }
 
     private static IEnumerable<(uint DevInst, string Path)> InterfacePaths(Guid interfaceClass)
@@ -178,16 +234,28 @@ internal static class DeviceTree
         }
     }
 
-    private static int PortCount(SafeFileHandle hub)
+    // USB_NODE_INFORMATION: NodeType (4) + USB_HUB_DESCRIPTOR (bLength, bDescriptorType, bNumberOfPorts, …, 71 bytes)
+    // + HubIsBusPowered (1) at offset 75.
+    private static (int Ports, bool BusPowered) HubInformation(SafeFileHandle hub)
     {
         var buffer = new byte[80];
         return DeviceIoControl(hub, IoctlUsbGetNodeInformation, buffer, buffer.Length, buffer, buffer.Length, out _, IntPtr.Zero)
-            ? buffer[6] // USB_NODE_INFORMATION: NodeType (4) + USB_HUB_DESCRIPTOR (bLength, bDescriptorType, bNumberOfPorts…)
-            : 0;
+            ? (buffer[6], buffer[75] != 0)
+            : (0, false);
     }
 
-    private static UsbPort? ConnectionInfo(SafeFileHandle hub, int port)
+    private static UsbPort? ConnectionInfo(SafeFileHandle hub, int port, out int protocols)
     {
+        // The _V2 query tells what the port supports (in the SupportedUsbProtocols field it returns) and, when
+        // something is plugged in, whether it runs at SuperSpeed — EX keeps reporting "high speed" for USB 3 devices.
+        var v2 = new byte[16];
+        BitConverter.GetBytes(port).CopyTo(v2, 0);
+        BitConverter.GetBytes(16).CopyTo(v2, 4);
+        BitConverter.GetBytes(7).CopyTo(v2, 8); // Usb110 | Usb200 | Usb300
+        var haveV2 = DeviceIoControl(hub, IoctlUsbGetNodeConnectionInformationExV2, v2, v2.Length, v2, v2.Length, out _, IntPtr.Zero);
+        protocols = haveV2 ? BitConverter.ToInt32(v2, 8) : 0;
+        var flags = haveV2 ? BitConverter.ToInt32(v2, 12) : 0;
+
         // USB_NODE_CONNECTION_INFORMATION_EX is packed: ConnectionIndex(4) + USB_DEVICE_DESCRIPTOR(18) +
         // CurrentConfigurationValue(1) + Speed(1) + DeviceIsHub(1) + DeviceAddress(2) + NumberOfOpenPipes(4) + ConnectionStatus(4).
         var buffer = new byte[512];
@@ -195,18 +263,53 @@ internal static class DeviceTree
         if (!DeviceIoControl(hub, IoctlUsbGetNodeConnectionInformationEx, buffer, buffer.Length, buffer, buffer.Length, out _, IntPtr.Zero))
             return null;
         if (BitConverter.ToInt32(buffer, 31) != 1) return null; // DeviceConnected
-        var speed = buffer[23];
-        var isHub = buffer[24] != 0;
+        return new UsbPort(port, buffer[23], flags, buffer[24] != 0, protocols);
+    }
 
-        // The _V2 query is the only reliable SuperSpeed signal: EX keeps reporting "high speed" for USB 3 devices.
-        var v2 = new byte[16];
-        BitConverter.GetBytes(port).CopyTo(v2, 0);
-        BitConverter.GetBytes(16).CopyTo(v2, 4);
-        BitConverter.GetBytes(7).CopyTo(v2, 8); // Usb110 | Usb200 | Usb300
-        var flags = DeviceIoControl(hub, IoctlUsbGetNodeConnectionInformationExV2, v2, v2.Length, v2, v2.Length, out _, IntPtr.Zero)
-            ? BitConverter.ToInt32(v2, 12)
-            : 0;
-        return new UsbPort(port, speed, flags, isHub);
+    private static int? IntRegistry(uint handle, int property)
+    {
+        var buffer = new byte[4];
+        var length = buffer.Length;
+        return CM_Get_DevNode_Registry_PropertyW(handle, property, out _, buffer, ref length, 0) == 0 && length == 4
+            ? BitConverter.ToInt32(buffer)
+            : null;
+    }
+
+    // CM_POWER_DATA: PD_Size, PD_MostRecentPowerState (DEVICE_POWER_STATE: 1 = D0 … 4 = D3), …
+    private static int? ReadPowerState(uint handle)
+    {
+        var buffer = new byte[64];
+        var length = buffer.Length;
+        if (CM_Get_DevNode_Registry_PropertyW(handle, CmDrpDevicePowerData, out _, buffer, ref length, 0) != 0 || length < 8) return null;
+        var state = BitConverter.ToInt32(buffer, 4);
+        return state is >= 1 and <= 4 ? state - 1 : null;
+    }
+
+    // The interrupts Windows assigned (the device's allocated resources); needs no admin rights.
+    private static List<(int Irq, bool Shareable)> ReadIrqs(uint handle)
+    {
+        var irqs = new List<(int, bool)>();
+        if (CM_Get_First_Log_Conf(out var configuration, handle, AllocLogConf) != 0) return irqs;
+        try
+        {
+            var current = configuration;
+            for (var i = 0; i < 64 && CM_Get_Next_Res_Des(out var next, current, ResTypeIrq, out _, 0) == 0; i++)
+            {
+                if (current != configuration) CM_Free_Res_Des_Handle(current);
+                current = next;
+                if (CM_Get_Res_Des_Data_Size(out var size, next, 0) != 0 || size < 16) continue;
+                var data = new byte[size];
+                if (CM_Get_Res_Des_Data(next, data, size, 0) != 0) continue;
+                // IRQ_DES: IRQD_Count, IRQD_Type, IRQD_Flags (bit 0 = shareable), IRQD_Alloc_Num, IRQD_Affinity.
+                irqs.Add((BitConverter.ToInt32(data, 12), (BitConverter.ToUInt32(data, 8) & 1) != 0));
+            }
+            if (current != configuration) CM_Free_Res_Des_Handle(current);
+        }
+        finally
+        {
+            CM_Free_Log_Conf_Handle(configuration);
+        }
+        return irqs;
     }
 
     private static string? PortDriverKey(SafeFileHandle hub, int port)
@@ -272,7 +375,13 @@ internal static class DeviceTree
             var celsius = BitConverter.ToInt16(thermal, 26);
             if (celsius is > 0 and < 120) temperature = celsius;
         }
-        return new DiskFacts(number, vendor, product, firmware, bus, size, temperature);
+
+        // DEVICE_SEEK_PENALTY_DESCRIPTOR: Version, Size, IncursSeekPenalty (a hard drive's moving heads).
+        bool? spinning = null;
+        var seek = new byte[12];
+        if (DeviceIoControl(handle, IoctlStorageQueryProperty, PropertyQuery(7), 12, seek, seek.Length, out var seekLength, IntPtr.Zero) && seekLength >= 9)
+            spinning = seek[8] != 0;
+        return new DiskFacts(number, vendor, product, firmware, bus, size, temperature, spinning);
     }
 
     /// <summary>Cumulative bytes and operations since boot plus the current queue depth, or null when the
@@ -463,6 +572,11 @@ internal static class DeviceTree
     private const int CmDrpClass = 0x08;
     private const int CmDrpDriver = 0x0A;
     private const int CmDrpFriendlyName = 0x0D;
+    private const int CmDrpDevicePowerData = 0x1F;
+    private const int CmDrpRemovalPolicy = 0x20;
+    private const int AllocLogConf = 2;
+    private const int ResTypeIrq = 4;
+    private const uint IoctlUsbGetDescriptorFromNodeConnection = 0x220410;
     private const int DigcfPresent = 0x02;
     private const int DigcfDeviceInterface = 0x10;
     private const uint GenericWrite = 0x40000000;
@@ -510,6 +624,24 @@ internal static class DeviceTree
 
     [DllImport("cfgmgr32.dll")]
     private static extern int CM_Get_DevNode_Status(out uint status, out uint problem, uint devInst, int flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Get_First_Log_Conf(out IntPtr logConf, uint devInst, int flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Get_Next_Res_Des(out IntPtr next, IntPtr current, int forResource, out int resourceId, int flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Get_Res_Des_Data_Size(out int size, IntPtr resDes, int flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Get_Res_Des_Data(IntPtr resDes, byte[] buffer, int size, int flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Free_Res_Des_Handle(IntPtr resDes);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Free_Log_Conf_Handle(IntPtr logConf);
 
     [DllImport("setupapi.dll", SetLastError = true)]
     private static extern IntPtr SetupDiGetClassDevsW(ref Guid classGuid, IntPtr enumerator, IntPtr parent, int flags);

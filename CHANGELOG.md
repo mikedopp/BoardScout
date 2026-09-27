@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.5.0 — 2026-09-27
+
+An optimization plan on the Connections map: where to plug things in, how to make every drive faster on
+the port or slot it uses, whether memory sits in the right slots, what conflicts or takes the most
+interrupt time, and what draws the most power.
+
+### Added
+- **Optimization plan** (Connections → *Optimization plan*), built from what the map just read. Every
+  item says what to do and has a *Show on the map* link that highlights the cards it is about.
+  - **USB ports:** each USB controller (the CPU's own or the chipset's), its USB 3 and USB 2-only
+    ports, how many are free, and what is plugged into each (hubs list what hangs off them). USB 3
+    devices stuck at USB 2 speed are called out with what limits them (on the test PC, a phone behind
+    a USB 2 hub), and drives that share one hub link are noted.
+  - **USB drives:** which already run at full speed (5 or 10 Gbps), which could run faster on a
+    10 Gbps port or in a UAS enclosure, and write caching: *Better performance* for drives that stay
+    on the desk (their own power supply, or behind a hub) and *Quick removal* for drives you carry.
+  - **Inside the PC:** NVMe drives given fewer lanes than they support (on the test PC, the SN570 in
+    the B550M Steel Legend's x2 M2_2 socket, with the x4 PCIE3 slot as the fix), whether the fastest
+    drive has the CPU's own M.2 socket, the graphics card's link (a card wired for 8 lanes on a Ryzen
+    5000G's PCIe 3.0 is expected, not a fault), everything sharing the chipset's uplink, and TRIM.
+  - **Memory:** slots from the firmware's own table (SMBIOS): channels in use, speed against the
+    modules' rating (XMP/DOCP/EXPO), mismatched kits, free slots, and on two-channel desktop boards
+    whether two sticks sit in the slots boards recommend. On the test PC it found both sticks in
+    A1/B1, where ASRock's manual recommends A2/B2.
+  - **Conflicts and interrupts:** devices Windows reports a problem with (a resource conflict is code
+    12), legacy interrupt lines shared by several devices, which devices use message-signaled
+    interrupts, and interrupts and DPCs per second on every logical processor.
+  - **Interrupt time per driver** (administrator): a 10-second Windows kernel trace of every
+    interrupt and DPC, summarized by driver with its devices, its share of processor time, and its
+    longest single run; runs over 1 ms, the kind that crackle audio, are flagged. Without admin, the
+    button restarts BoardScout as administrator (Windows asks first), reopens the plan, and measures.
+  - **Power:** what each USB device asks its port for, hubs without a power supply and what they
+    carry, devices Windows has put to sleep, the graphics card's live power draw (and the CPU's, with
+    admin and PawnIO), and battery state on laptops.
+  - **Compatibility:** what kind of PC BoardScout sees (desktop, laptop, server, or virtual machine,
+    from the firmware's chassis type) and what it could read on it.
+- **Memory on the map:** a Memory band under the CPU with every slot, filled or empty, and each
+  stick's size, speed, and part number.
+- More card details: the hub port a USB device uses and whether that port is USB 3, how much current
+  it asks for and whether it has its own power supply, whether Windows has put it to sleep, drive type
+  (SSD or hard drive) and write caching for every drive, and each PCI device's interrupts.
+- A **0.5 s** live refresh option (version button → Settings).
+- `--plan-json` prints the plan (`--privacy` masks it; `--profile` adds the driver measurement when
+  run as administrator).
+
+### Changed
+- Plugging in or removing a device redraws the map in about 0.7 s instead of 1.7 s: a first look
+  0.4 s after Windows reports the change, and one more once changes have stopped for 2 s, since a
+  drive's disk arrives a moment after its USB device.
+- USB devices are asked for their power needs once per session, never on a timer.
+- The map's side panels start below the header however tall it grows, and scrollbars are dark.
+
+### Fixed
+- The Connections header (summary, legend, Refresh) stayed on screen only for the first screenful of
+  scrolling; it now stays however far down the map you go.
+
+### Notes
+- The plan is built locally. The interrupt measurement keeps its trace in memory and saves nothing.
+- Windows can't say where a USB port is on the case, and many boards don't describe which USB 2 and
+  USB 3 ports share a connector; BoardScout pairs them in port order, as common controllers do.
+
 ## 1.4.0 — 2026-09-27
 
 Real names and real speeds on the Connections map: what your router, network, and the devices on it

@@ -17,6 +17,10 @@ internal static class Program
             return PrintConnectionsJsonAsync(args.Contains("--privacy", StringComparer.OrdinalIgnoreCase),
                 args.Contains("--sweep", StringComparer.OrdinalIgnoreCase)).GetAwaiter().GetResult();
 
+        if (args.Contains("--plan-json", StringComparer.OrdinalIgnoreCase))
+            return PrintPlanJsonAsync(args.Contains("--privacy", StringComparer.OrdinalIgnoreCase),
+                args.Contains("--profile", StringComparer.OrdinalIgnoreCase)).GetAwaiter().GetResult();
+
         if (args.Contains("--scan", StringComparer.OrdinalIgnoreCase) ||
             args.Contains("--check-drivers", StringComparer.OrdinalIgnoreCase))
         {
@@ -93,6 +97,24 @@ internal static class Program
 
     // Prints what the Connections tab receives. Contains local addresses and MACs unless --privacy is given;
     // --sweep pings every address on the local network first, like "Find more devices".
+    private static async Task<int> PrintPlanJsonAsync(bool privacy, bool profile)
+    {
+        try
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Privacy.Learn(null);
+            var json = await PlanService.GatherJsonAsync(privacy, profile);
+            Console.WriteLine(System.Text.Json.Nodes.JsonNode.Parse(json)?.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+            return 1;
+        }
+    }
+
     private static async Task<int> PrintConnectionsJsonAsync(bool privacy, bool sweep)
     {
         try

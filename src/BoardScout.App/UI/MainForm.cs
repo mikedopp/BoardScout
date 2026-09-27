@@ -37,7 +37,18 @@ public sealed class MainForm : Form
     private string? _discoveryGateways;
     private CancellationTokenSource? _wanLookupCts;
     private CancellationTokenSource? _speedTestCts;
-    private readonly System.Windows.Forms.Timer _deviceChangeTimer = new() { Interval = 1500 };
+    private CancellationTokenSource? _planCts;
+    private InterruptProfile? _interruptProfile;
+    private readonly bool _measureOnStart = Environment.GetCommandLineArgs().Contains(MeasureArgument, StringComparer.OrdinalIgnoreCase);
+    private const string MeasureArgument = "--measure-interrupts";
+
+    // A device change is read twice: a quick look 0.4 s after the first event, so a plugged-in device shows up
+    // at once, and a final look once events have been quiet for 2 s, since a drive's disk and volume arrive
+    // a moment after the USB device itself.
+    private readonly System.Windows.Forms.Timer _deviceChangeTimer = new() { Interval = 400 };
+    private readonly System.Windows.Forms.Timer _deviceSettleTimer = new() { Interval = 2000 };
+    private bool _deviceBurst;
+    private bool _changedSinceRefresh;
     private readonly Dictionary<string, string> _netKeys = [];
     private readonly List<(TabPage Page, WebView2 View)> _webTabs = [];
     private readonly GlassMetricTile _tempTile = new("TEMP", "—");
@@ -132,6 +143,7 @@ public sealed class MainForm : Form
             StartTelemetry();
             // The web views start after the cached board is on screen so they never delay it.
             await InitializeWebViewsAsync();
+            if (_measureOnStart && _connectionsPage is not null) _tabs.SelectedTab = _connectionsPage;
         };
         FormClosing += (_, _) =>
         {
@@ -144,8 +156,10 @@ public sealed class MainForm : Form
             _telemetryService.Dispose();
             _wanLookupCts?.Cancel();
             _speedTestCts?.Cancel();
+            _planCts?.Cancel();
             NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
             _deviceChangeTimer.Dispose();
+            _deviceSettleTimer.Dispose();
             _topologyWebView.Dispose();
             _systemWebView.Dispose();
             _connectionsWebView.Dispose();
@@ -153,8 +167,13 @@ public sealed class MainForm : Form
         _deviceChangeTimer.Tick += (_, _) =>
         {
             _deviceChangeTimer.Stop();
-            _connectionsStale = true;
-            if (ConnectionsVisible) _ = LoadConnectionsAsync();
+            RefreshAfterDeviceChange();
+        };
+        _deviceSettleTimer.Tick += (_, _) =>
+        {
+            _deviceSettleTimer.Stop();
+            _deviceBurst = false;
+            if (_changedSinceRefresh) RefreshAfterDeviceChange();
         };
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
     }
@@ -178,8 +197,21 @@ public sealed class MainForm : Form
     private void QueueConnectionsRefresh()
     {
         _connectionsStale = true;
-        _deviceChangeTimer.Stop();
-        _deviceChangeTimer.Start();
+        _changedSinceRefresh = true;
+        if (!_deviceBurst)
+        {
+            _deviceBurst = true;
+            _deviceChangeTimer.Start();
+        }
+        _deviceSettleTimer.Stop();
+        _deviceSettleTimer.Start();
+    }
+
+    private void RefreshAfterDeviceChange()
+    {
+        _changedSinceRefresh = false;
+        _connectionsStale = true;
+        if (ConnectionsVisible) _ = LoadConnectionsAsync();
     }
 
     private void BuildTrayIcon()
@@ -529,6 +561,9 @@ public sealed class MainForm : Form
             _connectionsReady = true;
             PostSettings(_connectionsWebView);
             if (_connectionsPayload is not null) _connectionsWebView.CoreWebView2.PostWebMessageAsJson(_connectionsPayload);
+            // Restarted as administrator from the plan: go straight back to it and measure.
+            if (_measureOnStart && SystemTelemetryService.IsElevated)
+                _connectionsWebView.CoreWebView2.PostWebMessageAsJson("{\"type\":\"openplan\",\"measure\":true}");
         });
         if (_connectionsWebView.CoreWebView2 is { } connections)
             connections.WebMessageReceived += OnConnectionsMessage;
@@ -658,6 +693,18 @@ public sealed class MainForm : Form
             {
                 _speedTestCts?.Cancel();
             }
+            else if (type == "plan")
+            {
+                await BuildPlanAsync(measure: false);
+            }
+            else if (type == "irqprofile")
+            {
+                await BuildPlanAsync(measure: true);
+            }
+            else if (type == "elevate")
+            {
+                RestartElevated(MeasureArgument);
+            }
             else if (type == "wan")
             {
                 _wanLookupCts?.Cancel();
@@ -679,6 +726,46 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             AppendLog("CONNECTIONS: " + ex.Message);
+        }
+    }
+
+    // The optimization plan, built from the last map read plus a one-second interrupt sample. Measuring
+    // interrupt time per driver runs a ten-second kernel trace, which needs administrator rights.
+    private async Task BuildPlanAsync(bool measure)
+    {
+        _planCts?.Cancel();
+        var cts = _planCts = new CancellationTokenSource();
+        try
+        {
+            PostToConnections(measure ? "{\"type\":\"planbusy\",\"measuring\":true}" : "{\"type\":\"planbusy\"}");
+            if (_connectionsCapture is null) _ = LoadConnectionsAsync();
+            for (var i = 0; i < 150 && _connectionsCapture is null; i++) await Task.Delay(100, cts.Token);
+            if (_connectionsCapture is not { } capture) throw new InvalidOperationException("The device map isn't ready yet.");
+
+            var cores = InterruptStats.SampleAsync(TimeSpan.FromSeconds(1), cts.Token);
+            if (measure && SystemTelemetryService.IsElevated)
+            {
+                AppendLog("PLAN: timing interrupts and DPCs per driver for 10 seconds with a Windows kernel trace, at your request.");
+                var profile = await InterruptProfiler.MeasureAsync(TimeSpan.FromSeconds(10), capture.Tree, cts.Token);
+                if (profile.Error is null || _interruptProfile is null) _interruptProfile = profile;
+                AppendLog(profile.Error is { } error
+                    ? "PLAN: " + error
+                    : $"PLAN: {profile.Drivers.Count} drivers handled interrupts; the busiest was {profile.Drivers.FirstOrDefault()?.Driver ?? "none"}.");
+            }
+            var loads = await cores;
+            var privacy = Privacy.Enabled;
+            var discovery = _discovery;
+            var measured = _interruptProfile;
+            var power = _lastTelemetry?.Power;
+            var json = await Task.Run(() => PlanService.ToJson(
+                PlanService.Build(capture, ConnectionsService.Build(capture, privacy, discovery), loads, measured, privacy, power)), cts.Token);
+            if (!IsDisposed && !cts.IsCancellationRequested) PostToConnections(json);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            AppendLog("PLAN: " + ex.Message);
+            PostToConnections($"{{\"type\":\"planerror\",\"error\":{System.Text.Json.JsonSerializer.Serialize(ex.Message, BoardScoutJson.Default.String)}}}");
         }
     }
 
@@ -1549,7 +1636,9 @@ public sealed class MainForm : Form
         }
     }
 
-    private void RestartElevated()
+    private void RestartElevated() => RestartElevated(null);
+
+    private void RestartElevated(string? arguments)
     {
         try
         {
@@ -1557,6 +1646,7 @@ public sealed class MainForm : Form
             {
                 UseShellExecute = true,
                 Verb = "runas",
+                Arguments = arguments ?? "",
                 WorkingDirectory = AppContext.BaseDirectory
             });
             _trayIcon.Visible = false;

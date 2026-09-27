@@ -22,22 +22,34 @@ internal static partial class ConnectionsService
     /// <summary>Everything read from the PC for one map. Building the map from it again is cheap, so a
     /// privacy toggle or late-arriving network names do not re-read the hardware.</summary>
     internal sealed record Capture(
-        DeviceNode? Tree, Dictionary<uint, int> Disks, List<DisplayTarget> Displays, NetworkFacts Network, long CaptureMs, DateTimeOffset At);
+        DeviceNode? Tree, Dictionary<uint, int> Disks, Dictionary<int, DiskFacts> DiskFacts, List<DisplayTarget> Displays,
+        NetworkFacts Network, FirmwareFacts Firmware, long CaptureMs, DateTimeOffset At);
 
     public static Capture Read()
     {
         var watch = Stopwatch.StartNew();
-        // Reverse DNS and pings can wait on silent hosts, so the network side runs alongside the device walk.
+        // Everything that does not depend on the device walk runs alongside it; reverse DNS and pings in the
+        // network probe are the slowest part.
         var network = Task.Run(NetworkProbe.Capture);
+        var displays = Task.Run(DeviceTree.DisplayTargets);
+        var firmware = Task.Run(Smbios.Read);
+        var disks = Task.Run(() =>
+        {
+            var numbers = DeviceTree.DiskNumbers();
+            var facts = new Dictionary<int, DiskFacts>();
+            foreach (var number in numbers.Values.Distinct())
+                if (DeviceTree.ReadDisk(number) is { } disk) facts[number] = disk;
+            return (numbers, facts);
+        });
         var tree = DeviceTree.Capture();
-        var disks = DeviceTree.DiskNumbers();
-        var displays = DeviceTree.DisplayTargets();
-        return new Capture(tree, disks, displays, network.GetAwaiter().GetResult(), watch.ElapsedMilliseconds, DateTimeOffset.Now);
+        var (diskNumbers, diskFacts) = disks.GetAwaiter().GetResult();
+        return new Capture(tree, diskNumbers, diskFacts, displays.GetAwaiter().GetResult(), network.GetAwaiter().GetResult(),
+            firmware.GetAwaiter().GetResult(), watch.ElapsedMilliseconds, DateTimeOffset.Now);
     }
 
     public static ConnectionsSnapshot Build(Capture capture, bool privacy, DiscoveryResult? discovery)
     {
-        var builder = new MapBuilder(capture.Tree, capture.Disks, capture.Displays, capture.Network, privacy, discovery);
+        var builder = new MapBuilder(capture, privacy, discovery);
         var root = builder.Build();
         return new ConnectionsSnapshot
         {
@@ -65,6 +77,16 @@ internal static partial class ConnectionsService
     /// <summary>The key the live-rate messages use for a network interface.</summary>
     public static string NetKey(string interfaceId) => "n" + ShortHash(interfaceId);
 
+    /// <summary>The map card id for a device (a hash of its instance, never the instance itself).</summary>
+    internal static string DeviceNodeId(DeviceNode device) => "d" + ShortHash(device.InstanceId);
+
+    internal static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1_000_000_000_000 => $"{bytes / 1e12:0.#} TB",
+        >= 1_000_000_000 => $"{bytes / 1e9:0} GB",
+        _ => $"{bytes / 1e6:0} MB"
+    };
+
     internal static string ShortHash(string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToUpperInvariant())))[..10].ToLowerInvariant();
 
@@ -74,8 +96,10 @@ internal static partial class ConnectionsService
 
         private readonly DeviceNode? _tree;
         private readonly Dictionary<uint, int> _disks;
+        private readonly Dictionary<int, DiskFacts> _diskFacts;
         private readonly List<DisplayTarget> _displays;
         private readonly NetworkFacts _network;
+        private readonly FirmwareFacts _firmware;
         private readonly DiscoveryResult? _discovery;
         private readonly bool _privacy;
         private readonly Dictionary<(int Vendor, int Product), (string Vendor, string? Product)> _usbNames;
@@ -87,13 +111,15 @@ internal static partial class ConnectionsService
         private ConnectionNode? _platform;
         private bool _gpuSensorTaken;
 
-        public MapBuilder(DeviceNode? tree, Dictionary<uint, int> disks, List<DisplayTarget> displays, NetworkFacts network,
-            bool privacy, DiscoveryResult? discovery)
+        public MapBuilder(Capture capture, bool privacy, DiscoveryResult? discovery)
         {
+            var tree = capture.Tree;
             _tree = tree;
-            _disks = disks;
-            _displays = displays;
-            _network = network;
+            _disks = capture.Disks;
+            _diskFacts = capture.DiskFacts;
+            _displays = capture.Displays;
+            _network = capture.Network;
+            _firmware = capture.Firmware;
             _discovery = discovery;
             _privacy = privacy;
             _cpuName = ReadMachineString(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString") ?? "Processor";
@@ -142,11 +168,83 @@ internal static partial class ConnectionsService
                         AddFromRootBus(device);
             }
             if (_platform is not null) _cpu.Children.Add(_platform);
+            AddMemoryBand();
             AddVirtualAdapters();
 
             if (!SystemTelemetryService.IsElevated && Walk(_cpu).Any(n => n.Disk is not null && n.TemperatureC is null))
                 Notes.Add("Only some drives report their temperature to Windows without administrator rights.");
             return _cpu;
+        }
+
+        // ---- Memory --------------------------------------------------------------------------
+
+        // The memory controller is inside the CPU: one band, one card per slot (empty ones too).
+        private void AddMemoryBand()
+        {
+            var analysis = MemoryAdvice.Analyze(_firmware, ReadMachineString(@"HARDWARE\DESCRIPTION\System\BIOS", "BaseBoardProduct"));
+            if (analysis is null || _cpu is null) return;
+            var band = new ConnectionNode
+            {
+                Id = "memory",
+                Kind = "memory",
+                Name = $"Memory · {analysis.TotalGb:0.#} GB {analysis.Type}",
+                Detail = string.Join(" · ", new[] { analysis.ChannelText, analysis.ConfiguredMts > 0 ? $"{analysis.ConfiguredMts} MT/s" : null }.Where(s => s is not null)),
+                Link = new ConnectionLink
+                {
+                    Bus = "memory",
+                    Label = $"{analysis.Type} memory controller inside the CPU" + (analysis.ChannelText is null ? "" : $", {analysis.ChannelText}"),
+                    Short = analysis.ChannelsUsed >= 2 ? $"{analysis.ChannelsUsed} channels" : "1 channel",
+                    // Each 64-bit channel moves 8 bytes per transfer.
+                    Gbps = analysis.ConfiguredMts > 0 ? analysis.ConfiguredMts * 64d * Math.Max(1, analysis.ChannelsUsed) / 1000 : null
+                },
+                Facts =
+                {
+                    new("Installed", $"{analysis.TotalGb:0.#} GB in {analysis.Populated} of {analysis.Slots.Count} slots"),
+                    new("Channels", $"{analysis.ChannelsUsed} of {analysis.ChannelsTotal} in use"),
+                }
+            };
+            if (analysis.ConfiguredMts > 0) band.Facts.Add(new("Speed", analysis.RatedMts > analysis.ConfiguredMts
+                ? $"{analysis.ConfiguredMts} MT/s (rated {analysis.RatedMts})" : $"{analysis.ConfiguredMts} MT/s"));
+            if (analysis.ConfiguredMts > 0)
+                band.Facts.Add(new("Bandwidth", $"about {analysis.ConfiguredMts * 8d * Math.Max(1, analysis.ChannelsUsed) / 1000:0.#} GB/s"));
+            var warning = analysis.Findings.FirstOrDefault(f => f.Tone is "warn" or "improve");
+            if (warning is not null)
+            {
+                band.Warning = $"{warning.Title}. {warning.Detail}";
+                if (warning.Action is not null) band.Note = warning.Action;
+            }
+
+            foreach (var placement in analysis.Slots)
+            {
+                var slot = placement.Slot;
+                var dimm = new ConnectionNode
+                {
+                    Id = $"dimm-{ShortHash(slot.DeviceLocator + "|" + slot.BankLocator)}",
+                    Kind = slot.Populated ? "dimm" : "dimm-empty",
+                    Name = slot.Populated ? $"{placement.Label} · {slot.SizeMb / 1024d:0.#} GB" : $"{placement.Label} · empty",
+                    Detail = slot.Populated
+                        ? string.Join(" · ", new[] { slot.ConfiguredMts > 0 ? $"{slot.ConfiguredMts} MT/s" : null, slot.PartNumber }.Where(s => s is not null))
+                        : placement.Recommended ? "Recommended slot" : "Free slot",
+                    Link = new ConnectionLink
+                    {
+                        Bus = "memory",
+                        Label = slot.Channel is null ? "Memory slot" : $"Channel {slot.Channel}",
+                        Short = slot.Channel is null ? "slot" : $"ch {slot.Channel}"
+                    },
+                    Facts = { new("Slot", $"{placement.Label} ({slot.DeviceLocator}{(slot.BankLocator.Length > 0 ? ", " + slot.BankLocator : "")})") }
+                };
+                if (slot.Channel is not null) dimm.Facts.Add(new("Channel", slot.Channel));
+                if (slot.Populated)
+                {
+                    dimm.Facts.Add(new("Size", $"{slot.SizeMb / 1024d:0.#} GB {slot.MemoryType}"));
+                    if (slot.ConfiguredMts > 0) dimm.Facts.Add(new("Speed", $"{slot.ConfiguredMts} MT/s now; {slot.SpeedMts} MT/s reported maximum"));
+                    if (slot.Rank > 0) dimm.Facts.Add(new("Ranks", slot.Rank == 1 ? "Single rank" : $"{slot.Rank} ranks"));
+                    if (slot.PartNumber is not null) dimm.Facts.Add(new("Part number", slot.PartNumber));
+                }
+                if (placement.Recommended) dimm.Facts.Add(new("Placement", "Recommended slot for two sticks"));
+                band.Children.Add(dimm);
+            }
+            _cpu.Children.Add(band);
         }
 
         // ---- PCI -----------------------------------------------------------------------------
@@ -273,8 +371,23 @@ internal static partial class ConnectionsService
                     ? new ConnectionLink { Bus = "internal", Label = "Built in (no external link)", Short = "internal" }
                     : device.Pci is null ? new ConnectionLink { Bus = "pcie", Label = "PCIe", Short = "PCIe" } : PciLink(device.Pci);
             }
+            AddInterruptFacts(node, device, siblings);
             AddProblem(node, device);
             return node;
+        }
+
+        // Message-signaled interrupts (MSI/MSI-X) never conflict; legacy lines can be shared between devices.
+        private static void AddInterruptFacts(ConnectionNode node, DeviceNode device, IReadOnlyList<DeviceNode> siblings)
+        {
+            var irqs = device.Irqs.Concat(siblings.Where(s => s != device && node.Facts.Any(f => f.Label == "Also on this card") &&
+                                                                VendorOf(s) == VendorOf(device)).SelectMany(s => s.Irqs)).ToList();
+            if (irqs.Count == 0) return;
+            var msi = irqs.Count(i => i.Irq < 0);
+            var lines = irqs.Where(i => i.Irq >= 0).Select(i => i.Irq).Distinct().ToList();
+            node.Facts.Add(new("Interrupts", lines.Count == 0
+                ? $"{msi} message-signaled (MSI), the modern kind that never conflicts"
+                : msi == 0 ? $"Legacy line{(lines.Count == 1 ? "" : "s")} IRQ {string.Join(", ", lines)}"
+                : $"{msi} message-signaled, plus legacy IRQ {string.Join(", ", lines)}"));
         }
 
         private ConnectionNode BuildGpu(DeviceNode device, IReadOnlyList<DeviceNode> siblings)
@@ -385,7 +498,7 @@ internal static partial class ConnectionsService
             if (!_disks.TryGetValue(disk.Handle, out var number)) return node;
 
             node.Disk = number;
-            var facts = DeviceTree.ReadDisk(number);
+            var facts = _diskFacts.GetValueOrDefault(number);
             var parts = new List<string>();
             if (facts?.SizeBytes is > 0) parts.Add(FormatBytes(facts.SizeBytes.Value));
             if (facts?.Firmware is { } firmware)
@@ -402,6 +515,11 @@ internal static partial class ConnectionsService
                 node.TemperatureC = temperature;
                 node.Facts.Add(new("Temperature", $"{temperature:0} °C"));
             }
+            if (facts?.Spinning is { } spinning) node.Facts.Add(new("Drive type", spinning ? "Hard drive (spinning disk)" : "Solid-state drive"));
+            if (disk.RemovalPolicy is 2 or 3)
+                node.Facts.Add(new("Write caching", disk.RemovalPolicy == 2
+                    ? "On (Better performance): use Safely Remove before unplugging"
+                    : "Off (Quick removal): safe to unplug any time, slower writes"));
             return node;
         }
 
@@ -481,7 +599,14 @@ internal static partial class ConnectionsService
             }
 
             if (id is { } usb) node.Facts.Add(new("USB ID", $"{usb.Vendor:X4}:{usb.Product:X4}"));
-            if (device.Usb is { } port) node.Facts.Add(new("Hub port", port.Port.ToString(CultureInfo.InvariantCulture)));
+            if (device.Usb is { } port)
+            {
+                node.Facts.Add(new("Hub port", $"{port.Port} ({((port.Protocols & 4) != 0 ? "USB 3" : "USB 2")} port)"));
+                if (port.PowerMa is { } power)
+                    node.Facts.Add(new("Power", $"Asks for up to {power} mA from the port{(port.SelfPowered == true ? "; has its own power supply" : "")}"));
+            }
+            if (device.PowerState is > 0) node.Facts.Add(new("Power state", $"Asleep (D{device.PowerState}): Windows suspended it while idle"));
+            if (isHub) node.Facts.Add(new("Hub power", device.HubBusPowered ? "Bus-powered: shares one port's power with everything plugged into it" : "Self-powered or built in"));
             AddDriverFact(node, interfaces.FirstOrDefault(i => i.IsClass("MEDIA")) ?? device);
             node.Link = UsbLink(device.Usb);
             if (companion && node.Link.Degraded)
@@ -1302,13 +1427,6 @@ internal static partial class ConnectionsService
             >= 1_000_000 => $"{bitsPerSecond / 1e6:0} Mbps",
             > 0 => $"{bitsPerSecond / 1e3:0} Kbps",
             _ => "unknown speed"
-        };
-
-        private static string FormatBytes(long bytes) => bytes switch
-        {
-            >= 1_000_000_000_000 => $"{bytes / 1e12:0.#} TB",
-            >= 1_000_000_000 => $"{bytes / 1e9:0} GB",
-            _ => $"{bytes / 1e6:0} MB"
         };
 
         private static bool SameSubnet(IPAddress address, string cidr)

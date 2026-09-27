@@ -4,6 +4,9 @@ public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 
 public sealed record FanReading(string Name, int Rpm, bool Active);
 
+/// <summary>Power draw a sensor reports right now: "CPU" (package) or "GPU" (the whole card or chip).</summary>
+public sealed record PowerReading(string Device, double Watts);
+
 /// <summary>
 /// Bytes per second toward the CPU (received or read) and away from it (sent or written). OpsIn/OpsOut
 /// are packets per second for a network adapter and reads/writes per second (IOPS) for a disk.
@@ -35,6 +38,9 @@ public sealed record SystemTelemetry(
 
     /// <summary>Requests waiting at each physical disk right now, when detailed rates are on.</summary>
     public IReadOnlyDictionary<int, int>? DiskQueues { get; init; }
+
+    /// <summary>CPU and GPU power draw, when the sensors report it.</summary>
+    public IReadOnlyList<PowerReading> Power { get; init; } = [];
 
     public ulong MemoryUsedBytes => MemoryTotalBytes > MemoryAvailableBytes
         ? MemoryTotalBytes - MemoryAvailableBytes

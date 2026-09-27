@@ -4,7 +4,7 @@ BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self
 they also redistribute the components below. Each keeps its own license. Nothing here is
 modified from the published version.
 
-Last reviewed for BoardScout 1.4.0 (2026-09-27).
+Last reviewed for BoardScout 1.5.0 (2026-09-27).
 
 ## Libraries compiled into BoardScout.exe
 
@@ -161,7 +161,12 @@ respective owners and are used for identification only.
 - **NVIDIA**, **GeForce**, and **RTX** are trademarks of NVIDIA Corporation.
 - **ASRock** is a trademark of ASRock Inc.
 - **Microsoft**, **Windows**, **Windows 11**, **WebView2**, and **Xbox** are trademarks of Microsoft Corporation.
-- **Crucial** and **Micron** are trademarks of Micron Technology, Inc.
+- **Crucial**, **Ballistix**, and **Micron** are trademarks of Micron Technology, Inc.
+- **G.SKILL**, **Kingston**, and **Corsair** belong to G.SKILL International Enterprise Co., Ltd.,
+  Kingston Technology Corporation, and Corsair Memory, Inc.; BoardScout reads their memory part
+  numbers only to find a kit's rated speed.
+- **XMP** (Intel), **EXPO** (AMD), and **DOCP** (ASUSTeK Computer Inc.) are memory-profile names of
+  their respective owners.
 - **Samsung** is a trademark of Samsung Electronics Co., Ltd.
 - **Western Digital**, **WD**, **WD Blue**, **My Passport**, and **My Book** are trademarks of Western Digital Corporation.
 - **Lexar** is a trademark of Longsys Electronics.
