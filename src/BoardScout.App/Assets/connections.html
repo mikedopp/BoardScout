@@ -93,6 +93,18 @@ body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px so
 #legend .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl)}
 #legend .dot.out{background:#e8edf4;box-shadow:0 0 6px #e8edf4}
 #legend .sep{width:1px;height:12px;background:var(--b)}
+/* Live drives: platters and flash cells driven by Windows' disk counters */
+.dcard{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);padding:10px 12px 9px;margin-top:10px}
+.dcard .top{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+.dcard .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.dcard .nm:hover{text-decoration:underline}
+.dcard .tag{font-size:10px;border-radius:6px;padding:1px 6px;background:rgba(255,255,255,.07);color:var(--ts);font-weight:600}
+.dcard .tmp{font-size:11px;color:var(--ts);font-weight:500}
+canvas.dview{display:block;width:100%;height:120px;margin-top:4px}
+.dstats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--tm);margin-top:2px}
+.dstats b{display:block;color:var(--t);font-weight:600;font-variant-numeric:tabular-nums;font-size:12px;letter-spacing:0;text-transform:none}
+.dstats .r{color:#58a6ff}.dstats .w{color:#f59e0b}
+#drivesBody > .sum{font-size:11.5px;color:var(--ts);line-height:1.5;margin:12px 2px 4px}
 /* Memory slots on the map */
 .card.empty .face{opacity:.62}
 /* Cards a plan item points at */
@@ -101,17 +113,17 @@ body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px so
 body.no-motion .card.flash .edge{animation:none}
 /* Optimization plan */
 #head .actions{display:flex;gap:8px}
-#plan{position:fixed;top:92px;left:18px;bottom:18px;width:480px;max-width:calc(100vw - 36px);border-radius:20px;z-index:8;display:none;
+#plan,#drives{position:fixed;top:92px;left:18px;bottom:18px;width:480px;max-width:calc(100vw - 36px);border-radius:20px;z-index:8;display:none;
   flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.5);overflow:hidden;
   background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(15,27,40,.94);
   border:1px solid rgba(255,255,255,.09);border-top-color:rgba(255,255,255,.2);backdrop-filter:blur(16px) saturate(1.4)}
-body.no-glass #plan{background:var(--sr);backdrop-filter:none;border:1px solid var(--b)}
-#plan.open{display:flex}
-body.plan-open #stage{padding-left:510px}
-#planHead{position:relative;padding:16px 18px 12px;border-bottom:1px solid rgba(255,255,255,.07)}
-#planHead .kind{font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#a3e635}
-#planHead h2{font-size:16px;margin:4px 0 2px;line-height:1.3}
-#planHead .d{color:var(--ts);font-size:12px}
+body.no-glass #plan,body.no-glass #drives{background:var(--sr);backdrop-filter:none;border:1px solid var(--b)}
+#plan.open,#drives.open{display:flex}
+body.plan-open #stage,body.drives-open #stage{padding-left:510px}
+#planHead,#drivesHead{position:relative;padding:16px 18px 12px;border-bottom:1px solid rgba(255,255,255,.07)}
+#planHead .kind,#drivesHead .kind{font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:#a3e635}
+#planHead h2,#drivesHead h2{font-size:16px;margin:4px 0 2px;line-height:1.3}
+#planHead .d,#drivesHead .d{color:var(--ts);font-size:12px}
 .xclose{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--ts);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}
 .xclose:hover{background:rgba(255,255,255,.08);color:var(--t)}
 #planNav{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
@@ -121,7 +133,7 @@ body.plan-open #stage{padding-left:510px}
 #planNav .n{min-width:17px;height:17px;border-radius:9px;background:rgba(245,158,11,.2);color:var(--w);font-size:10.5px;font-weight:700;
   display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
 #planNav .n.warn{background:rgba(239,68,68,.2);color:#fca5a5}
-#planBody{flex:1;overflow:auto;padding:2px 18px 18px}
+#planBody,#drivesBody{flex:1;overflow:auto;padding:2px 18px 18px}
 .psec{margin-top:16px;scroll-margin-top:10px}
 .psec h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tm);margin-bottom:4px}
 .psec .sum{font-size:12px;color:var(--ts);line-height:1.5;margin-bottom:8px}
@@ -200,6 +212,7 @@ body.plan-open #stage{padding-left:510px}
     </div>
   </div>
   <div class="actions">
+    <button class="btn" id="drivesBtn" title="Every drive live: spinning platters for hard drives, flash cells for SSDs">Live drives</button>
     <button class="btn" id="planBtn" title="Where to plug things in, faster drives, memory placement, interrupts, and power">Optimization plan</button>
     <button class="btn primary" id="refresh" title="Read the device tree and network again">Refresh</button>
   </div>
@@ -209,6 +222,7 @@ body.plan-open #stage{padding-left:510px}
 <canvas id="flow" aria-hidden="true"></canvas>
 <div id="inspector" aria-live="polite"><div class="ql-content"><div id="insp"></div></div></div>
 <div id="plan" role="region" aria-label="Optimization plan"><div id="planHead"></div><div id="planBody"></div></div>
+<div id="drives" role="region" aria-label="Live drives"><div id="drivesHead"></div><div id="drivesBody"></div></div>
 <script src="vendor/d3/d3.v7.min.js"></script>
 <script>
 'use strict';
@@ -275,7 +289,7 @@ const ICON={
 const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=18,SPINE=64,COL_INSET=30;
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
   history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
-  speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false};
+  speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false};
 
 const post=m=>window.chrome?.webview?.postMessage(m);
 const $=id=>document.getElementById(id);
@@ -455,7 +469,7 @@ function render(){
   const root=data.root;
   const all=prepare(root);
   state.nodes=new Map(all.map(n=>[n.id,n]));
-  const viewW=document.documentElement.clientWidth-(state.planOpen?510:0);
+  const viewW=document.documentElement.clientWidth-(state.planOpen||state.drivesOpen?510:0);
   const {pos,width,height}=layout(root,viewW);
   state.pos=pos;
   const scale=Math.max(.72,Math.min(1,(viewW-8)/width));
@@ -496,6 +510,7 @@ function render(){
 
   renderSummary();
   placePanels();
+  renderDrives();
   if(state.selected&&state.nodes.has(state.selected))select(state.selected,false);
   else closeInspector(false);
   applyFlow();
@@ -504,7 +519,7 @@ function render(){
 // The side panels start just below the header, which grows when the summary pills wrap.
 function placePanels(){
   const top=Math.round($('head').getBoundingClientRect().bottom)+2;
-  for(const id of ['inspector','plan'])$(id).style.top=top+'px';
+  for(const id of ['inspector','plan','drives'])$(id).style.top=top+'px';
 }
 
 // While the details panel is open, the page gets room to scroll whatever it covers into view.
@@ -611,7 +626,7 @@ function scrollToNode(id){
   const p=state.pos?.get(id);if(!p)return;
   const s=state.scale,head=$('head').offsetHeight;
   const rect=$('map').getBoundingClientRect(),mapLeft=rect.left+window.scrollX;
-  const room=state.planOpen?510:0;
+  const room=state.planOpen||state.drivesOpen?510:0;
   window.scrollTo({top:Math.max(0,p.y*s+head-window.innerHeight/2),left:Math.max(0,mapLeft+p.x*s-room-(window.innerWidth-room)/3),behavior:state.motion?'smooth':'auto'});
 }
 
@@ -794,6 +809,7 @@ function select(id,user){
 
   if(hasFlow(n)){
     const s=el('div','sec');s.append(el('h3',null,n.disk!=null&&!n.net?'Disk activity':'Live traffic'));
+    if(n.disk!=null&&!n.net){const cv=el('canvas','dview');s.append(cv);diskView(cv,n,120)}
     const live=el('div','live');live.id='live';s.append(live);
     const ops=el('div','live');ops.id='ops';s.append(ops);
     const canvas=el('canvas');canvas.id='spark';s.append(canvas);
@@ -971,7 +987,7 @@ function applySettings(s){
   document.body.classList.toggle('no-glass',!state.glass);
   document.body.classList.toggle('no-motion',!state.motion);
   if(!state.motion&&state.anim){cancelAnimationFrame(state.anim);state.anim=0;clearFlow()}
-  else startAnimation();
+  else {startAnimation();startDiskViews()}
   syncGlass();
 }
 
@@ -990,11 +1006,207 @@ async function syncGlass(){
   else if(state.inspGlass)state.inspGlass.updateConfig({dynamicLighting:state.motion});
 }
 
+// ---- Live drives -------------------------------------------------------------------------
+// Ported from DedupApp. Hard drives draw as a platter whose spin follows throughput and an arm that seeks
+// at the measured operation rate (parking when idle); SSDs and NVMe drives draw as flash cells lit by real
+// operations. It is a picture of Windows' disk counters: Windows doesn't report a drive's real head
+// position or spin, so nothing here pretends to.
+
+const DV_READ=[88,166,255],DV_WRITE=[245,158,11];
+const dvRgba=(c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const diskViews=new Set();
+let dvRaf=0,dvLast=0;
+
+function diskSample(n){const d=n.disk!=null?state.flow?.disk?.[n.disk]:null;return {r:d?.[0]||0,w:d?.[1]||0,ops:(d?.[2]||0)+(d?.[3]||0),q:d?.[4]||0}}
+function isSpinning(n){return /^Hard drive/.test(n.facts?.find(f=>f.label==='Drive type')?.value||'')}
+function driveTag(n){return n.kind==='nvme'?'NVMe':isSpinning(n)?'HDD':'SSD'}
+
+function diskView(canvas,node,height){
+  diskViews.add({canvas,node,height,rotation:0,head:.05,headTarget:.05,nextSeek:0,idleFor:0,dots:[],cells:new Float32Array(96),kinds:new Uint8Array(96)});
+  startDiskViews();
+  requestAnimationFrame(()=>drawDisks(0,true));
+}
+function startDiskViews(){if(dvRaf||!diskViews.size||!state.motion||document.hidden)return;dvLast=performance.now();dvRaf=requestAnimationFrame(diskFrame)}
+function diskFrame(now){
+  dvRaf=0;
+  if(now-dvLast>=30){const dt=Math.min(.1,(now-dvLast)/1000);dvLast=now;drawDisks(dt,false)}
+  if(diskViews.size&&state.motion&&!document.hidden)dvRaf=requestAnimationFrame(diskFrame);
+}
+function drawDisks(dt,still){
+  for(const v of diskViews){if(!v.canvas.isConnected){diskViews.delete(v);continue}drawDisk(v,dt,still||!state.motion)}
+}
+
+function drawDisk(v,dt,still){
+  const cv=v.canvas,w=cv.clientWidth,h=v.height;if(!w)return;
+  const ctx=v.ctx||(v.ctx=cv.getContext('2d')),dpr=devicePixelRatio||1;
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const now=performance.now();
+  const s=diskSample(v.node),readBps=s.r,writeBps=s.w,ops=s.ops,total=readBps+writeBps;
+  const active=total>1024||ops>0.5;
+  v.idleFor=active?0:v.idleFor+dt;
+  const intensity=Math.min(1,Math.log10(1+total/1e5)/3.2),writeShare=total>0?writeBps/total:0;
+  ctx.clearRect(0,0,w,h);
+  const radius=Math.min(h*.44,w*.26),cx=radius+14,cy=h/2,portX=w-16;
+
+  // Flow line to the PC: blue dots are reads coming off the drive, white dots are writes going on.
+  const lineStart=cx+radius+10;
+  ctx.strokeStyle='rgba(139,148,158,0.18)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(lineStart,cy);ctx.lineTo(portX,cy);ctx.stroke();
+  ctx.fillStyle='rgba(139,148,158,0.55)';ctx.beginPath();ctx.arc(portX,cy,5,0,Math.PI*2);ctx.fill();
+  ctx.font='10px Segoe UI, sans-serif';ctx.fillStyle='rgba(139,148,158,0.8)';ctx.textAlign='right';ctx.fillText('PC',portX-9,cy-9);
+  const want=bps=>bps<512?0:Math.min(14,Math.round(2+Math.log10(bps/512)*2.4));
+  for(const dir of ['read','write']){
+    const have=v.dots.filter(d=>d.dir===dir),target=want(dir==='read'?readBps:writeBps);
+    for(let i=have.length;i<target;i++)v.dots.push({dir,phase:Math.random()});
+    for(let i=target;i<have.length;i++)v.dots.splice(v.dots.indexOf(have[i]),1);
+  }
+  const len=Math.max(20,portX-lineStart);
+  for(const d of v.dots){
+    const bps=d.dir==='read'?readBps:writeBps,speed=40+Math.min(260,Math.log10(1+bps/1e4)*70);
+    if(!still)d.phase=(d.phase+speed*dt/len)%1;
+    const x=lineStart+(d.dir==='read'?d.phase:1-d.phase)*len,color=d.dir==='read'?DV_READ:[232,237,244];
+    ctx.fillStyle=dvRgba(color,.22);ctx.beginPath();ctx.arc(x,cy,5.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=dvRgba(color,.95);ctx.beginPath();ctx.arc(x,cy,d.dir==='read'?2.6:2.1,0,Math.PI*2);ctx.fill();
+  }
+
+  if(isSpinning(v.node)){
+    // Platter, tracks, rotating sheen, arm and head.
+    const rps=still?0:v.idleFor>3?.12:.35+intensity*2.6;
+    v.rotation=(v.rotation+rps*360*dt)%360;
+    const platter=ctx.createRadialGradient(cx-radius*.3,cy-radius*.3,radius*.1,cx,cy,radius);
+    platter.addColorStop(0,'#3a4350');platter.addColorStop(.6,'#1d242d');platter.addColorStop(1,'#10151b');
+    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.beginPath();ctx.arc(cx+3,cy+5,radius+4,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=platter;ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(139,148,158,0.45)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
+    const inner=radius*.24,outer=radius*.94;
+    ctx.strokeStyle='rgba(201,209,217,0.07)';ctx.lineWidth=1;
+    for(let i=0;i<10;i++){const r=inner+(outer-inner)*(i/9);ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke()}
+    for(let i=0;i<3;i++){
+      const a=(v.rotation+i*120)*Math.PI/180;
+      const g=ctx.createLinearGradient(cx,cy,cx+Math.cos(a)*radius,cy+Math.sin(a)*radius);
+      g.addColorStop(0,'rgba(88,166,255,0)');g.addColorStop(.7,`rgba(88,166,255,${.05+intensity*.12})`);g.addColorStop(1,'rgba(88,166,255,0)');
+      ctx.strokeStyle=g;ctx.lineWidth=radius*.16;
+      ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*inner,cy+Math.sin(a)*inner);ctx.lineTo(cx+Math.cos(a)*outer,cy+Math.sin(a)*outer);ctx.stroke();
+    }
+    const mark=v.rotation*Math.PI/180;
+    ctx.fillStyle='rgba(201,209,217,0.35)';ctx.beginPath();ctx.arc(cx+Math.cos(mark)*outer*.98,cy+Math.sin(mark)*outer*.98,2,0,Math.PI*2);ctx.fill();
+
+    // The head seeks at the measured operation rate; big sequential reads creep inward, small random
+    // I/O jumps around, and after a few idle seconds the arm parks off the data area.
+    if(v.idleFor>2.5)v.headTarget=-.12;
+    else if(active&&now>=v.nextSeek){
+      const avgOp=ops>0?total/ops:0;
+      v.headTarget=avgOp>256*1024?Math.min(1,Math.max(0,v.head)+.004+Math.random()*.01):Math.random();
+      if(v.headTarget>=1)v.headTarget=.02;
+      v.nextSeek=now+1000/Math.min(10,Math.max(1.5,ops));
+    }
+    v.head+=(v.headTarget-v.head)*Math.min(1,dt*(still?50:10));
+    if(still&&dt===0)v.head=v.headTarget;
+    const px=cx+radius*1.02,py=cy-radius*.92,d=Math.hypot(px-cx,py-cy),armLen=d*.98;
+    const headR=outer-v.head*(outer-inner);
+    const a=(headR*headR-armLen*armLen+d*d)/(2*d),hh=Math.sqrt(Math.max(0,headR*headR-a*a));
+    const bx=cx+a*(px-cx)/d,by=cy+a*(py-cy)/d,hx=bx-hh*(py-cy)/d,hy=by+hh*(px-cx)/d;
+    const glow=active?.35+intensity*.6:0,headColor=writeShare>.5?DV_WRITE:DV_READ;
+    if(glow>0){
+      ctx.strokeStyle=dvRgba(headColor,glow*.5);ctx.lineWidth=Math.max(5,radius*.06);
+      const ang=Math.atan2(hy-cy,hx-cx);ctx.beginPath();ctx.arc(cx,cy,headR,ang-.18,ang+.18);ctx.stroke();
+    }
+    ctx.lineCap='round';
+    ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=Math.max(6,radius*.07);ctx.beginPath();ctx.moveTo(px+2,py+3);ctx.lineTo(hx+2,hy+3);ctx.stroke();
+    ctx.strokeStyle='rgba(188,195,205,0.85)';ctx.lineWidth=Math.max(4,radius*.05);ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(hx,hy);ctx.stroke();
+    ctx.lineCap='butt';
+    ctx.fillStyle='#6e7681';ctx.beginPath();ctx.arc(px,py,Math.max(7,radius*.09),0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=glow>0?dvRgba(headColor,1):'#8b949e';ctx.beginPath();ctx.arc(hx,hy,Math.max(3.5,radius*.045),0,Math.PI*2);ctx.fill();
+    if(glow>0){ctx.fillStyle=dvRgba(headColor,glow*.35);ctx.beginPath();ctx.arc(hx,hy,radius*.11,0,Math.PI*2);ctx.fill()}
+    ctx.fillStyle='#6e7681';ctx.beginPath();ctx.arc(cx,cy,radius*.15,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#161b22';ctx.beginPath();ctx.arc(cx,cy,radius*.06,0,Math.PI*2);ctx.fill();
+  }else{
+    // Flash: a controller and NAND cells that light with real operations.
+    const bw=radius*2,bh=radius*1.5,bx=cx-radius,by=cy-bh/2;
+    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(bx+3,by+4,bw,bh);
+    ctx.fillStyle='#11261b';ctx.fillRect(bx,by,bw,bh);
+    ctx.strokeStyle='rgba(74,222,128,0.25)';ctx.strokeRect(bx+.5,by+.5,bw-1,bh-1);
+    const ctrlW=bw*.22;
+    ctx.fillStyle='#1f2937';ctx.fillRect(bx+8,cy-ctrlW/2,ctrlW,ctrlW);
+    ctx.fillStyle=dvRgba(writeShare>.5?DV_WRITE:DV_READ,active?.4+intensity*.6:.15);
+    ctx.fillRect(bx+8+ctrlW*.3,cy-ctrlW*.2,ctrlW*.4,ctrlW*.4);
+    if(!still){
+      const flashes=Math.min(v.cells.length,ops*dt/6+(active?intensity*3:0));
+      for(let i=0;i<Math.floor(flashes)+(Math.random()<flashes%1?1:0);i++){
+        const c=Math.floor(Math.random()*v.cells.length);v.cells[c]=1;v.kinds[c]=Math.random()<writeShare?1:0;
+      }
+    }
+    const gx=bx+16+ctrlW,gw=bw-(gx-bx)-8,cols=16,rows=6,cw=gw/cols,ch=(bh-16)/rows;
+    for(let i=0;i<v.cells.length;i++){
+      const x=gx+(i%cols)*cw,y=by+8+Math.floor(i/cols)*ch;
+      ctx.fillStyle='#1a3a28';ctx.fillRect(x+1,y+1,cw-2,ch-2);
+      if(v.cells[i]>.02){
+        ctx.fillStyle=dvRgba(v.kinds[i]?DV_WRITE:DV_READ,v.cells[i]);ctx.fillRect(x+1,y+1,cw-2,ch-2);
+        v.cells[i]=still?v.cells[i]:v.cells[i]*Math.exp(-dt*6);
+      }
+    }
+  }
+}
+
+function openDrives(){
+  if(state.planOpen)closePlan();
+  if(!state.drivesOpen){state.drivesOpen=true;$('drives').classList.add('open');document.body.classList.add('drives-open');render()}
+  else renderDrives();
+}
+function closeDrives(){
+  state.drivesOpen=false;$('drives').classList.remove('open');document.body.classList.remove('drives-open');
+  $('drivesBody').replaceChildren();render();
+}
+
+// Every drive on the map, fastest bus first, as a card with its live picture and numbers.
+function renderDrives(){
+  if(!state.drivesOpen)return;
+  const head=$('drivesHead');head.replaceChildren();
+  const close=el('button','xclose','×');close.title='Close';close.setAttribute('aria-label','Close live drives');close.onclick=closeDrives;
+  head.append(close,el('div','kind','Live drives'),el('h2',null,'Every drive, right now'));
+  const sum=el('div','d');sum.id='drivesSum';head.append(sum);
+  const body=$('drivesBody'),keep=body.scrollTop;body.replaceChildren();
+  const order={nvme:0,disk:1,storage:2};
+  const drives=[...state.nodes.values()].filter(n=>n.disk!=null&&!n.net).sort((a,b)=>(order[a.kind]??3)-(order[b.kind]??3));
+  if(!drives.length)body.append(el('div','sum','No drives on the map yet.'));
+  for(const n of drives){
+    const card=el('div','dcard');card.dataset.node=n.id;
+    const top=el('div','top');
+    const nm=el('span','nm',n.name);nm.title='Show on the map';nm.onclick=()=>showNodes([n.id]);
+    top.append(nm,el('span','tag',driveTag(n)));
+    const t=el('span','tmp');t.dataset.temp='';top.append(t);
+    card.append(top);
+    const cv=el('canvas','dview');card.append(cv);
+    const stats=el('div','dstats');
+    for(const [k,label] of [['r','Read'],['w','Write'],['o','Ops/s'],['q','Queue']]){const c=el('div',null,label);const b=el('b',k==='r'?'r':k==='w'?'w':null,'–');b.dataset.k=k;c.append(b);stats.append(c)}
+    card.append(stats);
+    body.append(card);
+    diskView(cv,n,120);
+  }
+  body.append(el('div','sum','A picture of Windows\' disk counters, updated with the live refresh. Hard drives show a platter and an arm that seeks at the real operation rate and parks when idle; SSDs show flash cells lit by real reads (blue) and writes (amber). Windows doesn\'t report a drive\'s actual head position or spin.'));
+  body.scrollTop=keep;
+  updateDriveStats();
+}
+function updateDriveStats(){
+  if(!state.drivesOpen)return;
+  let r=0,w=0;
+  for(const card of document.querySelectorAll('#drivesBody .dcard')){
+    const n=state.nodes.get(card.dataset.node);if(!n)continue;
+    const s=diskSample(n);r+=s.r;w+=s.w;
+    const set=(k,v)=>{const b=card.querySelector(`b[data-k="${k}"]`);if(b)b.textContent=v};
+    set('r',fmtRate(s.r));set('w',fmtRate(s.w));set('o',fmtCount(s.ops));set('q',String(s.q));
+    const t=card.querySelector('.tmp');if(t)t.textContent=n.tempC!=null?Math.round(n.tempC)+'°':'';
+  }
+  const sum=$('drivesSum');if(sum)sum.textContent=state.flow?`All drives: ${fmtRate(r)} read · ${fmtRate(w)} write`:'Waiting for the first reading…';
+}
+
 // ---- Optimization plan -------------------------------------------------------------------
 
 const TONE={good:'✓',info:'i',improve:'↑',warn:'!'};
 
 function openPlan(){
+  if(state.drivesOpen)closeDrives();
   if(!state.planOpen){state.planOpen=true;$('plan').classList.add('open');document.body.classList.add('plan-open');render()}
   if(!state.plan&&!state.planBusy)requestPlan();else renderPlan();
 }
@@ -1190,7 +1402,7 @@ window.chrome?.webview?.addEventListener('message',e=>{
   else if(msg.type==='planbusy'){state.planBusy={measuring:!!msg.measuring};renderPlan()}
   else if(msg.type==='planerror'){state.planBusy=null;state.planError=msg.error;renderPlan()}
   else if(msg.type==='openplan'){openPlan();if(msg.measure)measure()}
-  else if(msg.type==='flow'){state.flow=msg;applyFlow()}
+  else if(msg.type==='flow'){state.flow=msg;applyFlow();updateDriveStats();if(state.motion)startDiskViews();else drawDisks(0,true)}
   else if(msg.type==='wan'){
     state.wanBusy=false;state.wan=msg;
     const n=[...state.nodes.values()].find(x=>x.kind==='internet');
@@ -1208,13 +1420,14 @@ window.chrome?.webview?.addEventListener('message',e=>{
 });
 $('refresh').onclick=()=>{$('refresh').disabled=true;$('refresh').textContent='Reading…';post({type:'refresh'})};
 $('planBtn').onclick=()=>state.planOpen?closePlan():openPlan();
+$('drivesBtn').onclick=()=>state.drivesOpen?closeDrives():openDrives();
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
-  if(state.selected)closeInspector(true);else if(state.planOpen)closePlan();
+  if(state.selected)closeInspector(true);else if(state.planOpen)closePlan();else if(state.drivesOpen)closeDrives();
 });
 let resizeTimer=0;
 window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.flowCtx)sizeFlowCanvas();render()},140)});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')startAnimation()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){startAnimation();startDiskViews()}});
 </script>
 </body>
 </html>

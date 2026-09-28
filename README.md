@@ -4,7 +4,7 @@ A portable Windows app that maps your motherboard, bandwidth, drivers, storage, 
 system in one place: what is plugged in where, what each part is good for, what needs attention,
 and how long Windows will keep patching it. It never installs drivers or firmware.
 
-**Status:** v1.5.1 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.6.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +15,9 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.5.1-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.5.1-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.5.1-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.6.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.6.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.6.0-SHA256SUMS.txt` | Checksums for both. |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -62,6 +62,13 @@ every address on your local network so quiet devices show up too. The Internet c
 public IP and **test your Internet speed** (latency, download, upload), each only when you click.
 
 ![Connections: CPU, chipset, USB, SATA, and NVMe devices with negotiated link speeds, live traffic, and the path through the router to the Internet](docs/screenshots/connections.png)
+
+**Live drives** — also on the Connections tab: every drive animated from its real activity. Hard
+drives spin faster as data moves, with an arm that seeks at the measured operation rate and parks when
+idle; SSDs and NVMe drives light flash cells for each read (blue) and write (amber). Click any drive on
+the map for the same picture in its details.
+
+![Live drives: a hard drive spinning and seeking while it reads, beside the Connections map](docs/screenshots/live-drives.png)
 
 **Optimization plan** — on the Connections tab, a plan for getting the most out of what is plugged
 in, with a *Show on the map* link on every item:

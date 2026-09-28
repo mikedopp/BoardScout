@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.6.0 — 2026-09-27
+
+Live drives: every drive animated from its real activity.
+
+### Added
+- **Live drives** (Connections → *Live drives*): a card per drive, fastest bus first. Hard drives draw as a
+  platter that spins faster with throughput and an arm that seeks at the measured operation rate, then
+  parks after a few idle seconds; SSDs and NVMe drives draw as flash cells lit by real reads (blue) and
+  writes (amber). Dots carry reads and writes between the drive and the PC, and each card shows read and
+  write speed, operations per second, queue, and temperature where Windows reports it.
+- The same live picture in the details panel when you click any drive on the map.
+- Ported from DedupApp's Live drives screen. It is driven by the disk counters BoardScout already samples
+  for the map (no new requests to drives), follows the Motion setting, and stops when the panel closes or
+  the tab is hidden; nine drives animating cost about 7% of one CPU core.
+
 ## 1.5.1 — 2026-09-27
 
 Data safety: BoardScout now stays off phones and cameras entirely, and never questions a drive while it
