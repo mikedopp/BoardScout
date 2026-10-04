@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.7.1 — 2026-10-04
+
+- Skitter engine 2.1.0: the crawlers on the Connections map are now drawn as real spiders (abdomen and carapace,
+  eight eyes, palps, three-part legs, each in its own color). Behavior on the map is unchanged; the engine's new
+  reading, link-following and octopus modes aren't used in BoardScout.
+
+## 1.7.0 — 2026-10-01
+
+Skitter: spiders that crawl the Connections map and hunt bottlenecks.
+
+### Added
+- **Skitter crawlers** (Settings → *Skitter crawlers on the Connections map*: Off, 2, 4, 8; off by default).
+  Procedural spiders with jointed legs walk over the map. Their feet plant on real device cards, summary pills,
+  and buttons, and they ride along when the map scrolls.
+- They hunt problems first: cards and pills for links running below what the device supports (and other
+  warnings) get a pulsing red edge while a spider sits on them. Other cards they visit get a brief colored edge,
+  and some get their name torn off and dragged away. Only the overlay draws this; the map itself is unchanged,
+  and torn labels use the text already on screen, so privacy mode still applies.
+- Move the pointer near a spider to shoo it. Spiders need Motion on and pause while the window is hidden.
+- The engine (Assets/vendor/skitter/skitter.js) is shared with OpsConsole.
+
 ## 1.6.0 — 2026-09-27
 
 Live drives: every drive animated from its real activity.

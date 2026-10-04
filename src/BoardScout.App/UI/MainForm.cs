@@ -1347,7 +1347,7 @@ public sealed class MainForm : Form
     {
         static string Flag(bool on) => on ? "true" : "false";
         view.CoreWebView2?.PostWebMessageAsJson(
-            $"{{\"type\":\"settings\",\"glass\":{Flag(AppSettings.Current.GlassEffects)},\"motion\":{Flag(Motion.Enabled)},\"privacy\":{Flag(Privacy.Enabled)}}}");
+            $"{{\"type\":\"settings\",\"glass\":{Flag(AppSettings.Current.GlassEffects)},\"motion\":{Flag(Motion.Enabled)},\"privacy\":{Flag(Privacy.Enabled)},\"crawlers\":{AppSettings.Current.Crawlers}}}");
     }
 
     private void BindMetrics()

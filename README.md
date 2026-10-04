@@ -4,7 +4,7 @@ A portable Windows app that maps your motherboard, bandwidth, drivers, storage, 
 system in one place: what is plugged in where, what each part is good for, what needs attention,
 and how long Windows will keep patching it. It never installs drivers or firmware.
 
-**Status:** v1.6.0 (2026-09-27) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.7.1 (2026-10-04) · Windows 10/11 · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +15,9 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.6.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.6.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.6.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.7.1-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.7.1-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.7.1-SHA256SUMS.txt` | Checksums for both. |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
