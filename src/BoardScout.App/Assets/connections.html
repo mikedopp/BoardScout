@@ -104,6 +104,7 @@ canvas.dview{display:block;width:100%;height:120px;margin-top:4px}
 .dstats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--tm);margin-top:2px}
 .dstats b{display:block;color:var(--t);font-weight:600;font-variant-numeric:tabular-nums;font-size:12px;letter-spacing:0;text-transform:none}
 .dstats .r{color:#58a6ff}.dstats .w{color:#f59e0b}
+canvas.dgraph{display:block;width:100%;height:44px;margin-top:7px}
 #drivesBody > .sum{font-size:11.5px;color:var(--ts);line-height:1.5;margin:12px 2px 4px}
 /* Memory slots on the map */
 .card.empty .face{opacity:.62}
@@ -982,7 +983,8 @@ function updateLive(){
     h.forEach((v,j)=>{const x=w-(h.length-1-j)*(w/59);const y=hh-3-(v[i]/max)*(hh-8);j?ctx.lineTo(x,y):ctx.moveTo(x,y)});
     ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.stroke();
   };
-  draw(0,colorOf(n));draw(1,'#e8edf4');
+  const disk=n.disk!=null&&!n.net;
+  draw(0,disk?'#58a6ff':colorOf(n));draw(1,disk?'#f59e0b':'#e8edf4');
 }
 
 // ---- Glass -------------------------------------------------------------------------------
@@ -1182,12 +1184,31 @@ function renderDrives(){
     const stats=el('div','dstats');
     for(const [k,label] of [['r','Read'],['w','Write'],['o','Ops/s'],['q','Queue']]){const c=el('div',null,label);const b=el('b',k==='r'?'r':k==='w'?'w':null,'–');b.dataset.k=k;c.append(b);stats.append(c)}
     card.append(stats);
+    card.append(el('canvas','dgraph'));
     body.append(card);
     diskView(cv,n,120);
   }
   body.append(el('div','sum','A picture of Windows\' disk counters, updated with the live refresh. Hard drives show a platter and an arm that seeks at the real operation rate and parks when idle; SSDs and NVMe drives show their NAND dies: blue streaks are reads, amber are writes; more streaks means more operations, faster means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. Windows doesn\'t report a drive\'s actual head position or spin, or which die an operation lands on, so the die a streak hits is random.'));
   body.scrollTop=keep;
   updateDriveStats();
+}
+// Read (blue) and write (amber) over the last 60 live samples, scaled to the busier of the two.
+function drawDriveGraph(canvas,h){
+  const w=canvas.clientWidth;if(!w)return;
+  const hh=44,dpr=devicePixelRatio||1;
+  if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(hh*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(hh*dpr)}
+  const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,hh);
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,hh-.5);ctx.lineTo(w,hh-.5);ctx.stroke();
+  if(h.length<2){ctx.font='10px Segoe UI, sans-serif';ctx.fillStyle='rgba(139,148,158,0.7)';ctx.fillText('Collecting history…',2,hh-8);return}
+  const peak=Math.max(...h.map(v=>Math.max(v[0],v[1]))),max=Math.max(1024,peak),step=w/59;
+  const xy=(v,j,i)=>[w-(h.length-1-j)*step,hh-2-(v[i]/max)*(hh-14)];
+  for(const [i,c] of [[1,[245,158,11]],[0,[88,166,255]]]){
+    ctx.beginPath();h.forEach((v,j)=>{const [x,y]=xy(v,j,i);j?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+    ctx.strokeStyle=dvRgba(c,.95);ctx.lineWidth=1.4;ctx.stroke();
+    ctx.lineTo(w,hh);ctx.lineTo(xy(h[0],0,i)[0],hh);ctx.closePath();ctx.fillStyle=dvRgba(c,.1);ctx.fill();
+  }
+  ctx.font='10px Segoe UI, sans-serif';ctx.fillStyle='rgba(139,148,158,0.85)';ctx.textAlign='left';
+  ctx.fillText(peak>0?`Peak ${fmtRate(peak)}`:'Idle',2,10);
 }
 function updateDriveStats(){
   if(!state.drivesOpen)return;
@@ -1198,6 +1219,7 @@ function updateDriveStats(){
     const set=(k,v)=>{const b=card.querySelector(`b[data-k="${k}"]`);if(b)b.textContent=v};
     set('r',fmtRate(s.r));set('w',fmtRate(s.w));set('o',fmtCount(s.ops));set('q',String(s.q));
     const t=card.querySelector('.tmp');if(t)t.textContent=n.tempC!=null?Math.round(n.tempC)+'°':'';
+    const g=card.querySelector('canvas.dgraph');if(g)drawDriveGraph(g,state.history.get(n.id)||[]);
   }
   const sum=$('drivesSum');if(sum)sum.textContent=state.flow?`All drives: ${fmtRate(r)} read · ${fmtRate(w)} write`:'Waiting for the first reading…';
 }

@@ -16,6 +16,8 @@ FlashStream: SSDs and NVMe drives as light moving through their NAND dies.
 - Drives whose media type Windows doesn't report (some USB bridges) are tagged **Disk** instead of SSD.
 
 ### Added
+- **Read and write history graph** on every Live drives card: reads in blue and writes in amber over the last 60
+  live samples, on one shared scale, with the peak. A drive's details panel uses the same colors for disks.
 - Per-disk **busy %** in the live samples, from the same zero-access disk counters (idle time over the
   interval). It drives the controller glow.
 - The engine lives in `Assets/vendor/flashstream/flashstream.js`, built from the shared FlashStream source.
