@@ -790,8 +790,9 @@ public sealed class MainForm : Form
         foreach (var (number, rate) in telemetry.DiskRates ?? new Dictionary<int, LinkRate>())
         {
             var queue = telemetry.DiskQueues?.GetValueOrDefault(number) ?? 0;
+            var busy = telemetry.DiskBusy?.GetValueOrDefault(number) ?? 0;
             flow.Disks[number.ToString(System.Globalization.CultureInfo.InvariantCulture)] =
-                [Math.Round(rate.In), Math.Round(rate.Out), Math.Round(rate.OpsIn), Math.Round(rate.OpsOut), queue];
+                [Math.Round(rate.In), Math.Round(rate.Out), Math.Round(rate.OpsIn), Math.Round(rate.OpsOut), queue, busy];
         }
         foreach (var (zone, key) in new[] { ("CPU", "cpu"), ("GPU", "gpu"), ("Chipset", "chipset") })
             if (telemetry.Thermals.FirstOrDefault(t => t.Zone == zone) is { } reading)

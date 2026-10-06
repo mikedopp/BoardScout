@@ -76,7 +76,8 @@ internal sealed record UsbPort(int Port, int Speed, int Flags, bool IsHub, int P
 }
 
 /// <summary>A disk's counters since boot. The operation counts are 32-bit and wrap.</summary>
-internal readonly record struct DiskCounterSample(long BytesRead, long BytesWritten, uint Reads, uint Writes, int QueueDepth);
+internal readonly record struct DiskCounterSample(long BytesRead, long BytesWritten, uint Reads, uint Writes, int QueueDepth,
+    long IdleTime = 0, long QueryTime = 0);
 
 /// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe);
 /// Spinning is true for hard drives (the disk reports a seek penalty).</summary>
@@ -452,12 +453,13 @@ internal static class DeviceTree
     {
         using var handle = OpenDisk(number);
         if (handle.IsInvalid) return null;
-        // DISK_PERFORMANCE: BytesRead @0, BytesWritten @8, ReadTime, WriteTime, IdleTime,
-        // ReadCount @40, WriteCount @44, QueueDepth @48, ...
+        // DISK_PERFORMANCE: BytesRead @0, BytesWritten @8, ReadTime, WriteTime, IdleTime @32,
+        // ReadCount @40, WriteCount @44, QueueDepth @48, SplitCount, QueryTime @56 (100 ns units).
         var buffer = new byte[88];
         return DeviceIoControl(handle, IoctlDiskPerformance, [], 0, buffer, buffer.Length, out _, IntPtr.Zero)
             ? new DiskCounterSample(BitConverter.ToInt64(buffer, 0), BitConverter.ToInt64(buffer, 8),
-                BitConverter.ToUInt32(buffer, 40), BitConverter.ToUInt32(buffer, 44), BitConverter.ToInt32(buffer, 48))
+                BitConverter.ToUInt32(buffer, 40), BitConverter.ToUInt32(buffer, 44), BitConverter.ToInt32(buffer, 48),
+                BitConverter.ToInt64(buffer, 32), BitConverter.ToInt64(buffer, 56))
             : null;
     }
 

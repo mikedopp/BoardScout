@@ -93,7 +93,7 @@ body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px so
 #legend .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl)}
 #legend .dot.out{background:#e8edf4;box-shadow:0 0 6px #e8edf4}
 #legend .sep{width:1px;height:12px;background:var(--b)}
-/* Live drives: platters and flash cells driven by Windows' disk counters */
+/* Live drives: platters and FlashStream NAND dies driven by Windows' disk counters */
 .dcard{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);padding:10px 12px 9px;margin-top:10px}
 .dcard .top{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
 .dcard .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
@@ -217,7 +217,7 @@ body.plan-open #stage,body.drives-open #stage{padding-left:510px}
     </div>
   </div>
   <div class="actions">
-    <button class="btn" id="drivesBtn" title="Every drive live: spinning platters for hard drives, flash cells for SSDs">Live drives</button>
+    <button class="btn" id="drivesBtn" title="Every drive live: spinning platters for hard drives, light streaking through the NAND dies of SSDs">Live drives</button>
     <button class="btn" id="planBtn" title="Where to plug things in, faster drives, memory placement, interrupts, and power">Optimization plan</button>
     <button class="btn primary" id="refresh" title="Read the device tree and network again">Refresh</button>
   </div>
@@ -230,6 +230,7 @@ body.plan-open #stage,body.drives-open #stage{padding-left:510px}
 <div id="drives" role="region" aria-label="Live drives"><div id="drivesHead"></div><div id="drivesBody"></div></div>
 <script src="vendor/d3/d3.v7.min.js"></script>
 <script src="vendor/skitter/skitter.js"></script>
+<script src="vendor/flashstream/flashstream.js"></script>
 <script>
 'use strict';
 const BUS={pcie:'#3d9eff',internal:'#a78bfa',usb:'#2dd4bf',sata:'#fb923c',display:'#f472b6',bluetooth:'#818cf8',
@@ -1024,21 +1025,30 @@ async function syncGlass(){
 
 // ---- Live drives -------------------------------------------------------------------------
 // Ported from DedupApp. Hard drives draw as a platter whose spin follows throughput and an arm that seeks
-// at the measured operation rate (parking when idle); SSDs and NVMe drives draw as flash cells lit by real
-// operations. It is a picture of Windows' disk counters: Windows doesn't report a drive's real head
-// position or spin, so nothing here pretends to.
+// at the measured operation rate (parking when idle). SSDs and NVMe drives use FlashStream
+// (vendor/flashstream): light streaks between the controller, the NAND dies and the PC, whose count,
+// speed and length follow operations, throughput and I/O size. It is a picture of Windows' disk counters:
+// Windows doesn't report a drive's real head position, spin, or which die an operation lands on, so
+// nothing here pretends to.
 
 const DV_READ=[88,166,255],DV_WRITE=[245,158,11];
 const dvRgba=(c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const diskViews=new Set();
 let dvRaf=0,dvLast=0;
 
-function diskSample(n){const d=n.disk!=null?state.flow?.disk?.[n.disk]:null;return {r:d?.[0]||0,w:d?.[1]||0,ops:(d?.[2]||0)+(d?.[3]||0),q:d?.[4]||0}}
+function diskSample(n){const d=n.disk!=null?state.flow?.disk?.[n.disk]:null;return {r:d?.[0]||0,w:d?.[1]||0,ro:d?.[2]||0,wo:d?.[3]||0,ops:(d?.[2]||0)+(d?.[3]||0),q:d?.[4]||0,busy:d?.[5]||0}}
 function isSpinning(n){return /^Hard drive/.test(n.facts?.find(f=>f.label==='Drive type')?.value||'')}
-function driveTag(n){return n.kind==='nvme'?'NVMe':isSpinning(n)?'HDD':'SSD'}
+// Windows doesn't report a media type for some USB bridges; call those 'Disk' rather than guess.
+function driveTag(n){return n.kind==='nvme'?'NVMe':isSpinning(n)?'HDD':/^Solid-state/.test(n.facts?.find(f=>f.label==='Drive type')?.value||'')?'SSD':'Disk'}
 
 function diskView(canvas,node,height){
-  diskViews.add({canvas,node,height,rotation:0,head:.05,headTarget:.05,nextSeek:0,idleFor:0,dots:[],cells:new Float32Array(96),kinds:new Uint8Array(96)});
+  // Flash drives run their own FlashStream loop (it follows Motion and cleans up when the card is removed).
+  if(!isSpinning(node)&&window.FlashStream){
+    FlashStream.createFlashStream(canvas,{lanes:FlashStream.lanesFor(driveTag(node)),height,motion:()=>state.motion,
+      source:()=>{const s=diskSample(node);return {readBps:s.r,writeBps:s.w,readOps:s.ro,writeOps:s.wo,queueDepth:s.q,busy:s.busy}}});
+    return;
+  }
+  diskViews.add({canvas,node,height,rotation:0,head:.05,headTarget:.05,nextSeek:0,idleFor:0,dots:[]});
   startDiskViews();
   requestAnimationFrame(()=>drawDisks(0,true));
 }
@@ -1137,31 +1147,6 @@ function drawDisk(v,dt,still){
     if(glow>0){ctx.fillStyle=dvRgba(headColor,glow*.35);ctx.beginPath();ctx.arc(hx,hy,radius*.11,0,Math.PI*2);ctx.fill()}
     ctx.fillStyle='#6e7681';ctx.beginPath();ctx.arc(cx,cy,radius*.15,0,Math.PI*2);ctx.fill();
     ctx.fillStyle='#161b22';ctx.beginPath();ctx.arc(cx,cy,radius*.06,0,Math.PI*2);ctx.fill();
-  }else{
-    // Flash: a controller and NAND cells that light with real operations.
-    const bw=radius*2,bh=radius*1.5,bx=cx-radius,by=cy-bh/2;
-    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(bx+3,by+4,bw,bh);
-    ctx.fillStyle='#11261b';ctx.fillRect(bx,by,bw,bh);
-    ctx.strokeStyle='rgba(74,222,128,0.25)';ctx.strokeRect(bx+.5,by+.5,bw-1,bh-1);
-    const ctrlW=bw*.22;
-    ctx.fillStyle='#1f2937';ctx.fillRect(bx+8,cy-ctrlW/2,ctrlW,ctrlW);
-    ctx.fillStyle=dvRgba(writeShare>.5?DV_WRITE:DV_READ,active?.4+intensity*.6:.15);
-    ctx.fillRect(bx+8+ctrlW*.3,cy-ctrlW*.2,ctrlW*.4,ctrlW*.4);
-    if(!still){
-      const flashes=Math.min(v.cells.length,ops*dt/6+(active?intensity*3:0));
-      for(let i=0;i<Math.floor(flashes)+(Math.random()<flashes%1?1:0);i++){
-        const c=Math.floor(Math.random()*v.cells.length);v.cells[c]=1;v.kinds[c]=Math.random()<writeShare?1:0;
-      }
-    }
-    const gx=bx+16+ctrlW,gw=bw-(gx-bx)-8,cols=16,rows=6,cw=gw/cols,ch=(bh-16)/rows;
-    for(let i=0;i<v.cells.length;i++){
-      const x=gx+(i%cols)*cw,y=by+8+Math.floor(i/cols)*ch;
-      ctx.fillStyle='#1a3a28';ctx.fillRect(x+1,y+1,cw-2,ch-2);
-      if(v.cells[i]>.02){
-        ctx.fillStyle=dvRgba(v.kinds[i]?DV_WRITE:DV_READ,v.cells[i]);ctx.fillRect(x+1,y+1,cw-2,ch-2);
-        v.cells[i]=still?v.cells[i]:v.cells[i]*Math.exp(-dt*6);
-      }
-    }
   }
 }
 
@@ -1200,7 +1185,7 @@ function renderDrives(){
     body.append(card);
     diskView(cv,n,120);
   }
-  body.append(el('div','sum','A picture of Windows\' disk counters, updated with the live refresh. Hard drives show a platter and an arm that seeks at the real operation rate and parks when idle; SSDs show flash cells lit by real reads (blue) and writes (amber). Windows doesn\'t report a drive\'s actual head position or spin.'));
+  body.append(el('div','sum','A picture of Windows\' disk counters, updated with the live refresh. Hard drives show a platter and an arm that seeks at the real operation rate and parks when idle; SSDs and NVMe drives show their NAND dies: blue streaks are reads, amber are writes; more streaks means more operations, faster means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. Windows doesn\'t report a drive\'s actual head position or spin, or which die an operation lands on, so the die a streak hits is random.'));
   body.scrollTop=keep;
   updateDriveStats();
 }

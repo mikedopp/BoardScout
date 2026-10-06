@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.8.0 — 2026-10-05
+
+FlashStream: SSDs and NVMe drives as light moving through their NAND dies.
+
+### Changed
+- **Live drives: FlashStream for SSD/NVMe** (shared with DedupApp 2.4). The flat board of blinking cells is replaced
+  by a tilted grid of NAND dies with light streaks moving through it: reads (blue) leave a die, cross the
+  controller and arc up to the PC; writes (amber) travel the other way and flash the die they land on. The number
+  of streaks follows operations per second, their speed follows MB/s, their length follows the average I/O size
+  (4 KB random reads are short sparks, large sequential transfers long ribbons), beads circling the controller
+  show queued requests, and the controller glows with busy time. NVMe drives are drawn with 8 channels and SATA
+  SSDs with 4. Which die a streak hits is random, since Windows doesn't report it. Hard drives keep the platter.
+  The same picture appears in a drive's details on the map. It follows Motion and stops when the panel closes.
+- Drives whose media type Windows doesn't report (some USB bridges) are tagged **Disk** instead of SSD.
+
+### Added
+- Per-disk **busy %** in the live samples, from the same zero-access disk counters (idle time over the
+  interval). It drives the controller glow.
+- The engine lives in `Assets/vendor/flashstream/flashstream.js`, built from the shared FlashStream source.
+
 ## 1.7.1 — 2026-10-04
 
 - Skitter engine 2.1.0: the crawlers on the Connections map are now drawn as real spiders (abdomen and carapace,

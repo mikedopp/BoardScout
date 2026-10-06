@@ -39,6 +39,9 @@ public sealed record SystemTelemetry(
     /// <summary>Requests waiting at each physical disk right now, when detailed rates are on.</summary>
     public IReadOnlyDictionary<int, int>? DiskQueues { get; init; }
 
+    /// <summary>Percent of the last interval each physical disk was busy, when detailed rates are on.</summary>
+    public IReadOnlyDictionary<int, double>? DiskBusy { get; init; }
+
     /// <summary>CPU and GPU power draw, when the sensors report it.</summary>
     public IReadOnlyList<PowerReading> Power { get; init; } = [];
 

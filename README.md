@@ -65,10 +65,14 @@ public IP and **test your Internet speed** (latency, download, upload), each onl
 
 **Live drives** — also on the Connections tab: every drive animated from its real activity. Hard
 drives spin faster as data moves, with an arm that seeks at the measured operation rate and parks when
-idle; SSDs and NVMe drives light flash cells for each read (blue) and write (amber). Click any drive on
-the map for the same picture in its details.
+idle. SSDs and NVMe drives use FlashStream: light streaks through a tilted grid of NAND dies, blue for
+reads heading to the PC and amber for writes landing on a die. More streaks means more operations, faster
+means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. Click any
+drive on the map for the same picture in its details.
 
 ![Live drives: a hard drive spinning and seeking while it reads, beside the Connections map](docs/screenshots/live-drives.png)
+
+![Live drives: NVMe and SATA SSDs with read and write streaks moving through their NAND dies](docs/screenshots/live-drives-ssd.png)
 
 **Optimization plan** — on the Connections tab, a plan for getting the most out of what is plugged
 in, with a *Show on the map* link on every item:

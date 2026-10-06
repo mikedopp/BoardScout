@@ -76,18 +76,19 @@ internal sealed class SystemTelemetryService : IDisposable
                 InterfaceCounters = network.Counters,
                 DiskRates = disks.Rates,
                 DiskQueues = disks.Queues,
+                DiskBusy = disks.Busy,
                 Power = power
             };
         }
     }
 
     // Cumulative counters from each physical disk, read through zero-access handles (no admin needed).
-    private (Dictionary<int, LinkRate>? Rates, Dictionary<int, int>? Queues) SampleDisks(DateTime now, double elapsed, bool detailed)
+    private (Dictionary<int, LinkRate>? Rates, Dictionary<int, int>? Queues, Dictionary<int, double>? Busy) SampleDisks(DateTime now, double elapsed, bool detailed)
     {
         if (!detailed)
         {
             _diskCounters.Clear();
-            return (null, null);
+            return (null, null, null);
         }
         if (now - _disksReadUtc > InterfaceRefresh)
         {
@@ -97,6 +98,7 @@ internal sealed class SystemTelemetryService : IDisposable
 
         var rates = new Dictionary<int, LinkRate>();
         var queues = new Dictionary<int, int>();
+        var busy = new Dictionary<int, double>();
         foreach (var number in _diskNumbers)
         {
             if (DeviceTree.DiskCounters(number) is not { } counters) continue;
@@ -109,10 +111,14 @@ internal sealed class SystemTelemetryService : IDisposable
                     (counters.BytesWritten - previous.BytesWritten) / elapsed,
                     unchecked(counters.Reads - previous.Reads) / elapsed,
                     unchecked(counters.Writes - previous.Writes) / elapsed);
+                // Busy time: the share of the interval the disk was not idle.
+                var queried = counters.QueryTime - previous.QueryTime;
+                if (queried > 0)
+                    busy[number] = Math.Round(Math.Clamp(100.0 * (1 - (counters.IdleTime - previous.IdleTime) / (double)queried), 0, 100), 1);
             }
             _diskCounters[number] = counters;
         }
-        return (rates, queues);
+        return (rates, queues, busy);
     }
 
     private (List<ThermalReading> Thermals, List<FanReading> Fans, List<PowerReading> Power) SampleSensors()
