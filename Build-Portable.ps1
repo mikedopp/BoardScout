@@ -23,7 +23,10 @@ foreach ($dir in $portable, $standalone) {
     if (-not ([IO.Path]::GetFullPath($dir)).StartsWith($buildRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing unexpected publish output: $dir"
     }
-    if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+    # Clear the old build but keep Data: running BoardScout from here keeps its settings and scans there.
+    if (Test-Path -LiteralPath $dir) {
+        Get-ChildItem -LiteralPath $dir -Force | Where-Object Name -ne 'Data' | Remove-Item -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
 }
 
@@ -44,7 +47,8 @@ function Publish-BoardScout([string]$Output, [string[]]$Extra) {
 # Portable folder: BoardScout.exe with Assets, DriverScout, LICENSE, and notices beside it.
 Publish-BoardScout $portable @()
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-Compress-Archive -Path (Join-Path $portable '*') -DestinationPath $zip -CompressionLevel Optimal
+# Never ship a Data folder: scans hold hostnames and hardware identifiers.
+Compress-Archive -Path (Get-ChildItem -LiteralPath $portable -Force | Where-Object Name -ne 'Data').FullName -DestinationPath $zip -CompressionLevel Optimal
 
 # Standalone: one exe with everything packed inside it.
 Publish-BoardScout $standalone @('-p:Standalone=true')

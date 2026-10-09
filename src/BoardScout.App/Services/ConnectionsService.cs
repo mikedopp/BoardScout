@@ -515,7 +515,11 @@ internal static partial class ConnectionsService
                 node.TemperatureC = temperature;
                 node.Facts.Add(new("Temperature", $"{temperature:0} °C"));
             }
-            if (facts?.Spinning is { } spinning) node.Facts.Add(new("Drive type", spinning ? "Hard drive (spinning disk)" : "Solid-state drive"));
+            if (facts?.Spinning is { } spinning)
+                node.Facts.Add(new("Drive type", (spinning ? "Hard drive (spinning disk)" : "Solid-state drive") +
+                    (facts.SpinningFromModel ? ", from its model number (the USB bridge doesn't pass the drive's own answer through)" : "")));
+            else
+                node.Facts.Add(new("Drive type", "Not reported: the drive or its USB bridge doesn't say whether it spins"));
             if (disk.RemovalPolicy is 2 or 3)
                 node.Facts.Add(new("Write caching", disk.RemovalPolicy == 2
                     ? "On (Better performance): use Safely Remove before unplugging"
@@ -536,8 +540,11 @@ internal static partial class ConnectionsService
             node.Facts.Add(new("Controller", controller.Name));
             if (ports > 0) node.Facts.Add(new("Root hub ports", $"{ports} ({devices.Count} in use)"));
             node.Facts.Add(new("Note", "USB 3 controllers list each physical port twice: once for USB 3 and once for USB 2 devices."));
+            node.Facts.Add(new("Plugged in but missing?", "A device that doesn't appear here at all never made a connection: the port saw nothing. " +
+                "Reseat the plug, try another cable, and give bus-powered hard drives a powered port. Devices that connect but fail show up as a warning card."));
             AddDriverFact(node, controller);
             foreach (var device in devices) node.Children.Add(BuildUsbDevice(device));
+            foreach (var root in roots) AddPortProblems(node, root);
             return node;
         }
 
@@ -574,6 +581,8 @@ internal static partial class ConnectionsService
             {
                 node = BuildDisk(disk, "storage");
                 node.Id = NodeId(device);
+                // The card's Eject button stops this USB device, the one Safely Remove would.
+                node.Eject = device.Usb is not null;
                 var uas = device.Service?.Equals("UASPStor", StringComparison.OrdinalIgnoreCase) == true ||
                           device.Descendants().Any(d => d.Service?.Equals("UASPStor", StringComparison.OrdinalIgnoreCase) == true);
                 node.Facts.Add(new("USB protocol", uas ? "UAS (USB Attached SCSI, the faster protocol)" : "Bulk-only mass storage"));
@@ -601,7 +610,13 @@ internal static partial class ConnectionsService
             if (id is { } usb) node.Facts.Add(new("USB ID", $"{usb.Vendor:X4}:{usb.Product:X4}"));
             if (device.Usb is { } port)
             {
-                node.Facts.Add(new("Hub port", $"{port.Port} ({((port.Protocols & 4) != 0 ? "USB 3" : "USB 2")} port)"));
+                // A USB 3 socket is two connections, listed as two hub ports: its USB 2 wires and its USB 3 wires.
+                // The number is the half the device came in on, not a USB 2-only socket.
+                node.Facts.Add(new("Hub port", (port.Protocols & 4) != 0
+                    ? $"{port.Port} (USB 3 connection)"
+                    : port.SuperSpeedCapable && !port.SuperSpeed
+                        ? $"{port.Port} (USB 2 connection: only the socket's USB 2 wires made contact)"
+                        : $"{port.Port} (USB 2 connection)"));
                 if (port.PowerMa is { } power)
                     node.Facts.Add(new("Power", $"Asks for up to {power} mA from the port{(port.SelfPowered == true ? "; has its own power supply" : "")}"));
                 else if (device.PowerNotAsked is { } reason)
@@ -625,14 +640,50 @@ internal static partial class ConnectionsService
                     // The USB 2.0 half of a USB 3 hub is expected; nothing to fix.
                 }
                 else if (negotiated.SuperSpeedCapable && !negotiated.SuperSpeed)
-                    node.Warning = "This USB 3 device is running at USB 2.0 speed (480 Mbps). Plug it into a USB 3 port — often blue or marked SS — with a USB 3 cable.";
+                    node.Warning = "This USB 3 device connected at USB 2.0 speed (480 Mbps): only the USB 2 wires made contact. Use a USB 3 port (often blue or marked SS). " +
+                                   "If it already is one, the cable or the device's socket is the likely fault: try another USB 3 cable and push the plug fully in (on Micro-B plugs the USB 3 contacts are on the wide half).";
                 else if (negotiated.SuperSpeedPlusCapable && !negotiated.SuperSpeedPlus)
                     node.Warning = "This device supports 10 Gbps but connected at 5 Gbps. A USB 3.2 Gen 2 port and cable would give it full speed.";
                 else if (node.Kind == "storage" && !negotiated.SuperSpeed && negotiated.Speed <= 2)
                     node.Note = "USB 2.0 limits this drive to roughly 40 MB/s.";
             }
             AddProblem(node, device);
+            if (isHub) AddPortProblems(node, device);
             return node;
+        }
+
+        // A port where something is plugged in but Windows couldn't use it. The hub sees the device even when
+        // Device Manager has no entry for it, so this is the only place a dead or underpowered drive shows up.
+        private static void AddPortProblems(ConnectionNode parent, DeviceNode hub)
+        {
+            foreach (var (port, status) in hub.PortProblems)
+            {
+                var (title, warning) = status switch
+                {
+                    2 => ("Device failed to start", "Something is plugged into this port but didn't answer when Windows asked what it is. Unplug it and plug it back in; if it keeps failing, try another cable or port. Bus-powered hard drives often need a powered hub or a port on the back of the PC."),
+                    4 => ("Port shut off: over-current", "The device drew more current than this port allows, so the port switched itself off. Unplug it; give it its own power supply or a powered hub."),
+                    5 => ("Not enough power", "The device needs more power than this port gives. Use a powered hub or a port on the back of the PC."),
+                    6 => ("Not enough bandwidth", "The controller has no bandwidth left for this device. Move it, or a busy device beside it, to another USB controller."),
+                    7 => ("Hubs nested too deeply", "There are too many hubs between this device and the PC. Plug it in closer to the PC."),
+                    8 => ("Stuck behind a USB 1.1 hub", "This device is on an old USB 1.1 hub that can't run it. Plug it straight into the PC."),
+                    _ => ("Device failed", "Something is plugged into this port but stopped working. Unplug it and plug it back in, or try another cable or port.")
+                };
+                parent.Children.Add(new ConnectionNode
+                {
+                    Id = NodeId(hub) + "p" + port.ToString(CultureInfo.InvariantCulture),
+                    Kind = "usb",
+                    Name = title,
+                    Detail = $"Port {port} · not working",
+                    Problem = true,
+                    Warning = warning,
+                    Link = new ConnectionLink { Bus = "usb", Label = "USB (the port reports a problem)", Short = "failed" },
+                    Facts =
+                    {
+                        new("Hub port", port.ToString(CultureInfo.InvariantCulture)),
+                        new("What the hub reports", title)
+                    }
+                });
+            }
         }
 
         private ConnectionNode BuildBluetooth(DeviceNode radio)
@@ -1127,6 +1178,13 @@ internal static partial class ConnectionsService
         private static void AddProblem(ConnectionNode node, DeviceNode device)
         {
             if (device.Problem == 0) return;
+            // CM_PROB_HELD_FOR_EJECT: stopped by an eject and waiting to be unplugged. Expected, not a fault.
+            if (device.Problem == 47)
+            {
+                node.Detail = "Stopped · safe to unplug";
+                node.Note = "Windows stopped this device so it can be unplugged safely. Unplug it, or unplug and reconnect it to use it again.";
+                return;
+            }
             node.Problem = true;
             node.Warning = device.Problem switch
             {

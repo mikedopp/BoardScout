@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BoardScout</AssemblyName>
     <RootNamespace>BoardScout</RootNamespace>
-    <Version>1.8.0</Version>
+    <Version>1.9.0</Version>
     <Product>BoardScout</Product>
     <Description>Portable motherboard, storage, and driver health dashboard.</Description>
     <Authors>mikedopp</Authors>
@@ -32,6 +32,10 @@
   <PropertyGroup Condition="'$(Standalone)' == 'true'">
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="BoardScout.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />

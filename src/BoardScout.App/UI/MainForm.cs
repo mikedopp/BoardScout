@@ -705,6 +705,10 @@ public sealed class MainForm : Form
             {
                 RestartElevated(MeasureArgument);
             }
+            else if (type == "eject" && message.RootElement.TryGetProperty("id", out var ejectId) && ejectId.GetString() is { } id)
+            {
+                await EjectAsync(id);
+            }
             else if (type == "wan")
             {
                 _wanLookupCts?.Cancel();
@@ -727,6 +731,33 @@ public sealed class MainForm : Form
         {
             AppendLog("CONNECTIONS: " + ex.Message);
         }
+    }
+
+    // Safely removes an external drive from its card. The page sends the card id (a hash), never an instance id;
+    // the device is found again in the last map read. Windows flushes the drive and refuses while files are open.
+    private async Task EjectAsync(string id)
+    {
+        var device = _connectionsCapture?.Tree?.Descendants()
+            .FirstOrDefault(d => d.IdStarts(@"USB\") && ConnectionsService.DeviceNodeId(d) == id);
+        string message;
+        var ok = false;
+        if (device is null)
+        {
+            message = "That drive is no longer connected.";
+        }
+        else
+        {
+            var name = device.Name;
+            var outcome = await Task.Run(() => DeviceTree.Eject(device.InstanceId));
+            ok = outcome.Ok;
+            message = outcome.Message;
+            AppendLog($"EJECT: {name}: {(outcome.Ok ? "stopped, safe to unplug" : $"not ejected (veto {outcome.Veto}, code 0x{outcome.Result:X}{(outcome.Who is null ? "" : ", " + outcome.Who)})")}, at your request.");
+        }
+        PostToConnections($"{{\"type\":\"eject\",\"id\":{System.Text.Json.JsonSerializer.Serialize(id, BoardScoutJson.Default.String)}," +
+                          $"\"ok\":{(ok ? "true" : "false")},\"message\":{System.Text.Json.JsonSerializer.Serialize(message, BoardScoutJson.Default.String)}}}");
+        // Read the hardware again so the stopped drive's card changes now, not only when Windows' device-change
+        // notice arrives. A refresh already running picks this up as a queued reload.
+        if (ok) await LoadConnectionsAsync();
     }
 
     // The optimization plan, built from the last map read plus a one-second interrupt sample. Measuring

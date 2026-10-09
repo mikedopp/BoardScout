@@ -53,6 +53,14 @@ Click any card for details: link now versus best, live traffic, firmware and dri
 temperature where Windows reports it, IP and DNS settings, and the Wi-Fi network, signal, band, and
 security. Plug something in and the map redraws itself.
 
+**Search** (Ctrl+F or `/`) finds any card by name, kind, or detail — "jpvt", "hdd", a USB ID, a
+firmware version, "480 Mbps" — lights the matches on the map, and Enter jumps to one (Shift+Enter shows
+them all). A USB port where something is plugged in but failed to start, drew too much current, or
+didn't get enough power shows up as its own warning card, even though Device Manager has no entry for it.
+A device that doesn't appear at all never made a connection: the port saw nothing.
+
+![Search on the Connections map: "wd hdd" lists four WD hard drives and lights them on the map](docs/screenshots/search.png)
+
 It also puts **real names** on your network: the router's make and model (read from its own Wi-Fi
 beacon, even when this PC is wired, or from its web certificate), how many mesh units are in range
 and which is closest, Windows' name for the network and whether it is Public or Private, and the
@@ -68,7 +76,15 @@ drives spin faster as data moves, with an arm that seeks at the measured operati
 idle. SSDs and NVMe drives use FlashStream: light streaks through a tilted grid of NAND dies, blue for
 reads heading to the PC and amber for writes landing on a die. More streaks means more operations, faster
 means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. Click any
-drive on the map for the same picture in its details.
+drive on the map for the same picture in its details. Many USB enclosures don't pass on whether the drive
+inside spins; then the model number decides when it's a known family (the details say so), and a drive
+whose type is still unknown gets a plain outline rather than a guess.
+
+External USB drives have an **Eject** button (click, then **Eject now**): the same Safely Remove request
+the taskbar sends. Only when Windows confirms does the card say it's safe to unplug; if a program has a
+file open, it says so and nothing is stopped.
+
+![An external WD drive's details with its Eject button, beside the USB hub it's connected to](docs/screenshots/eject.png)
 
 ![Live drives: a hard drive spinning and seeking while it reads, beside the Connections map](docs/screenshots/live-drives.png)
 
@@ -163,7 +179,9 @@ connectivity check already concluded.
 
 ## Data safety: what BoardScout does to your drives
 
-BoardScout only reads, and only what Windows already knows:
+BoardScout only reads, and only what Windows already knows. The one exception is **Eject**, and only
+when you click it twice: it asks Windows to stop that USB drive, exactly as Safely Remove Hardware does
+(Windows writes out anything cached first, and refuses while a file is open).
 
 - **Your files are never opened.** It never opens a volume, folder, or file outside its own `Data`
   folder, and never formats, repairs, defragments, TRIMs, or sends SMART commands to a drive.
@@ -246,6 +264,10 @@ This produces `build\BoardScout-<version>-win-x64.zip` (portable folder),
 `build\BoardScout-<version>-win-x64.exe` (standalone), and a SHA-256 checksum file. The version
 comes from `src\BoardScout.App\BoardScout.App.csproj`. `BoardScout.cmd` builds on first use and
 then launches the portable build.
+
+    dotnet test tests\BoardScout.Tests
+
+runs the unit tests (drive type from model numbers, eject result messages).
 
 Source layout:
 

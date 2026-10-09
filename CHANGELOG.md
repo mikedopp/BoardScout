@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.9.0 — 2026-10-08
+
+Search, Eject, and drives that don't say what they are.
+
+### Added
+- **Search** on the Connections map (Ctrl+F or `/`): finds cards by name, kind (HDD, SSD, NVMe), or any
+  detail value (USB ID, firmware, link speed, disk number). Matches stay lit on the map while the rest dim;
+  arrow keys move through the list, Enter jumps to one (closing the list and focusing its card), Shift+Enter
+  shows them all, Esc clears. A map refresh keeps the search, so a drive plugged in while you search for
+  it lights up.
+- **Eject** on every external USB drive, in its details and on its Live drives card: the Safely Remove
+  request the taskbar sends. One click arms it, a second sends it. The card says "safe to unplug" only when
+  Windows confirms; then the button is gone, so a stopped drive can't be ejected again, and the map
+  re-reads at once. A refusal says why (a file open, a named program or service, administrator rights) and
+  keeps the button for a retry. A drive Windows no longer lists, or can't look up, reports that nothing
+  was ejected. A stopped drive shows as "Stopped · safe to unplug" instead of a problem device.
+- **USB port problems** as their own warning cards: a port where something is plugged in but failed to
+  start, tripped over-current, didn't get enough power or bandwidth, or sits behind too many hubs. These
+  come from the hub itself, so they show even when Device Manager has no entry.
+- USB controller details explain that a device missing from the map never made a connection.
+- Unit tests (`tests\BoardScout.Tests`): drive type from model numbers, eject result messages.
+
+### Fixed
+- **USB drives whose bridge doesn't report a drive type** (many ASMedia/JMicron enclosures) were drawn
+  with the SSD picture. The model number now decides when it's a known hard-drive or SSD family, and the
+  details say it came from the model number; a drive that's still unknown gets a plain outline, never the
+  NAND picture.
+- Opening a drive's details before the first live reading arrived threw an error and left the panel
+  half drawn.
+- A USB device's "Hub port" said "(USB 2 port)" for the USB 2 half of a USB 3 socket, which read like a
+  USB 2-only socket. It now says which connection the device came in on, and when a USB 3 device made
+  contact only through the USB 2 wires. That warning now points at the cable and plug when the port is
+  already USB 3.
+- `Build-Portable.ps1` deleted the whole output folder, including the `Data` folder (settings and scans)
+  of a BoardScout run from `build\portable` or `build\standalone`. It now keeps `Data`, and never puts it in
+  the zip.
+- BoardScout's own disk reads (refresh, live counters, idle checks) now step aside for an eject instead of
+  holding a handle that would make Windows refuse it; ejects run one at a time.
+
 ## 1.8.0 — 2026-10-05
 
 FlashStream: SSDs and NVMe drives as light moving through their NAND dies.

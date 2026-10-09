@@ -25,6 +25,11 @@ internal sealed class DeviceNode
     /// <summary>For hubs: what each port supports (bit 0 USB 1.1, bit 1 USB 2, bit 2 USB 3) and whether it is in use.</summary>
     public List<(int Port, int Protocols, bool InUse)> PortMap { get; } = [];
 
+    /// <summary>For hubs: ports where something is plugged in but Windows couldn't use it. Status is the hub's
+    /// USB_CONNECTION_STATUS: 2 failed to start, 3 general failure, 4 over-current, 5 not enough power,
+    /// 6 not enough bandwidth, 7 hubs nested too deeply, 8 in a legacy hub, 9 still starting, 10 resetting.</summary>
+    public List<(int Port, int Status)> PortProblems { get; } = [];
+
     /// <summary>For hubs: powered by the port above it instead of its own adapter.</summary>
     public bool HubBusPowered { get; set; }
 
@@ -82,7 +87,38 @@ internal readonly record struct DiskCounterSample(long BytesRead, long BytesWrit
 /// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe);
 /// Spinning is true for hard drives (the disk reports a seek penalty).</summary>
 internal sealed record DiskFacts(int Number, string? Vendor, string? Product, string? Firmware, int Bus, long? SizeBytes,
-    double? TemperatureC, bool? Spinning = null);
+    double? TemperatureC, bool? Spinning = null, bool SpinningFromModel = false);
+
+/// <summary>What Windows said to an eject request. Veto is the PNP_VETO_TYPE when it refused (5 a file is open,
+/// 3 a program, 4 a service, 12 needs administrator rights, 13 already gone); VetoName says who, when Windows says.</summary>
+internal sealed record EjectOutcome(bool Ok, int Veto, string? VetoName, int Result)
+{
+    /// <summary>The program (veto 3) or service (veto 4) that refused. Other vetoes name a device path, which
+    /// embeds serial numbers, so it is never shown.</summary>
+    public string? Who => VetoName is not { Length: > 0 } v ? null : Veto switch
+    {
+        3 => Path.GetFileName(v),
+        4 => v,
+        _ => null
+    };
+
+    /// <summary>What the card says. Only a confirmed eject says the drive is safe to unplug.</summary>
+    public string Message => Ok
+        ? "Safe to unplug. Windows has stopped the drive."
+        : Veto switch
+        {
+            DeviceTree.EjectGone => "Nothing was ejected: Windows no longer lists this drive. If it's still plugged in, refresh the map and try again.",
+            DeviceTree.EjectBusy => "Nothing was ejected: BoardScout was still reading the drive. Try again in a moment.",
+            DeviceTree.EjectLookupFailed => $"Nothing was ejected: Windows couldn't look up the drive (code 0x{Result:X}).",
+            2 or 5 => "Windows couldn't eject it: something still has a file open on it. Close files and File Explorer windows on this drive, then try again.",
+            3 => $"Windows couldn't eject it: {Who ?? "a program"} is using it. Close it, then try again.",
+            4 => $"Windows couldn't eject it: {(Who is null ? "a Windows service" : $"the {Who} service")} is using it.",
+            12 => "Windows needs administrator rights to eject this drive.",
+            9 => "Windows couldn't eject it: the drive is needed to keep another device powered.",
+            10 => "Windows won't eject this drive: it holds something Windows needs, such as the page file.",
+            _ => $"Windows couldn't eject it (reason {Veto}, code 0x{Result:X})."
+        };
+}
 
 /// <summary>One active display output. Technology is DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY.</summary>
 internal sealed record DisplayTarget(string? MonitorInstance, string? FriendlyName, uint Technology, int Connector, int? Width, int? Height, double? RefreshHz);
@@ -92,7 +128,7 @@ internal sealed record DisplayTarget(string? MonitorInstance, string? FriendlyNa
 /// names, the PCIe link each PCI device negotiated, and — from the USB hubs themselves — which port each
 /// USB device is on and the speed it actually runs at.
 /// </summary>
-internal static class DeviceTree
+internal static partial class DeviceTree
 {
     private static readonly Guid PciPropertyKeys = new("3AB22E31-8264-4B4E-9AF5-A8D2D8E33E62");
     private static readonly Guid BusReportedDescription = new("540B947E-8B40-45BC-A8A2-6A0B894CBDA2");
@@ -165,8 +201,9 @@ internal static class DeviceTree
             hub.HubBusPowered = busPowered;
             for (var port = 1; port <= ports; port++)
             {
-                var connection = ConnectionInfo(handle, port, out var protocols);
+                var connection = ConnectionInfo(handle, port, out var protocols, out var status);
                 hub.PortMap.Add((port, protocols, connection is not null));
+                if (status is >= 2 and <= 8) hub.PortProblems.Add((port, status));
                 if (connection is null) continue;
                 var driverKey = PortDriverKey(handle, port);
                 var child = hub.Children.FirstOrDefault(c =>
@@ -304,8 +341,9 @@ internal static class DeviceTree
             : (0, false);
     }
 
-    private static UsbPort? ConnectionInfo(SafeFileHandle hub, int port, out int protocols)
+    private static UsbPort? ConnectionInfo(SafeFileHandle hub, int port, out int protocols, out int status)
     {
+        status = -1;
         // The _V2 query tells what the port supports (in the SupportedUsbProtocols field it returns) and, when
         // something is plugged in, whether it runs at SuperSpeed — EX keeps reporting "high speed" for USB 3 devices.
         var v2 = new byte[16];
@@ -322,7 +360,8 @@ internal static class DeviceTree
         BitConverter.GetBytes(port).CopyTo(buffer, 0);
         if (!DeviceIoControl(hub, IoctlUsbGetNodeConnectionInformationEx, buffer, buffer.Length, buffer, buffer.Length, out _, IntPtr.Zero))
             return null;
-        if (BitConverter.ToInt32(buffer, 31) != 1) return null; // DeviceConnected
+        status = BitConverter.ToInt32(buffer, 31);
+        if (status != 1) return null; // DeviceConnected
         return new UsbPort(port, buffer[23], flags, buffer[24] != 0, protocols);
     }
 
@@ -391,20 +430,93 @@ internal static class DeviceTree
     public static Dictionary<uint, int> DiskNumbers()
     {
         var numbers = new Dictionary<uint, int>();
-        foreach (var (devInst, path) in InterfacePaths(DiskInterface))
+        if (!DiskGate.TryEnterReadLock(DiskWaitMs)) return numbers;
+        try
         {
-            using var handle = CreateFile(path, 0, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
-            if (handle.IsInvalid) continue;
-            var buffer = new byte[12]; // STORAGE_DEVICE_NUMBER: DeviceType, DeviceNumber, PartitionNumber
-            if (DeviceIoControl(handle, IoctlStorageGetDeviceNumber, [], 0, buffer, buffer.Length, out _, IntPtr.Zero))
-                numbers[devInst] = BitConverter.ToInt32(buffer, 4);
+            foreach (var (devInst, path) in InterfacePaths(DiskInterface))
+            {
+                using var handle = CreateFile(path, 0, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
+                if (handle.IsInvalid) continue;
+                var buffer = new byte[12]; // STORAGE_DEVICE_NUMBER: DeviceType, DeviceNumber, PartitionNumber
+                if (DeviceIoControl(handle, IoctlStorageGetDeviceNumber, [], 0, buffer, buffer.Length, out _, IntPtr.Zero))
+                    numbers[devInst] = BitConverter.ToInt32(buffer, 4);
+            }
+        }
+        finally
+        {
+            DiskGate.ExitReadLock();
         }
         return numbers;
     }
 
+    // Every disk handle BoardScout opens is held under this gate's read side. Windows refuses to eject a drive
+    // while any handle to it is open, so an eject takes the write side: it waits for open handles to close,
+    // holds off new ones (a map refresh waits, live counters skip a sample) until Windows has answered, and
+    // runs one eject at a time.
+    private static readonly ReaderWriterLockSlim DiskGate = new();
+    private const int DiskWaitMs = 15_000;
+    private const int CrNoSuchDevnode = 0x0D;
+
+    /// <summary>
+    /// Asks Windows to stop a device so it can be unplugged: the same request the taskbar's Safely Remove
+    /// Hardware sends. Windows flushes and dismounts the drive's volumes first, and refuses while a program has
+    /// a file open on it. Removable drives need no administrator rights. Ok is true only when Windows itself
+    /// confirmed the device stopped.
+    /// </summary>
+    public static EjectOutcome Eject(string instanceId)
+    {
+        if (!DiskGate.TryEnterWriteLock(DiskWaitMs)) return new(false, EjectBusy, null, -1);
+        try
+        {
+            var outcome = new EjectOutcome(false, 0, null, -1);
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var located = CM_Locate_DevNodeW(out var devInst, instanceId, 0);
+                // Gone from Windows (unplugged, or stopped already): nothing was ejected, so it isn't a success.
+                if (located == CrNoSuchDevnode) return new(false, EjectGone, null, located);
+                if (located != 0) return new(false, EjectLookupFailed, null, located);
+                var name = new char[260];
+                var result = CM_Request_Device_EjectW(devInst, out var veto, name, name.Length, 0);
+                var end = Array.IndexOf(name, '\0');
+                var vetoName = new string(name, 0, end < 0 ? name.Length : end);
+                outcome = new(result == 0, result == 0 ? 0 : veto, vetoName.Length > 0 ? vetoName : null, result);
+                // A file open a moment ago (Explorer's thumbnails, the search indexer) often closes on its own.
+                if (outcome.Ok || veto is not (2 or 5)) break;
+                Thread.Sleep(1200);
+            }
+            return outcome;
+        }
+        finally
+        {
+            DiskGate.ExitWriteLock();
+        }
+    }
+
+    /// <summary>EjectOutcome.Veto when the device was no longer in Windows' list (PNP_VetoAlreadyRemoved).</summary>
+    public const int EjectGone = 13;
+
+    /// <summary>EjectOutcome.Veto when BoardScout's own disk reads didn't finish in time to start the eject.</summary>
+    public const int EjectBusy = -1;
+
+    /// <summary>EjectOutcome.Veto when Windows couldn't look the device up for another reason (Result has the code).</summary>
+    public const int EjectLookupFailed = -2;
+
     /// <summary>What a disk says about itself. Opens the disk with no access rights, so no admin is needed.
     /// Serial numbers are deliberately not read.</summary>
     public static DiskFacts? ReadDisk(int number)
+    {
+        if (!DiskGate.TryEnterReadLock(DiskWaitMs)) return null;
+        try
+        {
+            return ReadDiskUnderGate(number);
+        }
+        finally
+        {
+            DiskGate.ExitReadLock();
+        }
+    }
+
+    private static DiskFacts? ReadDiskUnderGate(int number)
     {
         using var handle = OpenDisk(number);
         if (handle.IsInvalid) return null;
@@ -444,23 +556,65 @@ internal static class DeviceTree
         var seek = new byte[12];
         if (DeviceIoControl(handle, IoctlStorageQueryProperty, PropertyQuery(7), 12, seek, seek.Length, out var seekLength, IntPtr.Zero) && seekLength >= 9)
             spinning = seek[8] != 0;
-        return new DiskFacts(number, vendor, product, firmware, bus, size, temperature, spinning);
+        // Many USB bridges don't pass that question to the drive. Then the model number decides, when it's a
+        // family BoardScout knows (the details say so).
+        var fromModel = false;
+        if (spinning is null && SpinningFromModelNumber(vendor, product) is { } guess)
+        {
+            spinning = guess;
+            fromModel = true;
+        }
+        return new DiskFacts(number, vendor, product, firmware, bus, size, temperature, spinning, fromModel);
     }
+
+    /// <summary>
+    /// Hard drive or SSD from the model number, for drives that don't report a seek penalty, or null when the
+    /// model isn't a family BoardScout knows. USB bridges often split the model across vendor and product
+    /// ("WDC WD10" + "JPVT-75A1YT0"), so both are joined without spaces first.
+    /// </summary>
+    internal static bool? SpinningFromModelNumber(string? vendor, string? product)
+    {
+        var model = string.Concat($"{vendor}{product}".Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
+        if (model.Length == 0) return null;
+        if (SolidStateModel().IsMatch(model)) return false;
+        if (SpinningModel().IsMatch(model)) return true;
+        return null;
+    }
+
+    // SSDs: the word itself, NVMe, WD Blue/Black/Green SSDs (WDS…, SN…), Samsung (MZ…), Crucial (CT…MX/BX/P/T),
+    // Kingston A400/NV, SanDisk SDSSD.
+    [System.Text.RegularExpressions.GeneratedRegex(@"SSD|NVME|SOLID|^(WDC)?WDS\d|SN\d{3}|^(SAMSUNG)?MZ[0-9A-Z]{4}|^CT\d+(MX|BX|P\d|T\d)|SA400|SNV\d|SDSSD")]
+    private static partial System.Text.RegularExpressions.Regex SolidStateModel();
+
+    // Hard drives: WD (WD10JPVT, WD5000BEVT, WD40EFRX), Seagate (ST1000LM024, ST500LT012, ST4000DM004),
+    // HGST/Hitachi (HTS541010A9E680, HUS724040ALE640), Toshiba (MQ01ABD100, DT01ACA300, HDWD110),
+    // Samsung/Seagate laptop (HN-M101MBB, HD103SJ).
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(WDC)?WD\d{2,5}[A-Z]{2,4}|^ST\d{3,5}[A-Z]{2}\d|^(HGST|HITACHI)?H(TS|TE|DS|DT|US|UH|UA)\d{4}|^(TOSHIBA)?(MQ0\d|MG0\d|DT0\d|HDW[A-Z]\d|MD0\d|MK\d{4})|^(SAMSUNG|ST\d+LM\d+)?(HN-M\d|HD\d{3}[A-Z]{2})")]
+    private static partial System.Text.RegularExpressions.Regex SpinningModel();
 
     /// <summary>Cumulative bytes and operations since boot plus the current queue depth, or null when the
     /// disk keeps no counters.</summary>
     public static DiskCounterSample? DiskCounters(int number)
     {
-        using var handle = OpenDisk(number);
-        if (handle.IsInvalid) return null;
-        // DISK_PERFORMANCE: BytesRead @0, BytesWritten @8, ReadTime, WriteTime, IdleTime @32,
-        // ReadCount @40, WriteCount @44, QueueDepth @48, SplitCount, QueryTime @56 (100 ns units).
-        var buffer = new byte[88];
-        return DeviceIoControl(handle, IoctlDiskPerformance, [], 0, buffer, buffer.Length, out _, IntPtr.Zero)
-            ? new DiskCounterSample(BitConverter.ToInt64(buffer, 0), BitConverter.ToInt64(buffer, 8),
-                BitConverter.ToUInt32(buffer, 40), BitConverter.ToUInt32(buffer, 44), BitConverter.ToInt32(buffer, 48),
-                BitConverter.ToInt64(buffer, 32), BitConverter.ToInt64(buffer, 56))
-            : null;
+        // Live samples never wait: during an eject they're skipped.
+        if (!DiskGate.TryEnterReadLock(0)) return null;
+        try
+        {
+            using var handle = OpenDisk(number);
+            if (handle.IsInvalid) return null;
+            // DISK_PERFORMANCE: BytesRead @0, BytesWritten @8, ReadTime, WriteTime, IdleTime @32,
+            // ReadCount @40, WriteCount @44, QueueDepth @48, SplitCount, QueryTime @56 (100 ns units).
+            var buffer = new byte[88];
+            return DeviceIoControl(handle, IoctlDiskPerformance, [], 0, buffer, buffer.Length, out _, IntPtr.Zero)
+                ? new DiskCounterSample(BitConverter.ToInt64(buffer, 0), BitConverter.ToInt64(buffer, 8),
+                    BitConverter.ToUInt32(buffer, 40), BitConverter.ToUInt32(buffer, 44), BitConverter.ToInt32(buffer, 48),
+                    BitConverter.ToInt64(buffer, 32), BitConverter.ToInt64(buffer, 56))
+                : null;
+        }
+        finally
+        {
+            DiskGate.ExitReadLock();
+        }
     }
 
     private static SafeFileHandle OpenDisk(int number) =>
@@ -685,6 +839,9 @@ internal static class DeviceTree
 
     [DllImport("cfgmgr32.dll")]
     private static extern int CM_Get_DevNode_PropertyW(uint devInst, ref DevPropKey key, out uint type, byte[]? buffer, ref int size, int flags);
+
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+    private static extern int CM_Request_Device_EjectW(uint devInst, out int vetoType, char[] vetoName, int nameLength, int flags);
 
     [DllImport("cfgmgr32.dll")]
     private static extern int CM_Get_DevNode_Status(out uint status, out uint problem, uint devInst, int flags);

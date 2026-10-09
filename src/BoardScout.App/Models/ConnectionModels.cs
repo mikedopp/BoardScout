@@ -45,6 +45,9 @@ public sealed class ConnectionNode
 
     [JsonPropertyName("tempC")] public double? TemperatureC { get; set; }
     [JsonPropertyName("problem")] public bool Problem { get; set; }
+
+    /// <summary>An external drive Windows can stop for unplugging (Safely Remove), from the card's Eject button.</summary>
+    [JsonPropertyName("eject")] public bool Eject { get; set; }
     [JsonPropertyName("children")] public List<ConnectionNode> Children { get; set; } = [];
 }
 

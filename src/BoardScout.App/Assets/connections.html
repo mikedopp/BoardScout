@@ -18,7 +18,7 @@ body{color:var(--t);font-family:'Segoe UI',system-ui,sans-serif;overflow:auto;
     var(--s);
   background-attachment:fixed}
 button{font:inherit;color:inherit}
-#head{position:sticky;top:0;left:0;z-index:6;display:flex;align-items:flex-start;gap:16px;padding:14px 22px 14px;
+#head{position:sticky;top:0;left:0;z-index:9;display:flex;align-items:flex-start;gap:16px;padding:14px 22px 14px;
   background:linear-gradient(180deg,rgba(12,22,32,.98),rgba(12,22,32,.95) 88%,rgba(12,22,32,0));
   backdrop-filter:blur(8px);pointer-events:none}
 #head > *{pointer-events:auto}
@@ -192,6 +192,49 @@ body.plan-open #stage,body.drives-open #stage{padding-left:510px}
 .pbusy .spin{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid rgba(61,158,255,.25);border-top-color:var(--a);animation:spin 1s linear infinite}
 .callout{border-radius:12px;padding:9px 11px;font-size:12px;line-height:1.5}
 .callout.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);color:#fcd9a0}
+.callout.ok,#insp .callout.ok{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.35);color:#a7f3d0}
+/* Search */
+#search{position:relative}
+#searchBox{width:230px;border-radius:12px;padding:7px 12px 7px 30px;font:inherit;font-size:12px;color:var(--t);outline:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(17,30,44,.8);
+  border:1px solid rgba(255,255,255,.12);border-top-color:rgba(255,255,255,.22)}
+#searchBox::placeholder{color:var(--tm)}
+#searchBox:focus-visible{border-color:rgba(61,158,255,.7);box-shadow:0 0 0 3px rgba(61,158,255,.2)}
+#searchBox::-webkit-search-cancel-button{filter:invert(.6)}
+#search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none}
+body.no-glass #searchBox{background:var(--sr);border:1px solid var(--b)}
+#results{position:absolute;right:0;top:calc(100% + 6px);width:360px;max-height:min(440px,70vh);overflow:auto;border-radius:16px;display:none;padding:6px;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(15,27,40,.97);
+  border:1px solid rgba(255,255,255,.1);border-top-color:rgba(255,255,255,.2);backdrop-filter:blur(16px) saturate(1.4);box-shadow:0 18px 44px rgba(0,0,0,.55)}
+body.no-glass #results{background:var(--sr);backdrop-filter:none;border:1px solid var(--b)}
+#results.open{display:block}
+#results .hit{display:block;width:100%;text-align:left;background:none;border:none;border-radius:10px;padding:7px 10px;cursor:pointer}
+#results .hit:hover,#results .hit.on{background:rgba(61,158,255,.13)}
+#results .hn{font-size:12.5px;font-weight:600;color:var(--t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#results .hs{font-size:11px;color:var(--ts);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+#results mark{background:rgba(61,158,255,.3);color:inherit;border-radius:3px;padding:0 1px}
+#results .hw{color:var(--w)}
+#results .meta{font-size:11px;color:var(--tm);padding:4px 10px 6px}
+body.searching .card:not(.found) .face{opacity:.32}
+body.searching .card.found .edge{stroke:#7cc4ff;stroke-width:2.4;stroke-opacity:1}
+/* Eject */
+.ejbox{margin-top:2px}
+.ejbox .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ejbox .callout{margin-top:8px}
+.ejbox .hint{font-size:11.5px;color:var(--ts);line-height:1.5;margin-top:6px}
+.ejbox .btn{min-height:34px;padding:7px 16px;font-size:12.5px}
+.btn.eject{border-color:rgba(45,212,191,.5);color:#bff6ec}
+.btn.eject.confirm{border-color:rgba(245,158,11,.65);color:#fde3b5}
+.dcard .ejbox{margin-top:8px}
+.dcard .ejbox .callout{font-size:12px;padding:7px 10px;margin-top:8px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);z-index:12;max-width:min(520px,calc(100vw - 32px));
+  padding:10px 16px;border-radius:14px;font-size:12.5px;line-height:1.45;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
+  background:rgba(15,27,40,.97);border:1px solid rgba(255,255,255,.14);box-shadow:0 14px 34px rgba(0,0,0,.5)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.ok{border-color:rgba(16,185,129,.5)}
+#toast.warn{border-color:rgba(245,158,11,.55)}
+body.no-motion #toast{transition:none}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
 </style>
 </head>
 <body>
@@ -218,6 +261,12 @@ body.plan-open #stage,body.drives-open #stage{padding-left:510px}
     </div>
   </div>
   <div class="actions">
+    <div id="search" role="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a9bb2" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="searchBox" type="search" placeholder="Search devices  (Ctrl+F)" autocomplete="off" spellcheck="false"
+        aria-label="Search devices" aria-controls="results" aria-expanded="false" role="combobox" aria-autocomplete="list">
+      <div id="results" role="listbox" aria-label="Matching devices"></div>
+    </div>
     <button class="btn" id="drivesBtn" title="Every drive live: spinning platters for hard drives, light streaking through the NAND dies of SSDs">Live drives</button>
     <button class="btn" id="planBtn" title="Where to plug things in, faster drives, memory placement, interrupts, and power">Optimization plan</button>
     <button class="btn primary" id="refresh" title="Read the device tree and network again">Refresh</button>
@@ -229,6 +278,7 @@ body.plan-open #stage,body.drives-open #stage{padding-left:510px}
 <div id="inspector" aria-live="polite"><div class="ql-content"><div id="insp"></div></div></div>
 <div id="plan" role="region" aria-label="Optimization plan"><div id="planHead"></div><div id="planBody"></div></div>
 <div id="drives" role="region" aria-label="Live drives"><div id="drivesHead"></div><div id="drivesBody"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <script src="vendor/d3/d3.v7.min.js"></script>
 <script src="vendor/skitter/skitter.js"></script>
 <script src="vendor/flashstream/flashstream.js"></script>
@@ -297,7 +347,8 @@ const ICON={
 const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=18,SPINE=64,COL_INSET=30;
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
   history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
-  skitter:null,speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false};
+  skitter:null,speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false,
+  query:'',hits:[],hitIndex:-1,ejects:new Map()};
 
 const post=m=>window.chrome?.webview?.postMessage(m);
 const $=id=>document.getElementById(id);
@@ -477,6 +528,7 @@ function render(){
   const root=data.root;
   const all=prepare(root);
   state.nodes=new Map(all.map(n=>[n.id,n]));
+  reconcileEjects();
   const viewW=document.documentElement.clientWidth-(state.planOpen||state.drivesOpen?510:0);
   const {pos,width,height}=layout(root,viewW);
   state.pos=pos;
@@ -521,6 +573,8 @@ function render(){
   renderDrives();
   if(state.selected&&state.nodes.has(state.selected))select(state.selected,false);
   else closeInspector(false);
+  // A refreshed map keeps the search: plugging a drive in while searching for it lights it up.
+  if(state.query){state.hits=searchNodes(state.query);state.hitIndex=Math.min(Math.max(0,state.hitIndex),state.hits.length-1);applySearch();renderResults()}
   applyFlow();
 }
 
@@ -802,6 +856,7 @@ function select(id,user){
   if(n.detail)insp.append(el('div','d',n.detail));
   if(n.warning){const s=el('div','sec');s.append(el('div','callout warn',n.warning));insp.append(s)}
   if(n.note){const s=el('div','sec');s.append(el('div','callout note',n.note));insp.append(s)}
+  if(n.eject){const s=el('div','sec');s.append(el('h3',null,'Remove safely'),ejectBox(n));insp.append(s)}
 
   if(n.link&&n.parent){
     const s=el('div','sec');s.append(el('h3',null,'Connection'));
@@ -851,6 +906,152 @@ function select(id,user){
   updateLive();
   syncGlass();
   if(user)$('insp').scrollTop=0;
+}
+
+// ---- Search ------------------------------------------------------------------------------
+// Finds cards by name, detail, kind, link, or any detail value (firmware, USB ID, driver, disk number…).
+// Every word typed must match somewhere; matching cards stay lit on the map and the rest dim.
+
+function searchFields(n){
+  // rank: name beats detail and kind, which beat everything else; "deep" fields are shown in the result line.
+  return n._fields||(n._fields=[
+    {rank:40,text:n.name},{rank:20,text:n.detail},{rank:20,text:KIND[n.kind]},
+    {rank:20,text:n.disk!=null&&!n.net?{HDD:'HDD hard drive',SSD:'SSD solid-state',NVMe:'NVMe SSD solid-state',Disk:'disk'}[driveTag(n)]:null},
+    {rank:8,deep:true,label:'Connection',text:n.link?.label},
+    {rank:8,deep:true,text:n.warning},...(n.facts||[]).map(f=>({rank:8,deep:true,label:f.label,text:`${f.value}`}))
+  ].filter(f=>f.text).map(f=>({...f,lower:f.text.toLowerCase(),labelLower:(f.label||'').toLowerCase()})));
+}
+function searchNodes(q){
+  const terms=q.toLowerCase().split(/\s+/).filter(Boolean);if(!terms.length)return [];
+  const out=[];
+  for(const n of state.nodes.values()){
+    const fields=searchFields(n);let score=0,why=null,ok=true;
+    for(const t of terms){
+      let best=0;
+      for(const f of fields){
+        const at=f.lower.indexOf(t),inLabel=f.labelLower.includes(t);
+        if(at<0&&!inLabel)continue;
+        // A match at the start of a word beats one in the middle; a match on the label alone ranks lowest.
+        const s=f.rank+(at===0||(at>0&&/\W/.test(f.lower[at-1]))?6:0)-(at<0?4:0);
+        if(s>best){best=s;why=f.deep?f:why}
+      }
+      if(!best){ok=false;break}
+      score+=best;
+    }
+    if(ok)out.push({n,score,why});
+  }
+  return out.sort((a,b)=>b.score-a.score||a.n.name.localeCompare(b.n.name));
+}
+function markText(text,terms){
+  const span=el('span');let rest=text;
+  // Wrap the earliest match of any term, repeatedly, so overlapping terms don't nest.
+  for(let guard=0;guard<20&&rest;guard++){
+    let at=-1,len=0;
+    for(const t of terms){const i=rest.toLowerCase().indexOf(t);if(i>=0&&(at<0||i<at)){at=i;len=t.length}}
+    if(at<0)break;
+    span.append(rest.slice(0,at),el('mark',null,rest.slice(at,at+len)));rest=rest.slice(at+len);
+  }
+  span.append(rest);return span;
+}
+function runSearch(){
+  const q=$('searchBox').value.trim();state.query=q;
+  state.hits=q?searchNodes(q):[];state.hitIndex=state.hits.length?0:-1;
+  applySearch();renderResults();
+}
+function applySearch(){
+  const on=!!state.query;document.body.classList.toggle('searching',on);
+  const found=new Set(state.hits.map(h=>h.n.id));
+  d3.selectAll('.card').classed('found',function(){return on&&found.has(this.id.slice(2))});
+}
+function renderResults(){
+  const box=$('results'),input=$('searchBox');box.replaceChildren();
+  input.removeAttribute('aria-activedescendant');
+  const open=!!state.query&&document.activeElement===input;
+  box.classList.toggle('open',open);input.setAttribute('aria-expanded',open);
+  if(!state.query)return;
+  const terms=state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  if(!state.hits.length){box.append(el('div','meta',state.data?'Nothing on the map matches.':'The map is still loading.'));return}
+  box.append(el('div','meta',`${state.hits.length} match${state.hits.length===1?'':'es'} · Enter shows ${state.hits.length>1?'the highlighted one, Shift+Enter all of them':'it'}`));
+  state.hits.slice(0,40).forEach((h,i)=>{
+    const n=h.n,b=el('button','hit'+(i===state.hitIndex?' on':''));b.type='button';b.setAttribute('role','option');b.id='hit-'+i;
+    b.setAttribute('aria-selected',i===state.hitIndex);
+    const nm=el('div','hn');nm.append(markText(n.name,terms));if(n.warning||n.problem)nm.prepend(el('span','hw','⚠ '));
+    const sub=el('div','hs');
+    const where=n.parent&&n.parent.kind!=='cpu'?` · on ${n.parent.name}`:'';
+    if(h.why){sub.append(`${h.why.label?h.why.label+': ':''}`,markText(h.why.text,terms),` · ${KIND[n.kind]||n.kind}`)}
+    else sub.append(markText([n.detail,KIND[n.kind]||n.kind].filter(Boolean).join(' · '),terms),where);
+    b.append(nm,sub);
+    b.onmousedown=e=>e.preventDefault();
+    b.onclick=()=>{state.hitIndex=i;showHit(false)};
+    box.append(b);
+  });
+  if(open&&state.hitIndex>=0)input.setAttribute('aria-activedescendant','hit-'+state.hitIndex);
+}
+// Showing a result closes the list and hands focus to the device's card; the matches stay lit on the map
+// until the search is cleared (Esc, or / then Esc).
+function showHit(all){
+  if(!state.hits.length)return;
+  const ids=all?state.hits.map(h=>h.n.id):[state.hits[Math.max(0,state.hitIndex)].n.id];
+  $('searchBox').blur();
+  showNodes(ids);
+  document.getElementById('c-'+ids[0])?.focus({preventScroll:true});
+}
+function moveHit(d){
+  if(!state.hits.length)return;
+  state.hitIndex=(state.hitIndex+d+Math.min(40,state.hits.length))%Math.min(40,state.hits.length);
+  renderResults();$('hit-'+state.hitIndex)?.scrollIntoView({block:'nearest'});
+}
+function clearSearch(){$('searchBox').value='';runSearch()}
+
+// ---- Eject -------------------------------------------------------------------------------
+// External drives get an Eject button: the same Safely Remove request the taskbar sends. One click arms it,
+// a second click sends it; Windows flushes the drive and refuses while a file on it is open.
+
+function ejectBox(n){const box=el('div','ejbox');box.dataset.eject=n.id;fillEject(box,n);return box}
+function fillEject(box,n){
+  box.replaceChildren();
+  const st=state.ejects.get(n.id)||{};
+  // Stopped: no button, so a drive Windows has already let go of can't be "ejected" again.
+  if(st.done){box.append(el('div','callout ok',st.message));return}
+  const row=el('div','row');
+  const btn=el('button','btn eject'+(st.armed?' confirm':''),st.busy?'Ejecting…':st.armed?'Eject now':'⏏ Eject');
+  btn.disabled=!!st.busy;btn.title='Stop this drive so it can be unplugged safely';
+  btn.onclick=e=>{e.stopPropagation();ejectClick(n.id)};
+  row.append(btn);
+  if(st.armed){const no=el('button','btn','Cancel');no.onclick=e=>{e.stopPropagation();setEject(n.id,{})};row.append(no)}
+  box.append(row);
+  if(st.armed)box.append(el('div','hint','Windows finishes writing anything still cached, then stops the drive. Close files open on it first.'));
+  if(st.message)box.append(el('div','callout '+(st.ok?'ok':'warn'),st.message));
+}
+function setEject(id,st){
+  clearTimeout(state.ejects.get(id)?.timer);
+  state.ejects.set(id,st);
+  // An armed button disarms itself after a few seconds.
+  if(st.armed)st.timer=setTimeout(()=>{if(state.ejects.get(id)===st)setEject(id,{})},6000);
+  const n=state.nodes.get(id)||{id};
+  document.querySelectorAll(`.ejbox[data-eject="${id}"]`).forEach(b=>fillEject(b,n));
+}
+// After a map refresh: a stopped drive keeps its "safe to unplug" card until it leaves the map (unplugged, or
+// listed as stopped); if it comes back as an ejectable drive after that, it was plugged in again and gets a
+// fresh button.
+function reconcileEjects(){
+  for(const [id,st] of state.ejects){
+    const n=state.nodes.get(id);
+    if(st.done){if(!n||!n.eject)st.left=true;else if(st.left)state.ejects.delete(id)}
+    else if(!n)state.ejects.delete(id);
+  }
+}
+function ejectClick(id){
+  const st=state.ejects.get(id)||{};
+  if(st.busy)return;
+  if(!st.armed){setEject(id,{armed:true});return}
+  setEject(id,{busy:true});
+  post({type:'eject',id});
+}
+let toastTimer=0;
+function toast(text,tone){
+  const t=$('toast');t.textContent=text;t.className='show '+(tone||'');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='',5200);
 }
 
 function closeInspector(user){
@@ -953,8 +1154,10 @@ function updateLive(){
       ops.append(el('span',null,`${fmtCount(c.opsIn)} packets/s in`),el('span',null,`${fmtCount(c.opsOut)} out`));
       if(c.dropRate>0){const d=el('span',null,`${c.dropRate} discarded/s`);d.style.color='var(--ts)';ops.append(d)}
     }else if(isDisk){
-      ops.append(el('span',null,`${fmtCount(c.opsIn)} reads/s`),el('span',null,`${fmtCount(c.opsOut)} writes/s`),
+      // Before the first live reading there are no counters yet.
+      if(c)ops.append(el('span',null,`${fmtCount(c.opsIn)} reads/s`),el('span',null,`${fmtCount(c.opsOut)} writes/s`),
         el('span',null,c.queue>0?`${c.queue} waiting`:'queue empty'));
+      else ops.append(el('span',null,'Waiting for the first reading…'));
     }
   }
   const totals=$('totals');
@@ -1045,7 +1248,8 @@ function driveTag(n){return n.kind==='nvme'?'NVMe':isSpinning(n)?'HDD':/^Solid-s
 
 function diskView(canvas,node,height){
   // Flash drives run their own FlashStream loop (it follows Motion and cleans up when the card is removed).
-  if(!isSpinning(node)&&window.FlashStream){
+  // Only drives known to be flash get it; a drive that doesn't report its type gets the plain flow line.
+  if(/^(SSD|NVMe)$/.test(driveTag(node))&&window.FlashStream){
     FlashStream.createFlashStream(canvas,{lanes:FlashStream.lanesFor(driveTag(node)),height,motion:()=>state.motion,
       source:()=>{const s=diskSample(node);return {readBps:s.r,writeBps:s.w,readOps:s.ro,writeOps:s.wo,queueDepth:s.q,busy:s.busy}}});
     return;
@@ -1098,7 +1302,15 @@ function drawDisk(v,dt,still){
     ctx.fillStyle=dvRgba(color,.95);ctx.beginPath();ctx.arc(x,cy,d.dir==='read'?2.6:2.1,0,Math.PI*2);ctx.fill();
   }
 
-  if(isSpinning(v.node)){
+  if(!isSpinning(v.node)){
+    // Type unknown: a plain drive outline, no platter or NAND that would claim one or the other.
+    const bw=Math.min(radius*1.6,64),bh=Math.min(h*.62,radius*1.9),bx=cx-bw/2,by=cy-bh/2;
+    ctx.fillStyle='#161d26';ctx.strokeStyle=active?dvRgba(writeShare>.5?DV_WRITE:DV_READ,.5+intensity*.5):'rgba(139,148,158,0.45)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(bx,by,bw,bh,6);ctx.fill();ctx.stroke();
+    ctx.fillStyle='rgba(139,148,158,0.75)';ctx.font='10px Segoe UI, sans-serif';ctx.textAlign='center';
+    ctx.fillText('Type not',cx,cy-2);ctx.fillText('reported',cx,cy+11);
+  }
+  else{
     // Platter, tracks, rotating sheen, arm and head.
     const rps=still?0:v.idleFor>3?.12:.35+intensity*2.6;
     v.rotation=(v.rotation+rps*360*dt)%360;
@@ -1180,6 +1392,7 @@ function renderDrives(){
     top.append(nm,el('span','tag',driveTag(n)));
     const t=el('span','tmp');t.dataset.temp='';top.append(t);
     card.append(top);
+    if(n.eject)card.append(ejectBox(n));
     const cv=el('canvas','dview');card.append(cv);
     const stats=el('div','dstats');
     for(const [k,label] of [['r','Read'],['w','Write'],['o','Ops/s'],['q','Queue']]){const c=el('div',null,label);const b=el('b',k==='r'?'r':k==='w'?'w':null,'–');b.dataset.k=k;c.append(b);stats.append(c)}
@@ -1432,6 +1645,11 @@ window.chrome?.webview?.addEventListener('message',e=>{
     if(n&&msg.ok){const f=n.facts.find(f=>f.label==='Public IP');if(f)f.value=msg.ip}
     const box=$('wan');if(box)fillWan(box);
   }
+  else if(msg.type==='eject'){
+    const name=state.nodes.get(msg.id)?.name||'Drive';
+    setEject(msg.id,msg.ok?{done:true,ok:true,message:msg.message}:{ok:false,message:msg.message});
+    toast(`${name}: ${msg.message}`,msg.ok?'ok':'warn');
+  }
   else if(msg.type==='busy'){$('refresh').disabled=true;$('refresh').textContent='Reading…'}
   else if(msg.type==='discovery'){state.discoveryBusy=true;state.sweepBusy=!!msg.sweep;if(state.data)renderSummary()}
   else if(msg.type==='speed'){
@@ -1445,8 +1663,20 @@ $('refresh').onclick=()=>{$('refresh').disabled=true;$('refresh').textContent='R
 $('planBtn').onclick=()=>state.planOpen?closePlan():openPlan();
 $('drivesBtn').onclick=()=>state.drivesOpen?closeDrives():openDrives();
 document.addEventListener('keydown',e=>{
-  if(e.key!=='Escape')return;
-  if(state.selected)closeInspector(true);else if(state.planOpen)closePlan();else if(state.drivesOpen)closeDrives();
+  const typing=/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName||'');
+  if((e.key==='f'&&(e.ctrlKey||e.metaKey))||(e.key==='/'&&!typing)){e.preventDefault();$('searchBox').focus();$('searchBox').select();return}
+  if(e.key!=='Escape'||typing)return;
+  if(state.selected)closeInspector(true);else if(state.planOpen)closePlan();else if(state.drivesOpen)closeDrives();else if(state.query)clearSearch();
+});
+const sb=$('searchBox');
+sb.addEventListener('input',runSearch);
+sb.addEventListener('focus',renderResults);
+sb.addEventListener('blur',()=>setTimeout(renderResults,0));
+sb.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){e.preventDefault();moveHit(1)}
+  else if(e.key==='ArrowUp'){e.preventDefault();moveHit(-1)}
+  else if(e.key==='Enter'){e.preventDefault();showHit(e.shiftKey)}
+  else if(e.key==='Escape'){e.preventDefault();if(sb.value)clearSearch();else sb.blur()}
 });
 let resizeTimer=0;
 window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.flowCtx)sizeFlowCanvas();render()},140)});
