@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.10.0 — 2026-10-11
+
+BoardScout for Linux.
+
+### Added
+- **The Linux edition** (`src/BoardScout.Linux`, guide in `docs/linux.md`): one program, `boardscout`, that
+  serves the dashboard to your browser and reads everything from the kernel's own files. Nothing needs
+  root. It shows the same views as Windows (the shared Topology, Connections, and System pages run
+  unchanged through a small bridge) plus its own Overview board, Drivers, Storage, Efficiency, and Scan
+  Log, in Liquid Glass with opacity and blur settings, a solid fallback for reduced transparency and high
+  contrast, and the Glimmer orb on the version button.
+  - **Connections** from `/sys`: Intel (PCH over DMI) and AMD chipsets, PCIe links now against their best,
+    every USB controller, hub, and port, with the firmware's USB 2/USB 3 socket pairing (sockets counted
+    once, unwired ports left out, a USB 3 bridge that came in on the USB 2 wires flagged), USB port
+    over-current and failed-start cards, SATA links with each drive's own maximum, firmware, and spin
+    speed from its IDENTIFY data (never the serial), NVMe, SD/eMMC, monitors with their EDID names,
+    Bluetooth, bridges and VPNs, and the same router, mesh, and LAN naming as Windows. Live traffic,
+    Live drives, search, and Find more devices work as on Windows.
+  - **Optimization plan** for Linux: USB ports and drives (UAS or bulk-only), lanes and the chipset link,
+    memory placement from udev's copy of the firmware tables (no root), interrupts counted per device
+    for 10 seconds without root, USB power from the devices' own descriptors, battery, the processor's
+    power policy, and a Linux section: restarts owed after updates, swap, failed services, full
+    filesystems, kernel taint, and unmitigated processor flaws.
+  - **System** for Linux: a personality verdict ("The Homelab Hero" when Plex, libvirt, Tailscale, and
+    friends run), distribution support dates (Ubuntu, Debian, Mint and other Ubuntu/Debian
+    derivatives, RHEL rebuilds, Fedora; rolling releases), updates waiting from a simulated `apt`
+    upgrade, a security check (Secure Boot, TPM, firewall, automatic updates, processor flaws, newest
+    kernel, SSH password logins), packages (dpkg, rpm, pacman, snaps, Flatpaks), package history, and
+    systemd timers and cron jobs.
+  - **Check firmware** asks fwupd which BIOS, SSD, and device firmware updates are waiting; they also show
+    under Efficiency. Nothing is downloaded or installed by BoardScout.
+  - **Eject** for USB drives through udisks: unmounts each filesystem, then powers the drive off, and says
+    why when Linux refuses.
+  - Serves only this computer unless started with `--listen`; every request needs the access key printed
+    at start. A second launch opens the running dashboard. `--install` adds an app-menu entry (user-level),
+    `--stop-when-closed` stops when the last tab closes, and `--selftest DIR` writes every view's data to
+    files for checking a machine over SSH.
+  - `Build-Linux.ps1` builds linux-x64 and linux-arm64: a standalone binary, a portable `.tar.gz` (with the
+    executable bit set even when built on Windows), and checksums. 70 tests in `tests/BoardScout.Linux.Tests`.
+
+### Changed
+- The Windows app's network probe, network discovery, SMBIOS reader, and drive-model check are split into
+  shared code plus Windows-only parts, so both editions use the same router, mesh, LAN-naming, speed-test,
+  memory-advice, and privacy code. The Windows map and plan were compared before and after: identical
+  apart from what changes from minute to minute (devices on the network, signal, interrupt rates).
+- The Topology view uses where a device really attaches (integrated, CPU lanes, or chipset) when the scan
+  says so; Windows scans don't, and keep the old layout.
+- Memory advice says "The firmware lists them in the first slot", not "Windows lists them".
+
 ## 1.9.0 — 2026-10-08
 
 Search, Eject, and drives that don't say what they are.

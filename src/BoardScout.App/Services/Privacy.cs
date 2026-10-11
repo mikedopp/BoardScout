@@ -34,7 +34,7 @@ internal static class Privacy
             found.Add((value, replacement));
         }
 
-        Add(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "%USERPROFILE%");
+        Add(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), OperatingSystem.IsWindows() ? "%USERPROFILE%" : "~");
         Add(Environment.MachineName, HostPlaceholder);
         Add(Environment.UserName, "user");
         if (rawScanJson is not null)

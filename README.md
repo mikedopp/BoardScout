@@ -1,10 +1,11 @@
 # BoardScout
 
-A portable Windows app that maps your motherboard, bandwidth, drivers, storage, and operating
-system in one place: what is plugged in where, what each part is good for, what needs attention,
-and how long Windows will keep patching it. It never installs drivers or firmware.
+A portable app that maps your motherboard, bandwidth, drivers, storage, and operating system in one
+place: what is plugged in where, what each part is good for, what needs attention, and how long your
+OS will keep patching it. It never installs drivers or firmware. It runs on Windows, and on Linux in
+your browser ([BoardScout for Linux](docs/linux.md)).
 
-**Status:** v1.7.1 (2026-10-04) · Windows 10/11 · .NET 10 · MIT license ·
+**Status:** v1.10.0 (2026-10-11) · Windows 10/11 and Linux (x64, arm64) · .NET 10 · MIT license ·
 [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
@@ -15,9 +16,10 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.7.1-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.7.1-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.7.1-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.10.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-1.10.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
+| `BoardScout-1.10.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-1.10.0-linux-x64`, `-linux-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -254,9 +256,20 @@ MAC addresses.
 - A drive with no temperature on Connections is normal: without administrator rights, Windows
   reports temperature only for some drives (usually NVMe).
 
+## BoardScout for Linux
+
+The Linux edition reads the kernel's own files (`/sys`, `/proc`) and serves the same views to your
+browser: the board, Topology, Connections with live traffic, Live drives, search, and the Optimization
+plan, Drivers with fwupd firmware checks, Storage, Efficiency, and System with your distribution's
+support dates and a security check. Nothing needs root. `boardscout --listen 0.0.0.0` serves a headless
+server's dashboard on your network. The full guide, including what each optional tool (iw,
+NetworkManager, BlueZ, udisks, fwupd) adds, is in [docs/linux.md](docs/linux.md).
+
+![BoardScout for Linux: Connections on a Dell OptiPlex 3050 running Ubuntu 26.04](docs/screenshots/linux-connections.png)
+
 ## Build from source
 
-Requires the .NET 10 SDK on Windows.
+Requires the .NET 10 SDK on Windows (both editions; the Linux edition also builds on Linux).
 
     .\Build-Portable.ps1 -Runtime win-x64
 
@@ -269,6 +282,11 @@ then launches the portable build.
 
 runs the unit tests (drive type from model numbers, eject result messages).
 
+    .\Build-Linux.ps1
+
+builds the Linux edition for linux-x64 and linux-arm64 (`build\BoardScout-<version>-linux-*` plus
+`.tar.gz` and checksums) after running `tests\BoardScout.Linux.Tests`.
+
 Source layout:
 
 - `src\BoardScout.App` — the .NET 10 Windows Forms application
@@ -278,6 +296,9 @@ Source layout:
   tracing, and the optimization plan
 - `src\BoardScout.App\Assets` — Topology, Connections, and System web views, plus `vendor\` (QuickLiquid, D3)
 - `src\BoardScout.App\DriverScout` — the bundled PowerShell scan engine and its notices
+- `src\BoardScout.Linux` — the Linux edition: `Platform` reads `/sys` and `/proc`, `Views` builds the
+  same payloads the web views use, `Live` streams telemetry, and `Shell` is the browser dashboard. It
+  compiles the Windows app's shared models and network code (`*.Windows.cs` files stay Windows-only).
 
 ## License and legal
 

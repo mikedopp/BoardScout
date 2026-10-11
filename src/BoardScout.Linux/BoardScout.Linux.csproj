@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>boardscout</AssemblyName>
+    <RootNamespace>BoardScout</RootNamespace>
+    <!-- One version for both editions: it comes from the Windows app's project, so the two can't drift. -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\BoardScout.App\BoardScout.App.csproj')), '&lt;Version&gt;([^&lt;]+)&lt;/Version&gt;').Groups[1].Value)</Version>
+    <Product>BoardScout</Product>
+    <Description>Linux edition of BoardScout: motherboard, connections, drives, and OS dashboard in the browser.</Description>
+    <Authors>mikedopp</Authors>
+    <Company>mikedopp</Company>
+    <Copyright>Copyright (c) 2026 mikedopp</Copyright>
+    <!-- No ICU dependency: the binary runs on any glibc distribution without libicu installed. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>embedded</DebugType>
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
+    <!-- LibraryImport's generated marshalling for libc's realpath. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- -p:Standalone=true packs the web views and data files into the binary; .NET unpacks them to
+       ~/.net/boardscout on first run. Without it they sit beside the binary. -->
+  <PropertyGroup Condition="'$(Standalone)' == 'true'">
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="BoardScout.Linux.Tests" />
+  </ItemGroup>
+
+  <!-- Code shared with the Windows edition: the web views' data contracts, privacy masking, network
+       discovery, the speed test, SMBIOS parsing, memory advice, and the IEEE/USB ID lookups. -->
+  <ItemGroup>
+    <Compile Include="..\BoardScout.App\Models\ConnectionModels.cs" Link="Shared\Models\ConnectionModels.cs" />
+    <Compile Include="..\BoardScout.App\Models\PlanModels.cs" Link="Shared\Models\PlanModels.cs" />
+    <Compile Include="..\BoardScout.App\Models\SystemInfoModels.cs" Link="Shared\Models\SystemInfoModels.cs" />
+    <Compile Include="..\BoardScout.App\Services\AppInfo.cs" Link="Shared\Services\AppInfo.cs" />
+    <Compile Include="..\BoardScout.App\Services\DriveModels.cs" Link="Shared\Services\DriveModels.cs" />
+    <Compile Include="..\BoardScout.App\Services\MemoryAdvice.cs" Link="Shared\Services\MemoryAdvice.cs" />
+    <Compile Include="..\BoardScout.App\Services\NetworkDiscovery.cs" Link="Shared\Services\NetworkDiscovery.cs" />
+    <Compile Include="..\BoardScout.App\Services\NetworkProbe.cs" Link="Shared\Services\NetworkProbe.cs" />
+    <Compile Include="..\BoardScout.App\Services\Oui.cs" Link="Shared\Services\Oui.cs" />
+    <Compile Include="..\BoardScout.App\Services\Privacy.cs" Link="Shared\Services\Privacy.cs" />
+    <Compile Include="..\BoardScout.App\Services\Smbios.cs" Link="Shared\Services\Smbios.cs" />
+    <Compile Include="..\BoardScout.App\Services\SpeedTest.cs" Link="Shared\Services\SpeedTest.cs" />
+    <Compile Include="..\BoardScout.App\Services\UsbIds.cs" Link="Shared\Services\UsbIds.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Windows app's web views (Topology, Connections, System) and their vendored libraries. -->
+    <Content Include="..\BoardScout.App\Assets\**\*" LinkBase="Assets">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <!-- IEEE, PCI, and USB ID registries; Oui and UsbIds look for them in DriverScout\data. -->
+    <Content Include="..\BoardScout.App\DriverScout\data\oui.tsv;..\BoardScout.App\DriverScout\data\pci.ids;..\BoardScout.App\DriverScout\data\usb.ids;..\BoardScout.App\DriverScout\data\README.md" LinkBase="DriverScout\data">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Shell\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\LICENSE;..\..\THIRD-PARTY-NOTICES.md">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

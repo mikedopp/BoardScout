@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Serialization;
-using BoardScout.UI;
 
 namespace BoardScout.Services;
 
@@ -50,7 +49,7 @@ internal static class SpeedTest
     {
         using var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(1), MaxConnectionsPerServer = Streams + 1 };
         using var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd($"BoardScout/{VersionButton.AppVersion}");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"BoardScout/{AppInfo.Version}");
 
         progress(new SpeedTestUpdate { Phase = "latency" });
         var (latency, jitter, edge) = await MeasureLatencyAsync(http, token);

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoardScout</title>
+<link rel="icon" href="/shell/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/shell/glimmer/glimmer-badge.css">
+<link rel="stylesheet" href="/shell/shell.css">
+</head>
+<body>
+<header id="top" class="glass">
+  <div class="brand">
+    <div class="brand-row">
+      <h1 id="title">Reading this computer…</h1>
+      <button id="versionBtn" class="version-button glimmer-version" data-preset="aurora" data-state="thinking"
+        aria-haspopup="dialog" aria-controls="popout" title="Settings, dependencies, help, and diagnostics">
+        <span class="glimmer-dot" aria-hidden="true"></span><span id="versionText">v…</span>
+      </button>
+      <button id="privacyChip" type="button" title="Privacy mode is on: names, addresses, and serial-like values are masked. Click to turn it off.">Privacy on</button>
+    </div>
+    <div id="subtitle">&nbsp;</div>
+  </div>
+  <div class="actions">
+    <button class="btn primary" id="scanBtn" title="Read every device, link, and the network again">Scan now</button>
+    <button class="btn" id="firmwareBtn" title="Ask fwupd which firmware updates are waiting (nothing is installed)">Check firmware</button>
+    <button class="btn" id="exportBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenu">Export ▾</button>
+    <div class="menu glass" id="exportMenu" role="menu">
+      <button role="menuitem" data-export="scan">Hardware scan (JSON)<small>Board, CPU, memory, drives, volumes</small></button>
+      <button role="menuitem" data-export="connections">Connections map (JSON)<small>Every device and link, as the map shows it</small></button>
+      <button role="menuitem" data-export="diagnostics">Copy diagnostics<small>For an issue report; always masked</small></button>
+    </div>
+  </div>
+</header>
+
+<section id="tiles" aria-label="Right now">
+  <div class="tile glass" id="tMem"><div class="v">—</div><div class="k">Memory</div></div>
+  <div class="tile glass" id="tCpu"><div class="v">—</div><div class="k">CPU load</div></div>
+  <div class="tile glass" id="tTemp"><div class="v">—</div><div class="k">CPU temp</div></div>
+  <div class="tile glass" id="tFans"><div class="v">—</div><div class="k">Fans</div></div>
+  <div class="tile glass" id="tNet"><div class="v">—</div><div class="k">Network</div></div>
+  <div class="tile glass" id="tData"><div class="v">—</div><div class="k">Data used</div></div>
+  <div class="tile glass" id="tUpdates"><div class="v">—</div><div class="k">Fixes</div></div>
+</section>
+
+<div id="layout">
+  <nav id="side" class="glass" aria-label="Views">
+    <div class="eyebrow">Explore your PC</div>
+    <p>Start with Overview. Each screen keeps a different kind of work out of your way.</p>
+    <button class="navbtn" data-tab="overview"><b>Overview</b><small>Hover parts · zoom and pan</small></button>
+    <button class="navbtn" data-tab="topology"><b>Topology</b><small>Follow lanes and shared bandwidth</small></button>
+    <button class="navbtn" data-tab="connections"><b>Connections</b><small>Every device, link, and live traffic</small></button>
+    <button class="navbtn" data-tab="drivers"><b>Drivers</b><small>Kernel drivers and firmware</small></button>
+    <button class="navbtn" data-tab="storage"><b>Storage</b><small>Filesystems and drives</small></button>
+    <button class="navbtn" data-tab="efficiency"><b>Efficiency</b><small>Fixes and upgrade ideas</small></button>
+    <button class="navbtn" data-tab="system"><b>System</b><small>Distribution, packages, timers</small></button>
+    <button class="navbtn" data-tab="log"><b>Scan Log</b><small>What was read, and when</small></button>
+    <div class="quick">
+      <div class="eyebrow" style="margin:0">Quick start</div>
+      <ol>
+        <li>Scan after hardware changes</li>
+        <li>Hover parts for status</li>
+        <li>Open the optimization plan on Connections</li>
+      </ol>
+    </div>
+  </nav>
+
+  <main id="main">
+    <section class="tab" data-tab="overview" aria-label="Overview">
+      <div class="ov">
+        <div class="board-card glass">
+          <div class="cardhead">
+            <h2>Interactive board</h2>
+            <span class="hint">Hover or tab to a part · mouse wheel to zoom · drag to pan</span>
+            <div class="zoom">
+              <button class="btn small" id="zoomOut" aria-label="Zoom out">−</button>
+              <button class="btn small" id="zoomReset" aria-label="Reset zoom">100%</button>
+              <button class="btn small" id="zoomIn" aria-label="Zoom in">+</button>
+            </div>
+          </div>
+          <div class="board-wrap" id="boardWrap">
+            <svg id="board" role="group" aria-label="Board layout" viewBox="0 0 1120 660"></svg>
+          </div>
+        </div>
+        <aside class="inspect glass" aria-live="polite">
+          <div id="inspect">
+            <div class="eyebrow">Interactive map</div>
+            <h3>Hover over a part</h3>
+            <span class="status-chip">Live telemetry ready</span>
+            <p class="muted">Move over the CPU, memory, drives, slots, ports, or the chipset for its status, live use, and what the kernel reports about it.</p>
+          </div>
+          <h4>System details</h4>
+          <table class="facts" id="details"></table>
+        </aside>
+      </div>
+    </section>
+
+    <section class="tab" data-tab="topology" aria-label="Topology"><div class="frame-card glass"><iframe title="Topology" data-src="/views/topology.html"></iframe></div></section>
+    <section class="tab" data-tab="connections" aria-label="Connections"><div class="frame-card glass"><iframe title="Connections" data-src="/views/connections.html"></iframe></div></section>
+    <section class="tab" data-tab="system" aria-label="System"><div class="frame-card glass"><iframe title="System" data-src="/views/system.html"></iframe></div></section>
+
+    <section class="tab" data-tab="drivers" aria-label="Drivers">
+      <div class="panel glass">
+        <h2>Drivers and firmware</h2>
+        <div class="sub">Every device's kernel driver, where it came from, and the firmware versions Linux can see. In-tree drivers update with the kernel.</div>
+        <div class="toolbar">
+          <input class="search" id="driverSearch" type="search" placeholder="Search drivers…" aria-label="Search drivers">
+          <div class="chips" id="driverChips"></div>
+        </div>
+        <div class="table-wrap"><table class="grid" id="driversTable"></table></div>
+      </div>
+      <div class="panel glass fw" id="firmwareBox">
+        <h2>Firmware updates (fwupd)</h2>
+        <div class="sub">fwupd and the Linux Vendor Firmware Service update BIOS, SSD, dock, and peripheral firmware on many machines. BoardScout only asks what's waiting; installing stays with fwupd.</div>
+        <div id="firmwareBody"><button class="btn" id="firmwareBtn2">Check firmware</button></div>
+      </div>
+    </section>
+
+    <section class="tab" data-tab="storage" aria-label="Storage">
+      <div class="panel glass">
+        <h2>Filesystems</h2>
+        <div class="sub">Every mounted filesystem with its space, and the drives it lives on.</div>
+        <div class="vols" id="volumes"></div>
+        <h2>Drives</h2>
+        <div class="table-wrap" style="margin-top:10px"><table class="grid" id="disksTable"></table></div>
+      </div>
+    </section>
+
+    <section class="tab" data-tab="efficiency" aria-label="Efficiency">
+      <div class="panel glass">
+        <h2>Efficiency</h2>
+        <div class="sub">What to fix or improve, worst first. The Connections tab's optimization plan has the full reasoning and shows each item on the map.</div>
+        <div class="sugs" id="suggestions"></div>
+      </div>
+    </section>
+
+    <section class="tab" data-tab="log" aria-label="Scan Log">
+      <div class="panel glass">
+        <div class="toolbar">
+          <h2 style="flex:1">Scan Log</h2>
+          <button class="btn small" id="copyLog">Copy log</button>
+          <button class="btn small" id="copyDiag">Copy diagnostics</button>
+        </div>
+        <pre id="log" tabindex="0"></pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer id="status">
+  <span id="statusText">Connecting…</span>
+  <span class="spacer"></span>
+  <button class="linkbtn" id="dataFolderBtn" title="Copy the data folder's path">Data folder</button>
+  <a href="https://github.com/mikedopp/BoardScout/issues" target="_blank" rel="noopener noreferrer">Report issue</a>
+</footer>
+
+<div id="scrim"></div>
+<div id="popout" class="glass" role="dialog" aria-modal="true" aria-labelledby="popTitle">
+  <div class="pop-head">
+    <div>
+      <h2 id="popTitle">BoardScout for Linux</h2>
+      <div class="muted" id="popVersion"></div>
+    </div>
+    <button class="btn small x" id="popClose" aria-label="Close">Close</button>
+  </div>
+  <div class="pop-tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-pane="settings">Settings</button>
+    <button role="tab" aria-selected="false" data-pane="deps">Dependencies</button>
+    <button role="tab" aria-selected="false" data-pane="help">Help</button>
+    <button role="tab" aria-selected="false" data-pane="diag">Diagnostics</button>
+  </div>
+  <div class="pop-body">
+    <div class="pop-pane on" data-pane="settings" role="tabpanel">
+      <div class="setting"><label for="sPrivacy">Privacy mode</label><input type="checkbox" class="switch" id="sPrivacy">
+        <small>Masks names, addresses, Wi-Fi networks, and serial-like values for screenshots and exports. Ctrl+Shift+P toggles it in browsers that don't keep that key for themselves.</small></div>
+      <div class="setting"><label for="sGlass">Glass effects</label><input type="checkbox" class="switch" id="sGlass">
+        <small>Translucent panels with a blurred backdrop. Off gives solid panels; the system's reduced-transparency and high-contrast settings also turn it off.</small></div>
+      <div class="setting"><label for="sOpacity">Glass opacity <span id="sOpacityValue" class="muted"></span></label><input type="range" id="sOpacity" min="35" max="100" step="1">
+        <small>Lower is more see-through.</small></div>
+      <div class="setting"><label for="sBlur">Glass blur <span id="sBlurValue" class="muted"></span></label><input type="range" id="sBlur" min="0" max="40" step="1">
+        <small>How much the background softens behind panels.</small></div>
+      <div class="setting"><label>Reset glass</label><button class="btn small" id="sResetGlass">Reset</button>
+        <small>Glass on, opacity and blur back to their defaults.</small></div>
+      <div class="setting"><label for="sMotion">Motion</label><input type="checkbox" class="switch" id="sMotion">
+        <small>Flowing traffic, spinning drives, and animated glass. Your system's reduce-motion setting also stops them.</small></div>
+      <div class="setting"><label for="sRefresh">Live refresh</label>
+        <select id="sRefresh"><option value="500">Every 0.5 s</option><option value="1000">Every second</option><option value="2000">Every 2 s</option><option value="5000">Every 5 s</option></select>
+        <small>How often CPU, memory, temperatures, and traffic update while a dashboard is open.</small></div>
+      <div class="setting"><label for="sCrawlers">Crawlers on the Connections map</label>
+        <select id="sCrawlers"><option value="0">Off</option><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
+        <small>Skitter spiders that walk the map and hunt slow links. Just for fun.</small></div>
+      <div class="setting"><label for="sBrowser">Open the browser at start</label><input type="checkbox" class="switch" id="sBrowser">
+        <small>When BoardScout starts on a desktop. Servers and --listen never open one.</small></div>
+    </div>
+    <div class="pop-pane" data-pane="deps" role="tabpanel"><table class="deps" id="depsTable"></table></div>
+    <div class="pop-pane" data-pane="help" role="tabpanel">
+      <h3>What each screen does</h3>
+      <ul>
+        <li><b>Overview</b>: the board as Linux reports it: CPU, memory slots, PCIe lanes and M.2, SATA ports, USB, and the chipset. Hover anything.</li>
+        <li><b>Topology</b>: what connects straight to the CPU and what shares the chipset's link.</li>
+        <li><b>Connections</b>: every device and the link it negotiated, live traffic, Live drives, search (Ctrl+F or /), and the Optimization plan.</li>
+        <li><b>Drivers</b>: the kernel driver behind each device, and firmware versions; Check firmware asks fwupd what's waiting.</li>
+        <li><b>System</b>: what your distribution says about you, its support dates, a security check, packages, history, and timers.</li>
+      </ul>
+      <h3>Running BoardScout</h3>
+      <ul>
+        <li>It runs in your browser and serves only this computer by default. There's no tray icon: stop it here (Diagnostics → Stop BoardScout) or with Ctrl+C where it runs.</li>
+        <li><code>boardscout --install</code> adds it to your app menu; that entry stops BoardScout when its last tab closes.</li>
+        <li>On a server: <code>boardscout --listen 0.0.0.0</code>, then open the printed link from another computer. Anyone with that link can see this machine's details.</li>
+        <li>Nothing needs root. Running it again opens the dashboard that's already running.</li>
+      </ul>
+      <h3>What goes online</h3>
+      <ul>
+        <li>Only when you click: <em>Look up my public IP</em> (one request to Cloudflare's 1.1.1.1) and <em>Test my Internet speed</em> (speed.cloudflare.com). The Scan Log records both.</li>
+        <li>The Connections map talks to your local network only: your router, its web certificate, and devices' own names (multicast DNS, NetBIOS, UPnP).</li>
+      </ul>
+    </div>
+    <div class="pop-pane" data-pane="diag" role="tabpanel">
+      <table class="deps" id="versionsTable"></table>
+      <div class="row">
+        <button class="btn" id="diagCopy">Copy diagnostics</button>
+        <button class="btn" id="diagLog">Open the Scan Log</button>
+        <button class="btn danger" id="diagStop">Stop BoardScout</button>
+      </div>
+      <p class="muted" style="margin-top:10px">Diagnostics always mask the computer's name, your user name and home folder, MAC addresses, and emails.</p>
+    </div>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/shell/glimmer/glimmer-badge.js"></script>
+<script src="/shell/shell.js"></script>
+</body>
+</html>

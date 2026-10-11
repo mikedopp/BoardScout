@@ -1,5 +1,4 @@
 using System.Drawing.Drawing2D;
-using System.Reflection;
 
 namespace BoardScout.UI;
 
@@ -21,8 +20,7 @@ internal sealed class VersionButton : Control
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 33 };
     private float _angle = 35f;
 
-    public static string AppVersion { get; } =
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+    public static string AppVersion => Services.AppInfo.Version;
 
     public VersionButton()
     {

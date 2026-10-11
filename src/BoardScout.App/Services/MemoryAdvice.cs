@@ -101,7 +101,7 @@ internal static partial class MemoryAdvice
                 var best = string.Join(" and ", placements.Where(p => p.Recommended).Select(p => p.Label));
                 var who = verifiedBoard ? "The ASRock B550M Steel Legend manual" : "Most boards' manuals";
                 findings.Add(new("improve", $"Sticks are in {now}; {best} are the recommended slots",
-                    $"Windows lists them in the first slot of each channel ({string.Join(", ", wrong.Select(p => p.Slot.DeviceLocator + " / " + p.Slot.BankLocator))}). " +
+                    $"The firmware lists them in the first slot of each channel ({string.Join(", ", wrong.Select(p => p.Slot.DeviceLocator + " / " + p.Slot.BankLocator))}). " +
                     $"{who} recommends {best} for two sticks: the slots at the end of each channel's traces, which keep signals cleanest at high speed. " +
                     (configured > 0 && rated > 0 && configured >= rated
                         ? $"It already runs at the rated {configured} MT/s, so this is about stability headroom rather than speed."

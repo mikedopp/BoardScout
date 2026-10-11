@@ -4,7 +4,7 @@ BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self
 they also redistribute the components below. Each keeps its own license. Nothing here is
 modified from the published version.
 
-Last reviewed for BoardScout 1.6.0 (2026-09-27).
+Last reviewed for BoardScout 1.10.0 (2026-10-11), which added the Linux edition.
 
 ## Libraries compiled into BoardScout.exe
 
@@ -20,6 +20,21 @@ Last reviewed for BoardScout 1.6.0 (2026-09-27).
 | System.Management | 10.0.12 | MIT | https://github.com/dotnet/runtime |
 | System.IO.Ports (LibreHardwareMonitorLib dependency) | 10.0.3 | MIT | https://github.com/dotnet/runtime |
 | Mono.Posix.NETStandard (LibreHardwareMonitorLib dependency) | 1.0.0 | MIT | https://www.nuget.org/packages/Mono.Posix.NETStandard |
+
+## Libraries compiled into the Linux edition (`boardscout`)
+
+| Component | Version | License | Source |
+| --- | --- | --- | --- |
+| .NET runtime and ASP.NET Core (Kestrel web server) | 10.0.12 | MIT | https://github.com/dotnet/runtime, https://github.com/dotnet/aspnetcore |
+
+The Linux edition doesn't include LibreHardwareMonitorLib, WebView2, or System.Management: it reads the
+kernel's own files instead, and its views run in the browser you already have.
+
+### Glimmer badge 0.4.0
+
+`Shell/glimmer/` (Linux edition): the orb on the version button. MIT, Copyright (c) 2026 mikedopp; its look
+follows "orb" by LerSent001 (MIT). The license texts and credits travel in that folder (`LICENSE`,
+`LICENSE-orb-LerSent001`, `NOTICE.md`).
 
 **MPL-2.0 components.** The Source Code Form of each MPL-2.0 component is available at the
 repository linked above, under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/).
@@ -133,6 +148,15 @@ to name USB devices, and `oui.tsv` — the IEEE Registration Authority's public 
 to prefix and organization name — to label network devices by maker (details in the DriverScout
 notices).
 
+The Linux edition also bundles `pci.ids` from the same folder (the PCI ID Repository, used under its
+3-clause BSD option) to name PCI devices.
+
+## Linux tools used when present (not bundled)
+
+`iw`, NetworkManager's `nmcli`, BlueZ's `bluetoothctl`, udisks2's `udisksctl`, fwupd's `fwupdmgr`,
+`systemctl`, `udevadm`, and the package tools (`apt-get`, `rpm`, `snap`, `flatpak`) belong to their own
+projects and are run read-only when installed; BoardScout ships none of them.
+
 ## Online services used on request
 
 The Connections view's **Look up my public IP** button requests `https://1.1.1.1/cdn-cgi/trace`,
@@ -172,6 +196,11 @@ respective owners and are used for identification only.
 - **Lexar** is a trademark of Longsys Electronics.
 - **Noctua** is a trademark of Rascom Computerdistribution GmbH.
 - **Cloudflare** is a trademark of Cloudflare, Inc.
+- **Linux** is the registered trademark of Linus Torvalds. **Ubuntu** is a trademark of Canonical Ltd.;
+  **Debian** of Software in the Public Interest, Inc.; **Fedora** and **Red Hat** of Red Hat, Inc.;
+  **Raspberry Pi** of Raspberry Pi Ltd.
+- **Tailscale**, **Plex**, **Jellyfin**, **Syncthing**, **Docker**, and **Samba** are the names or
+  trademarks of their respective owners; the System view names them only when they run on the machine.
 - **Logitech** and **Logi Bolt** are trademarks of Logitech International S.A.
 - **Elgato** is a trademark of Corsair Memory, Inc.
 - **Dell** is a trademark of Dell Inc.

@@ -559,7 +559,7 @@ internal static partial class DeviceTree
         // Many USB bridges don't pass that question to the drive. Then the model number decides, when it's a
         // family BoardScout knows (the details say so).
         var fromModel = false;
-        if (spinning is null && SpinningFromModelNumber(vendor, product) is { } guess)
+        if (spinning is null && DriveModels.SpinningFromModelNumber(vendor, product) is { } guess)
         {
             spinning = guess;
             fromModel = true;
@@ -567,30 +567,6 @@ internal static partial class DeviceTree
         return new DiskFacts(number, vendor, product, firmware, bus, size, temperature, spinning, fromModel);
     }
 
-    /// <summary>
-    /// Hard drive or SSD from the model number, for drives that don't report a seek penalty, or null when the
-    /// model isn't a family BoardScout knows. USB bridges often split the model across vendor and product
-    /// ("WDC WD10" + "JPVT-75A1YT0"), so both are joined without spaces first.
-    /// </summary>
-    internal static bool? SpinningFromModelNumber(string? vendor, string? product)
-    {
-        var model = string.Concat($"{vendor}{product}".Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
-        if (model.Length == 0) return null;
-        if (SolidStateModel().IsMatch(model)) return false;
-        if (SpinningModel().IsMatch(model)) return true;
-        return null;
-    }
-
-    // SSDs: the word itself, NVMe, WD Blue/Black/Green SSDs (WDS…, SN…), Samsung (MZ…), Crucial (CT…MX/BX/P/T),
-    // Kingston A400/NV, SanDisk SDSSD.
-    [System.Text.RegularExpressions.GeneratedRegex(@"SSD|NVME|SOLID|^(WDC)?WDS\d|SN\d{3}|^(SAMSUNG)?MZ[0-9A-Z]{4}|^CT\d+(MX|BX|P\d|T\d)|SA400|SNV\d|SDSSD")]
-    private static partial System.Text.RegularExpressions.Regex SolidStateModel();
-
-    // Hard drives: WD (WD10JPVT, WD5000BEVT, WD40EFRX), Seagate (ST1000LM024, ST500LT012, ST4000DM004),
-    // HGST/Hitachi (HTS541010A9E680, HUS724040ALE640), Toshiba (MQ01ABD100, DT01ACA300, HDWD110),
-    // Samsung/Seagate laptop (HN-M101MBB, HD103SJ).
-    [System.Text.RegularExpressions.GeneratedRegex(@"^(WDC)?WD\d{2,5}[A-Z]{2,4}|^ST\d{3,5}[A-Z]{2}\d|^(HGST|HITACHI)?H(TS|TE|DS|DT|US|UH|UA)\d{4}|^(TOSHIBA)?(MQ0\d|MG0\d|DT0\d|HDW[A-Z]\d|MD0\d|MK\d{4})|^(SAMSUNG|ST\d+LM\d+)?(HN-M\d|HD\d{3}[A-Z]{2})")]
-    private static partial System.Text.RegularExpressions.Regex SpinningModel();
 
     /// <summary>Cumulative bytes and operations since boot plus the current queue depth, or null when the
     /// disk keeps no counters.</summary>

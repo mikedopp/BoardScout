@@ -22,7 +22,7 @@ public class DriveTypeTests
     [InlineData("TOSHIBA", "DT01ACA300")]
     [InlineData("SAMSUNG", "HD103SJ")]
     public void Spinning_models(string vendor, string product) =>
-        Assert.True(DeviceTree.SpinningFromModelNumber(vendor, product));
+        Assert.True(DriveModels.SpinningFromModelNumber(vendor, product));
 
     [Theory]
     // SSDs
@@ -36,7 +36,7 @@ public class DriveTypeTests
     [InlineData("", "CT500MX500SSD1")]
     [InlineData("KINGSTON", "SA400S37240G")]
     public void Solid_state_models(string vendor, string product) =>
-        Assert.False(DeviceTree.SpinningFromModelNumber(vendor, product));
+        Assert.False(DriveModels.SpinningFromModelNumber(vendor, product));
 
     [Theory]
     // Enclosure names say nothing about the drive inside: no guess.
@@ -47,5 +47,5 @@ public class DriveTypeTests
     [InlineData(null, null)]
     [InlineData("", "")]
     public void Unknown_models(string? vendor, string? product) =>
-        Assert.Null(DeviceTree.SpinningFromModelNumber(vendor, product));
+        Assert.Null(DriveModels.SpinningFromModelNumber(vendor, product));
 }

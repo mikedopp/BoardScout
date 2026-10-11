@@ -1,0 +1,4 @@
+Glimmer 0.4.0
+Installed 2026-10-11T18:54:45.949Z
+Source: F:\mikedopp\Drop\Glimmer (scripts/install.mjs)
+Editor: not included

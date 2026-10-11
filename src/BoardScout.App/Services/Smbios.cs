@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -78,24 +77,22 @@ internal sealed record FirmwareFacts(
 }
 
 /// <summary>
-/// Reads the SMBIOS tables Windows exposes to every user (GetSystemFirmwareTable 'RSMB'); no admin needed.
+/// Reads the SMBIOS tables: memory slots, chassis, and maker. Windows exposes them to every user
+/// (Smbios.Windows.cs); Linux exposes the raw table to root only, and the Linux edition reads the same
+/// facts from udev for everyone else.
 /// </summary>
-internal static class Smbios
+internal static partial class Smbios
 {
-    public static FirmwareFacts Read()
+    /// <summary>Parses SMBIOS structures starting at <paramref name="start"/>: type, length, handle, formatted
+    /// area, then strings.</summary>
+    public static FirmwareFacts Parse(byte[] table, int start)
     {
         var slots = new List<DimmSlot>();
         int slotCount = 0, chassis = 0;
         string? maker = null, product = null;
         try
         {
-            var size = GetSystemFirmwareTable(0x52534D42, 0, null, 0);
-            if (size <= 8) return new FirmwareFacts(slots, 0, 0, null, null);
-            var table = new byte[size];
-            if (GetSystemFirmwareTable(0x52534D42, 0, table, size) != size) return new FirmwareFacts(slots, 0, 0, null, null);
-
-            // RawSMBIOSData: 8-byte header, then structures: type, length, handle, formatted area, strings.
-            for (var p = 8; p + 4 <= table.Length;)
+            for (var p = start; p + 4 <= table.Length;)
             {
                 int type = table[p], length = table[p + 1];
                 if (length < 4 || p + length > table.Length) break;
@@ -162,7 +159,4 @@ internal static class Smbios
         }
         return (strings, table.Length);
     }
-
-    [DllImport("kernel32.dll")]
-    private static extern int GetSystemFirmwareTable(uint provider, uint tableId, byte[]? buffer, int size);
 }

@@ -348,7 +348,9 @@ const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=1
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
   history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
   skitter:null,speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false,
-  query:'',hits:[],hitIndex:-1,ejects:new Map()};
+  query:'',hits:[],hitIndex:-1,ejects:new Map(),platform:'windows'};
+// The Windows and Linux editions share this view; a few sentences name what each operating system does.
+const OS=()=>state.platform==='linux'?'Linux':'Windows';
 
 const post=m=>window.chrome?.webview?.postMessage(m);
 const $=id=>document.getElementById(id);
@@ -1020,7 +1022,7 @@ function fillEject(box,n){
   row.append(btn);
   if(st.armed){const no=el('button','btn','Cancel');no.onclick=e=>{e.stopPropagation();setEject(n.id,{})};row.append(no)}
   box.append(row);
-  if(st.armed)box.append(el('div','hint','Windows finishes writing anything still cached, then stops the drive. Close files open on it first.'));
+  if(st.armed)box.append(el('div','hint',state.platform==='linux'?'Linux unmounts its filesystems (writing out anything still cached), then powers the drive off. Close files open on it first.':'Windows finishes writing anything still cached, then stops the drive. Close files open on it first.'));
   if(st.message)box.append(el('div','callout '+(st.ok?'ok':'warn'),st.message));
 }
 function setEject(id,st){
@@ -1195,7 +1197,7 @@ function updateLive(){
 function applySettings(s){
   // A public IP shown before privacy mode was switched on must not stay on screen.
   if(s.privacy&&!state.privacy){state.wan=null;const box=$('wan');if(box)fillWan(box)}
-  state.glass=!!s.glass;state.motion=!!s.motion;state.privacy=!!s.privacy;
+  state.glass=!!s.glass;state.motion=!!s.motion;state.privacy=!!s.privacy;state.platform=s.platform||'windows';
   document.body.classList.toggle('no-glass',!state.glass);
   document.body.classList.toggle('no-motion',!state.motion);
   if(!state.motion&&state.anim){cancelAnimationFrame(state.anim);state.anim=0;clearFlow()}
@@ -1401,7 +1403,7 @@ function renderDrives(){
     body.append(card);
     diskView(cv,n,120);
   }
-  body.append(el('div','sum','A picture of Windows\' disk counters, updated with the live refresh. Hard drives show a platter and an arm that seeks at the real operation rate and parks when idle; SSDs and NVMe drives show their NAND dies: blue streaks are reads, amber are writes; more streaks means more operations, faster means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. Windows doesn\'t report a drive\'s actual head position or spin, or which die an operation lands on, so the die a streak hits is random.'));
+  body.append(el('div','sum',`A picture of ${state.platform==='linux'?'the kernel\'s disk counters (/proc/diskstats)':'Windows\' disk counters'}, updated with the live refresh. Hard drives show a platter and an arm that seeks at the real operation rate and parks when idle; SSDs and NVMe drives show their NAND dies: blue streaks are reads, amber are writes; more streaks means more operations, faster means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. ${OS()} doesn't report a drive's actual head position or spin, or which die an operation lands on, so the die a streak hits is random.`));
   body.scrollTop=keep;
   updateDriveStats();
 }
@@ -1558,13 +1560,13 @@ function coreChart(p){
     const isr=el('i','isr');isr.style.height=Math.max(2,c.interruptsPerSec/max*100)+'%';
     const dpc=el('i','dpc');dpc.style.height=(c.dpcsPerSec/max*100)+'%';
     b.append(isr,dpc);
-    b.title=`Processor ${c.core}: ${fmtCount(c.interruptsPerSec)} interrupts and ${fmtCount(c.dpcsPerSec)} DPCs a second, ${(c.interruptPct+c.dpcPct).toFixed(2)}% of its time`;
+    b.title=`Processor ${c.core}: ${fmtCount(c.interruptsPerSec)} interrupts and ${fmtCount(c.dpcsPerSec)} ${state.platform==='linux'?'softirqs':'DPCs'} a second, ${(c.interruptPct+c.dpcPct).toFixed(2)}% of its time`;
     bars.append(b);
   }
   const lbl=el('div','corelbl');lbl.append(el('span',null,'Processor 0'),el('span',null,`Processor ${p.cores.length-1}`));
   const key=el('div','corekey');
   const k1=el('i');k1.style.background='var(--a)';const k2=el('i');k2.style.background='var(--p)';k2.style.marginLeft='12px';
-  key.append(k1,'Interrupts',k2,'DPCs (the follow-up work drivers queue) per second, over one second');
+  key.append(k1,'Interrupts',k2,state.platform==='linux'?'Softirqs (the follow-up work drivers queue) per second, over one second':'DPCs (the follow-up work drivers queue) per second, over one second');
   box.append(bars,lbl,key);
   return box;
 }
@@ -1572,11 +1574,18 @@ function coreChart(p){
 function measureBlock(p,busy){
   const d=el('div','measure');
   if(busy?.measuring){
-    d.append(busyRow('Timing every interrupt and DPC for 10 seconds. Keep using the PC as usual: play audio, a video, or a game to catch drivers that stall it.'));
+    d.append(busyRow(state.platform==='linux'
+      ?'Counting interrupts per device for 10 seconds. Keep using the computer as usual: play audio, a video, or copy files to see which devices keep the processors busy.'
+      :'Timing every interrupt and DPC for 10 seconds. Keep using the PC as usual: play audio, a video, or a game to catch drivers that stall it.'));
     return d;
   }
   const row=el('div','row');
-  if(p.elevated){
+  if(state.platform==='linux'){
+    // Linux shows every user the interrupt counts per device; timing each handler would need a root-only trace.
+    const btn=el('button','btn primary',p.drivers?.length?'Count again (10 s)':'Count interrupts per device (10 s)');
+    btn.onclick=measure;row.append(btn);d.append(row);
+    d.append(el('div','wanbox','Reads the kernel\'s interrupt counters (/proc/interrupts) for 10 seconds. Every user may read them, so no root is needed. Nothing leaves this computer.'));
+  }else if(p.elevated){
     const btn=el('button','btn primary',p.drivers?.length?'Measure again (10 s)':'Measure interrupt time per driver (10 s)');
     btn.onclick=measure;row.append(btn);d.append(row);
     d.append(el('div','wanbox','Runs a 10-second Windows kernel trace of interrupts and DPCs, the same events LatencyMon and Windows Performance Analyzer read. Nothing leaves this PC.'));
@@ -1595,6 +1604,7 @@ function measureBlock(p,busy){
 }
 
 function driverTable(p){
+  if(state.platform==='linux')return irqTable(p);
   const box=el('div');
   const t=el('table','ptable');
   const hr=el('tr');['Driver','Share','Longest run','Count'].forEach(h=>hr.append(el('th',null,h)));t.append(hr);
@@ -1613,6 +1623,25 @@ function driverTable(p){
   box.append(el('div','sum',`Measured for ${p.profileSeconds??10} s. Share is the part of all processors' time a driver spent in interrupts and DPCs. `+
     'Longest run is its longest single stretch; over 1 ms can cause audio crackles, dropped frames, or input lag.'+
     (p.eventsLost?` ${fmtCount(p.eventsLost)} events were dropped because the trace buffers filled, so counts are slightly low.`:'')));
+  return box;
+}
+
+// Linux: interrupt counts per device (and the kernel's own per-processor counters), no timing.
+function irqTable(p){
+  const box=el('div');
+  const t=el('table','ptable');
+  const secs=p.profileSeconds||10;
+  const hr=el('tr');['Device or source','Per second','Count'].forEach(h=>hr.append(el('th',null,h)));t.append(hr);
+  for(const d of p.drivers){
+    const tr=el('tr');
+    const name=el('td');name.append(el('span',null,d.driver));
+    if(d.description)name.append(el('span','sm',d.description));
+    if(d.devices?.length&&d.devices[0]!=='kernel')name.append(el('span','sm',d.devices.join(' · ')));
+    tr.append(name,el('td','num',fmtCount(d.isrCount/secs)),el('td','num',fmtCount(d.isrCount)));
+    t.append(tr);
+  }
+  box.append(t);
+  box.append(el('div','sum',`Counted for ${secs} s. Busy devices interrupt the most: network cards under load, NVMe drives while copying, and the kernel's own timer on every processor. Linux doesn't time each handler without a root-only kernel trace, so this shows counts, not time.`));
   return box;
 }
 

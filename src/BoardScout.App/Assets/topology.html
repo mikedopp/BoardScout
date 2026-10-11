@@ -96,6 +96,11 @@ function buildTree(scan){
   const gpu=comps.find(c=>c.category==='gpu');
   const storage=comps.filter(c=>c.category==='storage');
   const nvme=storage.filter(c=>(c.lookup_hints?.bus_type||'').toLowerCase()==='nvme');
+  // Scans that know where each device attaches (the Linux edition's) say so; otherwise the first NVMe drive is
+  // assumed to have the CPU's own M.2 socket.
+  const known=nvme.some(c=>c.lookup_hints?.attach);
+  const cpuNvme=known?nvme.filter(c=>c.lookup_hints?.attach==='cpu'):nvme.slice(0,1);
+  const chipNvme=known?nvme.filter(c=>c.lookup_hints?.attach!=='cpu'):nvme.slice(1);
   const sata=storage.filter(c=>(c.lookup_hints?.bus_type||'').toLowerCase()==='sata');
   const wifi=comps.find(c=>c.category==='network'&&/Wi-?Fi|Wireless|AX\d{3}/i.test(c.model));
   const lan=comps.find(c=>c.category==='network'&&c!==wifi&&/Ethernet|GbE|Realtek|2\.5G/i.test(c.model));
@@ -116,21 +121,24 @@ function buildTree(scan){
     detail:first?`${first.speed_mhz} / ${first.rated_mhz} MT/s`:'',color:COLORS.memory,bus:`${ddr} dual channel`,
     tip:'Memory is directly attached to the CPU. Enable the rated memory profile (XMP/DOCP/EXPO) in firmware for full speed.'});
 
-  if(gpu){
+  if(gpu&&gpu.lookup_hints?.attach==='integrated'){
+    tree.children.push({id:'gpu',name:gpu.model.replace('NVIDIA ',''),detail:'Inside the CPU',color:COLORS.gpu,bus:'Integrated',
+      tip:'Integrated graphics: part of the processor, sharing system memory. No PCIe slot is used.'});
+  }else if(gpu){
     tree.children.push({id:'gpu',name:gpu.model.replace('NVIDIA ',''),detail:steel?'PCIE1 · CPU-direct':'Primary x16 slot · CPU-direct',
-      color:COLORS.gpu,bus:`${gen} x16`,bw:steel?(apu?'15.8 GB/s':'31.5 GB/s'):null,
+      color:COLORS.gpu,bus:gpu.lookup_hints?.link||`${gen} x16`,bw:steel?(apu?'15.8 GB/s':'31.5 GB/s'):null,
       tip:'Primary graphics slot. CPU-direct connection with the most bandwidth on the board.'});
   }
-  if(nvme.length>0){
-    tree.children.push({id:'m2-1',name:nvme[0].model,detail:steel?'M2_1 · CPU-direct':'M.2 · CPU-direct',color:COLORS.storage,
-      bus:`${gen} x4`,bw:steel?(apu?'3.9 GB/s':'7.9 GB/s'):null,
+  cpuNvme.forEach((drive,i)=>{
+    tree.children.push({id:`m2-cpu-${i+1}`,name:drive.model,detail:steel&&i===0?'M2_1 · CPU-direct':'M.2 · CPU-direct',color:COLORS.storage,
+      bus:drive.lookup_hints?.link||`${gen} x4`,bw:steel?(apu?'3.9 GB/s':'7.9 GB/s'):null,
       tip:'Fastest native storage socket. CPU-direct with no chipset contention.'});
-  }
+  });
 
   const chipsetChildren=[];
-  nvme.slice(1).forEach((drive,i)=>chipsetChildren.push({id:`m2-${i+2}`,name:drive.model,
+  chipNvme.forEach((drive,i)=>chipsetChildren.push({id:`m2-${i+2}`,name:drive.model,
     detail:steel&&i===0?'M2_2 · disables SATA 5/6':'M.2 · chipset',color:COLORS.storage,
-    bus:steel&&i===0?'PCIe 3.0 x2':'Chipset PCIe',bw:steel&&i===0?'1.97 GB/s':null,
+    bus:steel&&i===0?'PCIe 3.0 x2':drive.lookup_hints?.link||'Chipset PCIe',bw:steel&&i===0?'1.97 GB/s':null,
     tip:steel&&i===0?'Secondary M.2 slot. Limited to x2 and disables SATA ports 5-6 while occupied.':'Additional NVMe drive behind the chipset; it shares the chipset uplink.'}));
   if(steel&&ff!=='MINI-ITX'){
     chipsetChildren.push({id:'pcie-x1',name:'PCIE2 slot',detail:'x1 · available',color:COLORS.open,bus:'PCIe 3.0 x1',dashed:true,

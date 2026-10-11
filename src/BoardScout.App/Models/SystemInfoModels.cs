@@ -14,6 +14,25 @@ public sealed class SystemInfoSnapshot
     [JsonPropertyName("software")] public List<SoftwareEntry> Software { get; set; } = [];
     [JsonPropertyName("tasks")] public List<TaskEntry> Tasks { get; set; } = [];
     [JsonPropertyName("gatheredMs")] public long GatheredMs { get; set; }
+
+    /// <summary>Section titles and labels for another platform; null keeps the view's Windows wording.</summary>
+    [JsonPropertyName("ui")] public SystemUiText? Ui { get; set; }
+}
+
+/// <summary>How the System view names its sections on a platform other than Windows.</summary>
+public sealed class SystemUiText
+{
+    [JsonPropertyName("buildLabel")] public string? BuildLabel { get; set; }
+    [JsonPropertyName("patchesTitle")] public string? PatchesTitle { get; set; }
+    [JsonPropertyName("patchColumns")] public List<string>? PatchColumns { get; set; }
+    [JsonPropertyName("softwareTitle")] public string? SoftwareTitle { get; set; }
+    [JsonPropertyName("softwareColumns")] public List<string>? SoftwareColumns { get; set; }
+    [JsonPropertyName("tasksTitle")] public string? TasksTitle { get; set; }
+    [JsonPropertyName("taskColumns")] public List<string>? TaskColumns { get; set; }
+    [JsonPropertyName("taskFilters")] public List<string>? TaskFilters { get; set; }
+    [JsonPropertyName("dotnetTitle")] public string? DotNetTitle { get; set; }
+    [JsonPropertyName("readinessFoot")] public string? ReadinessFoot { get; set; }
+    [JsonPropertyName("foot")] public string? Foot { get; set; }
 }
 
 public sealed class OsAnalysisInfo

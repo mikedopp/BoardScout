@@ -166,13 +166,24 @@ body.no-motion .rise, body.no-motion .sk { animation: none; }
             <div class="sk row-sk"></div>
             <div class="sk table-sk"></div>
         </div>
-        <p class="loading-note">Reading Windows, patches, software, and scheduled tasks&hellip;</p>
+        <p class="loading-note" id="loadingNote">Reading Windows, patches, software, and scheduled tasks&hellip;</p>
     </div>
     <div id="app" hidden></div>
 </div>
 <script>
 'use strict';
-const state = { glass: true, motion: true, engine: null, tabBars: [], data: null, ql: null };
+const state = { glass: true, motion: true, engine: null, tabBars: [], data: null, ql: null, ui: null };
+
+// Wording for each platform: the Windows edition sends no "ui", so these defaults are its own.
+const UI_DEFAULTS = {
+    buildLabel: 'Build',
+    patchesTitle: 'Installed patches', patchColumns: ['KB', 'Description', 'Installed', 'By'],
+    softwareTitle: 'Installed software', softwareColumns: ['Name', 'Version', 'Publisher', 'Installed', 'Size'],
+    tasksTitle: 'Scheduled tasks', taskColumns: ['Task', 'Status', 'Folder', 'Next run'], taskFilters: ['All', 'User', 'Microsoft', 'Windows'],
+    dotnetTitle: '.NET on this PC',
+    readinessFoot: "BoardScout's quick check — Microsoft's PC Health Check app has the final word.",
+    foot: 'nothing here needs administrator rights'
+};
 
 window.chrome.webview.addEventListener('message', e => {
     const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
@@ -187,6 +198,7 @@ function applySettings(s) {
     document.body.classList.toggle('no-glass', !state.glass);
     document.body.classList.toggle('no-motion', !state.motion);
     document.body.classList.toggle('privacy', !!s.privacy);
+    if (s.platform === 'linux' && !state.data) document.getElementById('loadingNote').textContent = 'Reading the distribution, packages, updates, and timers…';
     syncGlass();
 }
 
@@ -206,6 +218,8 @@ function h(tag, attrs, children) {
 
 function render(data) {
     state.data = data;
+    const ui = state.ui = Object.assign({}, UI_DEFAULTS, ...Object.entries(data.ui || {}).filter(([, v]) => v != null).map(([k, v]) => ({ [k]: v })));
+    const cols = (keys, labels) => keys.map((k, i) => [k, labels[i] || k]);
     const app = document.getElementById('app');
     destroyGlass();
     app.replaceChildren(...[
@@ -213,13 +227,13 @@ function render(data) {
         data.readiness ? renderReadiness(data.readiness) : null,
         renderBuild(data.build),
         renderDotNet(data.dotnet),
-        renderTable('Installed patches', data.patches,
-            [['id', 'KB'], ['description', 'Description'], ['installedOn', 'Installed'], ['installedBy', 'By']], null, 2, false),
-        renderTable('Installed software', data.software,
-            [['name', 'Name'], ['version', 'Version'], ['publisher', 'Publisher'], ['installDate', 'Installed'], ['size', 'Size']], null, 0, true),
-        renderTable('Scheduled tasks', data.tasks,
-            [['name', 'Task'], ['status', 'Status'], ['folder', 'Folder'], ['nextRun', 'Next run']], ['All', 'User', 'Microsoft', 'Windows'], 0, true),
-        h('div', { className: 'foot', text: `Gathered in ${data.gatheredMs} ms · nothing here needs administrator rights` })
+        renderTable(ui.patchesTitle, data.patches,
+            cols(['id', 'description', 'installedOn', 'installedBy'], ui.patchColumns), null, 2, false),
+        renderTable(ui.softwareTitle, data.software,
+            cols(['name', 'version', 'publisher', 'installDate', 'size'], ui.softwareColumns), null, 0, true),
+        renderTable(ui.tasksTitle, data.tasks,
+            cols(['name', 'status', 'folder', 'nextRun'], ui.taskColumns), ui.taskFilters, 0, true),
+        h('div', { className: 'foot', text: `Gathered in ${data.gatheredMs} ms · ${ui.foot}` })
     ].filter(Boolean));
     Array.from(app.children).forEach((el, i) => { el.classList.add('rise'); el.style.animationDelay = `${i * 60}ms`; });
     document.getElementById('loading').hidden = true;
@@ -231,7 +245,7 @@ function render(data) {
 function renderPersonality(os) {
     const left = h('div', { className: 'hero-left' }, [
         h('div', { className: 'verdict' }, [h('span', { className: 'verdict-emoji', text: emoji(os.verdictEmoji) }), h('span', { text: os.verdict })]),
-        h('div', { className: 'os-caption', text: [os.caption, os.displayVersion, `Build ${os.build}`, os.arch].filter(Boolean).join(' · ') }),
+        h('div', { className: 'os-caption', text: [os.caption, os.displayVersion, `${state.ui.buildLabel} ${os.build}`, os.arch].filter(Boolean).join(' · ') }),
         h('div', { className: 'badges' }, [
             h('span', { className: `badge tone-${os.supportTone}`, text: os.supportStatus }),
             os.supportDaysLeft != null && os.supportDaysLeft >= 0
@@ -243,7 +257,7 @@ function renderPersonality(os) {
             ? h('div', { className: 'recs' }, os.recommendations.map(r => h('div', { className: 'rec', text: r }))) : null
     ]);
     const rows = [['Edition', os.edition], ['Version', os.displayVersion ? `${os.displayVersion} (${os.version})` : os.version],
-        ['Build', os.build], ['Architecture', os.arch], ['Installed', os.installDate], ['Last boot', os.lastBoot],
+        [state.ui.buildLabel, os.build], ['Architecture', os.arch], ['Installed', os.installDate], ['Last boot', os.lastBoot],
         ['Uptime', os.uptime], ['Last update', os.lastPatch], ['Support ends', os.supportEnds]];
     const right = h('div', { className: 'hero-right' }, rows.filter(r => r[1]).map(([label, value]) =>
         h('div', { className: 'info-row' }, [h('span', { className: 'info-label', text: label }), h('span', { className: 'info-value', text: value })])));
@@ -262,7 +276,7 @@ function renderReadiness(r) {
             h('span', { className: 'check-icon', text: icons[c.state] || '?' }),
             h('div', null, [h('div', { className: 'check-label', text: c.label }), h('div', { className: 'check-detail', text: c.detail })])
         ]))),
-        h('div', { className: 'footnote', text: "BoardScout's quick check — Microsoft's PC Health Check app has the final word." })
+        h('div', { className: 'footnote', text: state.ui.readinessFoot })
     ]);
     return h('section', null, [h('div', { className: 'section-title', text: r.title }), card]);
 }
@@ -292,7 +306,7 @@ function renderBuild(b) {
 }
 
 function renderDotNet(list) {
-    const sec = h('section', null, [h('div', { className: 'section-title', text: '.NET on this PC' })]);
+    const sec = h('section', null, [h('div', { className: 'section-title', text: state.ui.dotnetTitle })]);
     if (!list || !list.length) { sec.appendChild(h('div', { className: 'glass empty', text: 'No .NET runtimes detected' })); return sec; }
     const groups = new Map();
     list.forEach(d => { const key = `${d.kind}|${d.name}`; if (!groups.has(key)) groups.set(key, { ...d, versions: [] }); groups.get(key).versions.push(d.version); });
