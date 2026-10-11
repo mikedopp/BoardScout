@@ -102,7 +102,8 @@ foreach ($rid in $Runtime) {
     Publish-Linux $rid $portable @()
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs\linux.md') -Destination (Join-Path $portable 'README.md') -Force
     $tar = Join-Path $buildRoot "BoardScout-$version-$rid.tar.gz"
-    Write-TarGz $portable "BoardScout-$version-$rid" $tar
+    # The folder inside is "-portable" so it can't collide with the standalone binary in the same download folder.
+    Write-TarGz $portable "BoardScout-$version-$rid-portable" $tar
     $artifacts += $tar
 
     # Standalone: one binary with everything packed inside it.

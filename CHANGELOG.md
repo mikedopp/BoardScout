@@ -38,7 +38,8 @@ BoardScout for Linux.
     `--stop-when-closed` stops when the last tab closes, and `--selftest DIR` writes every view's data to
     files for checking a machine over SSH.
   - `Build-Linux.ps1` builds linux-x64 and linux-arm64: a standalone binary, a portable `.tar.gz` (with the
-    executable bit set even when built on Windows), and checksums. 70 tests in `tests/BoardScout.Linux.Tests`.
+    executable bit set even when built on Windows; it unpacks to a `-portable` folder so it can't collide
+    with the standalone binary), and checksums. 70 tests in `tests/BoardScout.Linux.Tests`.
 
 ### Changed
 - The Windows app's network probe, network discovery, SMBIOS reader, and drive-model check are split into

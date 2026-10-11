@@ -16,7 +16,7 @@ Raspberry Pi 4 or 5 running a 64-bit OS, and other Arm boards):
 | File | What it is |
 | --- | --- |
 | `BoardScout-<version>-linux-x64` | **Standalone.** One program with everything inside. |
-| `BoardScout-<version>-linux-x64.tar.gz` | **Portable folder.** `boardscout` with its web views beside it. |
+| `BoardScout-<version>-linux-x64.tar.gz` | **Portable folder** (`BoardScout-<version>-linux-x64-portable`): `boardscout` with its web views beside it. |
 | `BoardScout-<version>-linux-SHA256SUMS.txt` | Checksums. |
 
 Standalone:
@@ -27,10 +27,11 @@ Standalone:
 Portable folder:
 
     tar -xzf BoardScout-<version>-linux-x64.tar.gz
-    ./BoardScout-<version>-linux-x64/boardscout
+    ./BoardScout-<version>-linux-x64-portable/boardscout
 
 It prints a link and opens it in your browser. The .NET runtime is built in, and no ICU or other
-libraries are needed beyond glibc (any current distribution).
+libraries are needed beyond glibc (any current distribution). The standalone program unpacks its web
+views to `~/.net` on first run (set `DOTNET_BUNDLE_EXTRACT_BASE_DIR` to choose another folder).
 
 **Add it to your app menu:** `boardscout --install` copies the standalone program to `~/.local/bin`
 and adds a menu entry with an icon (the portable folder is used where it is). That entry stops
