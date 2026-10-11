@@ -137,6 +137,8 @@ dependencies, requirements, and legal notices. *Copy diagnostics* gathers what a
 | Laptop | Yes. The firmware's chassis type tells BoardScout it is a laptop; the plan adds battery state, and memory advice skips slot placement it can't know for laptop boards. |
 | Windows Server 2016 or later, with Desktop Experience | Yes, with the WebView2 Runtime installed (Topology, Connections, and System need it). Wi-Fi details stay empty without the Wireless LAN service; memory advice skips slot placement, since server boards fill slots differently. |
 | Server Core | No — there is no desktop to show the window. |
+| Linux on x64 (desktop or headless server) | Yes, with the [Linux edition](docs/linux.md), in your browser. Tested on Ubuntu 26.04 (Dell OptiPlex 3050, headless, reached over SSH). Any current glibc distribution should run it; others are untested. |
+| Linux on Arm64 (Raspberry Pi 4/5 with a 64-bit OS) | Built (`linux-arm64`); untested on hardware. 32-bit Raspberry Pi OS can't run it. |
 | Virtual machine | Runs, but shows the hypervisor's virtual devices rather than real hardware. |
 | Windows 11 on Arm | Should run the x64 build under Windows' emulation; untested. Windows 10 on Arm can't run x64 apps. |
 | 32-bit Windows | No. |
