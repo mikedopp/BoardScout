@@ -54,7 +54,11 @@ supports (a PCIe 4.0 SSD on PCIe 3.0 lanes, an NVMe drive given 2 of its 4 lanes
 USB 2 port) with the likely reason. Dots flow along the real paths as data moves: disk reads and
 writes, and network traffic from the Internet through the router, the adapter, and the chipset to
 the CPU. Cards show live speeds — network in Mbps with packets per second, drives in MB/s with IOPS —
-and details add packets, discards, and errors since the adapter connected, and each drive's queue.
+and details add packets, discards, and errors since the adapter connected. A drive's details add its
+queue and busy %, the time each read and write takes right now (from Windows' own disk counters: well
+under a millisecond on an SSD, several milliseconds on a hard drive), the average request size, its
+fastest read and write since BoardScout opened, and how much it has read and written since BoardScout
+opened and since Windows started.
 Click any card for details: link now versus best, live traffic, firmware and driver versions, drive
 temperature where Windows reports it, IP and DNS settings, and the Wi-Fi network, signal, band, and
 security. Plug something in and the map redraws itself.

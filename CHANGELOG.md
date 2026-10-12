@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.0 — 2026-10-12
+
+### Added
+- **Drive details on the Connections tab**: besides read/write speed, IOPS and queue, a selected drive now shows:
+  - busy %;
+  - **time per request** for reads and writes (Windows' disk counters: total read/write time per request over the
+    last second, in µs or ms);
+  - the average request size;
+  - its fastest read and write since BoardScout opened;
+  - bytes read and written since BoardScout opened and since Windows started.
+
+  Works in the Windows app, in `--serve`, and for Windows machines on the Machines tab.
+- The per-disk sample carries the counters' read and write time (`DISK_PERFORMANCE` ReadTime/WriteTime), and the
+  live disk array grows from 6 to 10 values. Older dashboards ignore the extra values; the Linux edition sends 6 and
+  hides the new rows.
+
 ## 2.0.0 — 2026-10-11
 
 Machines: any Linux or Windows machine you reach with SSH.

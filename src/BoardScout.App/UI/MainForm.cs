@@ -905,8 +905,11 @@ public sealed class MainForm : Form
         {
             var queue = telemetry.DiskQueues?.GetValueOrDefault(number) ?? 0;
             var busy = telemetry.DiskBusy?.GetValueOrDefault(number) ?? 0;
+            var io = telemetry.DiskDetail?.GetValueOrDefault(number) ?? default;
+            // [read B/s, write B/s, reads/s, writes/s, queue, busy %, ms per read (-1 none), ms per write (-1 none), read since boot, written since boot]
             flow.Disks[number.ToString(System.Globalization.CultureInfo.InvariantCulture)] =
-                [Math.Round(rate.In), Math.Round(rate.Out), Math.Round(rate.OpsIn), Math.Round(rate.OpsOut), queue, busy];
+                [Math.Round(rate.In), Math.Round(rate.Out), Math.Round(rate.OpsIn), Math.Round(rate.OpsOut), queue, busy,
+                 Math.Round(io.ReadMs ?? -1, 2), Math.Round(io.WriteMs ?? -1, 2), io.TotalRead, io.TotalWritten];
         }
         foreach (var (zone, key) in new[] { ("CPU", "cpu"), ("GPU", "gpu"), ("Chipset", "chipset") })
             if (telemetry.Thermals.FirstOrDefault(t => t.Zone == zone) is { } reading)

@@ -13,6 +13,12 @@ public sealed record PowerReading(string Device, double Watts);
 /// </summary>
 public readonly record struct LinkRate(double In, double Out, double OpsIn = 0, double OpsOut = 0);
 
+/// <summary>
+/// A disk's average time per read and per write over the last interval (null when it did none), and its bytes read
+/// and written since Windows started.
+/// </summary>
+public readonly record struct DiskIoDetail(double? ReadMs, double? WriteMs, long TotalRead, long TotalWritten);
+
 /// <summary>A network adapter's counters since Windows started, plus how fast packets are being dropped.</summary>
 public readonly record struct AdapterCounters(
     long BytesIn, long BytesOut, long PacketsIn, long PacketsOut, long Dropped, long Errors, double DroppedPerSec);
@@ -41,6 +47,9 @@ public sealed record SystemTelemetry(
 
     /// <summary>Percent of the last interval each physical disk was busy, when detailed rates are on.</summary>
     public IReadOnlyDictionary<int, double>? DiskBusy { get; init; }
+
+    /// <summary>Time per request and totals since boot for each physical disk, when detailed rates are on.</summary>
+    public IReadOnlyDictionary<int, DiskIoDetail>? DiskDetail { get; init; }
 
     /// <summary>CPU and GPU power draw, when the sensors report it.</summary>
     public IReadOnlyList<PowerReading> Power { get; init; } = [];

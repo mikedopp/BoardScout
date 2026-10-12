@@ -714,7 +714,9 @@ function countersOf(n,flow){
   if(net)return {kind:'net',opsIn:net[2]||0,opsOut:net[3]||0,dropRate:net[4]||0,
     totalIn:net[5],totalOut:net[6],packetsIn:net[7],packetsOut:net[8],dropped:net[9],errors:net[10]};
   const disk=n.disk!=null?flow.disk?.[n.disk]:null;
-  if(disk)return {kind:'disk',opsIn:disk[2]||0,opsOut:disk[3]||0,queue:disk[4]||0};
+  // [read B/s, write B/s, reads/s, writes/s, queue, busy %, ms per read, ms per write (-1: none), read/written since boot]
+  if(disk)return {kind:'disk',opsIn:disk[2]||0,opsOut:disk[3]||0,queue:disk[4]||0,busy:disk[5],
+    readMs:disk[6],writeMs:disk[7],totalRead:disk[8],totalWritten:disk[9]};
   return null;
 }
 
@@ -744,6 +746,11 @@ function applyFlow(){
     const [rin,rout]=ratesOf(n,flow);
     n.rin=rin;n.rout=rout;
     n.counters=countersOf(n,flow);
+    if(n.counters?.kind==='disk'){
+      // Peaks and totals since BoardScout opened, for the disk inspector.
+      n.peakIn=Math.max(n.peakIn||0,rin);n.peakOut=Math.max(n.peakOut||0,rout);
+      if(n.counters.totalRead!=null&&!n.firstTotals)n.firstTotals=[n.counters.totalRead,n.counters.totalWritten];
+    }
     const h=state.history.get(n.id)||[];h.push([rin,rout]);if(h.length>60)h.shift();state.history.set(n.id,h);
     const card=document.getElementById('c-'+n.id);if(!card)continue;
     const p=state.pos.get(n.id);
@@ -1157,8 +1164,11 @@ function updateLive(){
       if(c.dropRate>0){const d=el('span',null,`${c.dropRate} discarded/s`);d.style.color='var(--ts)';ops.append(d)}
     }else if(isDisk){
       // Before the first live reading there are no counters yet.
-      if(c)ops.append(el('span',null,`${fmtCount(c.opsIn)} reads/s`),el('span',null,`${fmtCount(c.opsOut)} writes/s`),
-        el('span',null,c.queue>0?`${c.queue} waiting`:'queue empty'));
+      if(c){
+        ops.append(el('span',null,`${fmtCount(c.opsIn)} reads/s`),el('span',null,`${fmtCount(c.opsOut)} writes/s`),
+          el('span',null,c.queue>0?`${c.queue} waiting`:'queue empty'));
+        if(c.busy!=null)ops.append(el('span',null,`${Math.round(c.busy)}% busy`));
+      }
       else ops.append(el('span',null,'Waiting for the first reading…'));
     }
   }
@@ -1171,6 +1181,18 @@ function updateLive(){
       row('Sent since the adapter connected',`${fmtBytes(c.totalOut)} · ${fmtCount(c.packetsOut)} packets`);
       row('Packets with errors',c.errors?`${fmtCount(c.errors)}: a bad cable, port, or Wi-Fi interference can cause these`:'None');
       row('Discarded',c.dropped?`${fmtCount(c.dropped)}: normal in small numbers (broadcasts for protocols this PC doesn't use)`:'None');
+    }
+    if(isDisk&&c?.totalRead!=null){
+      const row=(k,v)=>{const tr=el('tr');tr.append(el('td',null,k),el('td',null,v));totals.append(tr)};
+      const ms=v=>v==null||v<0?'—':v<1?`${Math.round(v*1000)} µs`:`${v.toFixed(v<10?1:0)} ms`;
+      const per=(bytes,ops)=>ops>0?fmtBytes(bytes/ops):'—';
+      row('Time per request now',c.readMs>=0||c.writeMs>=0
+        ?`read ${ms(c.readMs)} · write ${ms(c.writeMs)}`:'idle: no requests in the last second');
+      row('Average request now',c.opsIn+c.opsOut>0?`read ${per(n.rin||0,c.opsIn)} · write ${per(n.rout||0,c.opsOut)}`:'—');
+      row('Fastest since BoardScout opened',`read ${fmtRate(n.peakIn||0)} · write ${fmtRate(n.peakOut||0)}`);
+      if(n.firstTotals)row('Since BoardScout opened',
+        `read ${fmtBytes(Math.max(0,c.totalRead-n.firstTotals[0]))} · written ${fmtBytes(Math.max(0,c.totalWritten-n.firstTotals[1]))}`);
+      row('Since Windows started',`read ${fmtBytes(c.totalRead)} · written ${fmtBytes(c.totalWritten)}`);
     }
   }
   const use=$('use');
