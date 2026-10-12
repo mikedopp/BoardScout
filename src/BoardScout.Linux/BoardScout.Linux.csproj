@@ -16,7 +16,7 @@
     <!-- No ICU dependency: the binary runs on any glibc distribution without libicu installed. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;linux-arm</RuntimeIdentifiers>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>embedded</DebugType>
@@ -52,6 +52,16 @@
     <Compile Include="..\BoardScout.App\Services\Smbios.cs" Link="Shared\Services\Smbios.cs" />
     <Compile Include="..\BoardScout.App\Services\SpeedTest.cs" Link="Shared\Services\SpeedTest.cs" />
     <Compile Include="..\BoardScout.App\Services\UsbIds.cs" Link="Shared\Services\UsbIds.cs" />
+    <Compile Include="..\BoardScout.App\Models\OverviewModels.cs" Link="Shared\Models\OverviewModels.cs" />
+  </ItemGroup>
+
+  <!-- The browser dashboard's server and engine (Live\Hub.Linux.cs is this edition's half), and the Machines
+       page: other computers reached over SSH. -->
+  <ItemGroup>
+    <Compile Include="..\BoardScout.App\Web\Hub.cs" Link="Shared\Web\Hub.cs" />
+    <Compile Include="..\BoardScout.App\Web\WebServer.cs" Link="Shared\Web\WebServer.cs" />
+    <Compile Include="..\BoardScout.App\Web\WebJson.cs" Link="Shared\Web\WebJson.cs" />
+    <Compile Include="..\BoardScout.App\Remote\*.cs" LinkBase="Shared\Remote" />
   </ItemGroup>
 
   <ItemGroup>
@@ -65,7 +75,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="Shell\**\*">
+    <Content Include="..\BoardScout.App\Shell\**\*" LinkBase="Shell">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

@@ -7,39 +7,6 @@ using BoardScout.Services;
 
 namespace BoardScout.Views;
 
-internal sealed record Fact(string Label, string Value);
-
-/// <summary>One part on the Overview board: what it is, where it sits, and what to say when it's hovered.</summary>
-internal sealed record BoardPart(string Id, string Zone, string Kind, string Name, string? Detail, string Tone, IReadOnlyList<Fact> Facts,
-    string? Live = null, int? Width = null, bool Empty = false, string? Node = null);
-
-internal sealed record DriverRow(string Device, string Category, string Driver, string? Version, string Source, string? Firmware, string Status, string Tone, string? Node);
-
-internal sealed record VolumeRow(string MountPoint, string? Label, string FileSystem, long SizeBytes, long FreeBytes, double UsedPercent, string Disks, bool Lvm, bool ReadOnly);
-
-internal sealed record DiskRow(string Name, string Model, string Bus, long SizeBytes, string Kind, string? Firmware, double? TemperatureC, string? Node);
-
-internal sealed record Suggestion(string Severity, string Title, string Detail, string? Action, string Category);
-
-/// <summary>Everything the shell shows outside the shared web views.</summary>
-internal sealed record OverviewPayload(
-    string Title,
-    string Subtitle,
-    string FormFactor,
-    string Hostname,
-    IReadOnlyList<BoardPart> Parts,
-    IReadOnlyList<Fact> Details,
-    IReadOnlyList<DriverRow> Drivers,
-    IReadOnlyList<VolumeRow> Volumes,
-    IReadOnlyList<DiskRow> Disks,
-    IReadOnlyList<Suggestion> Suggestions,
-    double MemoryGb,
-    int Components,
-    double DataUsedTb,
-    int? Updates,
-    string GatheredAt,
-    long GatheredMs);
-
 internal static class LinuxOverview
 {
     public static OverviewPayload Build(HardwareCapture capture, LinuxConnections.BuildResult map, OptimizationPlan plan, bool privacy,

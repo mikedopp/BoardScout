@@ -10,8 +10,17 @@ nothing is installed system-wide, and nothing is changed on the machine.
 
 ## Download and run
 
-From the release, pick the build for your processor (`x64` for Intel and AMD PCs, `arm64` for a
-Raspberry Pi 4 or 5 running a 64-bit OS, and other Arm boards):
+From the release, pick the build for your processor and C library:
+
+| Build | For |
+| --- | --- |
+| `linux-x64` | Intel and AMD PCs and servers (Ubuntu, Debian, Fedora, RHEL, openSUSE, Arch, Proxmox…) |
+| `linux-arm64` | Raspberry Pi 4 or 5 with a 64-bit OS, and other 64-bit Arm boards and servers |
+| `linux-arm` | 32-bit Raspberry Pi OS and other ARMv7 boards (not ARMv6: Pi 1 and Zero can't run .NET) |
+| `linux-musl-x64`, `linux-musl-arm64` | Alpine and other musl distributions |
+
+The x64 build is tested (Ubuntu 26.04); the others are built from the same code and not yet tried on
+their hardware. Each comes as:
 
 | File | What it is |
 | --- | --- |
@@ -30,7 +39,7 @@ Portable folder:
     ./BoardScout-<version>-linux-x64-portable/boardscout
 
 It prints a link and opens it in your browser. The .NET runtime is built in, and no ICU or other
-libraries are needed beyond glibc (any current distribution). The standalone program unpacks its web
+libraries are needed beyond the C library (glibc on most distributions, musl on Alpine). The standalone program unpacks its web
 views to `~/.net` on first run (set `DOTNET_BUNDLE_EXTRACT_BASE_DIR` to choose another folder).
 
 **Add it to your app menu:** `boardscout --install` copies the standalone program to `~/.local/bin`
@@ -42,6 +51,13 @@ BoardScout when its last dashboard tab closes. `boardscout --uninstall` removes 
 There's no tray icon: the dashboard lives in your browser.
 
 ## On a server or a headless machine
+
+The simplest way needs nothing on the server: open it from the **Machines** tab of BoardScout on your
+own computer (Windows or Linux), which signs in with your SSH keys, copies BoardScout there, and shows
+its dashboard through the SSH connection. When you close it, it stops there. See
+[Machines](remote.md); from a terminal, `boardscout --connect you@server`.
+
+To keep a dashboard running on the server instead:
 
     boardscout --listen 0.0.0.0
 
@@ -88,8 +104,9 @@ Always (every user may read these):
 - **Memory slots**: udev's copy of the firmware tables (`/run/udev/data/+dmi:id`), so channels, speed,
   part numbers, and makers show without root. Older systems need root for the raw table.
 - **Monitors** (`/sys/class/drm`): each output, and the monitor's name and best mode from its EDID.
-- **The OS**: `/etc/os-release`, packages (dpkg, rpm, or pacman, plus snaps and Flatpaks), package
-  history, timers and cron jobs, support dates, and a security check.
+- **The OS**: `/etc/os-release`, packages (dpkg, rpm, pacman, or Alpine's apk, plus snaps and
+  Flatpaks), package history, timers and cron jobs, support dates, and a security check. Timers come from
+  systemd; on systems without it (OpenRC, runit) only cron jobs show.
 
 When installed, these add more (each runs read-only, and the Scan Log lists every run):
 
@@ -101,6 +118,14 @@ When installed, these add more (each runs read-only, and the Scan Log lists ever
 | `udisksctl` (udisks2) | Eject for USB drives |
 | `fwupdmgr` (fwupd) | Firmware versions and waiting updates (BIOS, SSDs, docks) |
 | `apt-get` | Updates waiting, from a simulated upgrade |
+| `dnf` | Updates waiting, from the package lists it already downloaded (`dnf -C check-update`) |
+| `zypper` | Updates waiting, without refreshing repositories (`zypper --no-refresh list-updates`) |
+| `pacman` | Updates waiting against the last sync (`pacman -Qu`) |
+| `apk` | Updates waiting (`apk version -l '<'`) |
+| `ssh` | The Machines tab: other Linux and Windows machines, over SSH |
+
+The dnf, zypper, pacman, and apk readers follow those tools' documented output; they haven't been run on
+those distributions yet.
 
 ## Differences from Windows
 
@@ -130,12 +155,17 @@ key printed at start. Settings, the log, and the running dashboard's address liv
     boardscout --system-json          the System tab's data
     boardscout --scan-json            the hardware scan (what Export saves)
     boardscout --selftest DIR         all of the above into DIR, for checking a machine over SSH
+    boardscout --summary-json         this machine's one-line health summary
+    boardscout --machines             the machines on the Machines tab
+    boardscout --check NAME|all       a machine's health summary, over SSH (--trust, --key FILE)
+    boardscout --connect NAME         open a machine's dashboard through an SSH tunnel; Ctrl+C disconnects
 
 ## Build from source
 
 Requires the .NET 10 SDK, on Windows or Linux:
 
-    ./Build-Linux.ps1                 # both linux-x64 and linux-arm64
+    ./Build-Linux.ps1                 # linux-x64, linux-arm64, linux-arm, linux-musl-x64, linux-musl-arm64
+    ./Build-Linux.ps1 -Runtime linux-x64
     dotnet test tests/BoardScout.Linux.Tests
 
 The version comes from `src/BoardScout.App/BoardScout.App.csproj`, shared with the Windows app.

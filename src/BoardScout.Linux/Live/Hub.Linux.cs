@@ -1,40 +1,21 @@
-using System.Collections.Concurrent;
-using System.Globalization;
 using System.Text.Json;
-using System.Threading.Channels;
 using BoardScout.Models;
 using BoardScout.Platform;
+using BoardScout.Remote;
 using BoardScout.Services;
 using BoardScout.Views;
 
 namespace BoardScout.Live;
 
-/// <summary>One open dashboard (a browser tab): its message stream and which tab it is showing.</summary>
-internal sealed class Client
-{
-    public string Id { get; } = Guid.NewGuid().ToString("N")[..12];
-
-    public Channel<string> Outbox { get; } = Channel.CreateBounded<string>(new BoundedChannelOptions(1024)
-    {
-        FullMode = BoundedChannelFullMode.DropOldest,
-        SingleReader = true
-    });
-
-    public string ActiveTab { get; set; } = "overview";
-    public bool Hidden { get; set; }
-}
-
 /// <summary>
-/// The Linux edition's engine: reads the hardware, builds every view, keeps the latest of each for dashboards
-/// that open later, answers the views' requests, and streams live rates while someone is watching.
+/// The Linux half of the dashboard's engine: reads the hardware from /sys and /proc, builds every view, answers
+/// the views' requests, and samples the kernel's counters for the live tiles.
 /// </summary>
-internal sealed class Hub
+internal sealed partial class Hub
 {
-    private readonly ConcurrentDictionary<string, Client> _clients = new();
-    private readonly ConcurrentDictionary<string, string> _payloads = new();
+    private const string Platform = "linux";
+
     private readonly Telemetry _telemetry = new();
-    private readonly LinkedList<string> _log = new();
-    private readonly object _gate = new();
     private readonly SemaphoreSlim _reading = new(1, 1);
     private HardwareCapture? _capture;
     private LinuxConnections.BuildResult? _map;
@@ -42,127 +23,25 @@ internal sealed class Hub
     private string _discoveryGateways = "";
     private IrqProfile? _profile;
     private FirmwareReport? _firmware;
-    private string? _lastHeader;
-    private CancellationTokenSource? _speedCts, _planCts, _wanCts;
+    private CancellationTokenSource? _planCts;
     private bool _rediscoverQueued, _sweepQueued, _reloadQueued;
-    private string _signature = "";
 
-    public static Hub Current { get; } = new();
+    private bool HasReading => _capture is not null;
 
-    public string ListenUrl { get; set; } = "";
-    public Action? Quit { get; set; }
-    public bool AnyClients => !_clients.IsEmpty;
-    public event Action? ClientsChanged;
-
-    // ---- Clients ------------------------------------------------------------------------------------
-
-    public Client Connect()
+    static partial void AddPlatformSettings(Dictionary<string, object?> values)
     {
-        var client = new Client();
-        _clients[client.Id] = client;
-        client.Outbox.Writer.TryWrite(Envelope("shell", $"{{\"type\":\"hello\",\"client\":\"{client.Id}\"}}"));
-        ClientsChanged?.Invoke();
-        if (_capture is null) _ = LoadAsync(rediscover: false);
-        return client;
+        values["openBrowser"] = AppSettings.Current.OpenBrowser;
+        values["port"] = AppSettings.Current.Port;
     }
 
-    public void Disconnect(Client client)
+    static partial void ApplyPlatformSettings(AppSettings settings, JsonElement message)
     {
-        _clients.TryRemove(client.Id, out _);
-        client.Outbox.Writer.TryComplete();
-        ClientsChanged?.Invoke();
+        if (message.TryGetProperty("openBrowser", out var open) && open.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.OpenBrowser = open.GetBoolean();
     }
 
-    public Client? Find(string? id) => id is not null && _clients.TryGetValue(id, out var client) ? client : null;
-
-    /// <summary>Ends every open event stream, so stopping doesn't wait for browsers to hang up.</summary>
-    public void CloseAll()
+    private void SendPlatformReady(Client client)
     {
-        foreach (var client in _clients.Values) client.Outbox.Writer.TryComplete();
-    }
-
-    private static string Envelope(string view, string json) => $"{{\"view\":\"{view}\",\"msg\":{json}}}";
-
-    private void Broadcast(string view, string json, Func<Client, bool>? to = null)
-    {
-        var line = Envelope(view, json);
-        foreach (var client in _clients.Values)
-            if (to is null || to(client)) client.Outbox.Writer.TryWrite(line);
-    }
-
-    private static void Send(Client client, string view, string json) => client.Outbox.Writer.TryWrite(Envelope(view, json));
-
-    // Messages that are the current state of a view, replayed to any view that opens later.
-    private void Publish(string view, string json)
-    {
-        _payloads[view] = json;
-        Broadcast(view, json);
-    }
-
-    // ---- Log ---------------------------------------------------------------------------------------
-
-    public void Log(string text)
-    {
-        var line = $"[{DateTime.Now:HH:mm:ss}] {text}";
-        lock (_gate)
-        {
-            _log.AddLast(line);
-            while (_log.Count > 500) _log.RemoveFirst();
-        }
-        Broadcast("shell", $"{{\"type\":\"logline\",\"line\":{JsonSerializer.Serialize(Scrubbed(line))}}}");
-    }
-
-    public IReadOnlyList<string> LogLines()
-    {
-        lock (_gate) return _log.Select(Scrubbed).ToList();
-    }
-
-    private static string Scrubbed(string line) => AppSettings.Current.PrivacyMode ? Privacy.Scrub(line) : line;
-
-    // ---- Settings ----------------------------------------------------------------------------------
-
-    public static string SettingsJson()
-    {
-        var s = AppSettings.Current;
-        return JsonSerializer.Serialize(new
-        {
-            type = "settings",
-            platform = "linux",
-            glass = s.GlassEffects,
-            glassOpacity = s.GlassOpacity,
-            glassBlur = s.GlassBlur,
-            motion = s.Motion,
-            privacy = s.PrivacyMode,
-            crawlers = s.Crawlers,
-            refreshMs = s.TelemetryIntervalMs,
-            openBrowser = s.OpenBrowser,
-            port = s.Port
-        }, Json.Options);
-    }
-
-    private void ApplySettings(JsonElement message)
-    {
-        var privacyBefore = AppSettings.Current.PrivacyMode;
-        AppSettings.Update(s =>
-        {
-            if (message.TryGetProperty("glass", out var glass) && glass.ValueKind is JsonValueKind.True or JsonValueKind.False) s.GlassEffects = glass.GetBoolean();
-            if (message.TryGetProperty("glassOpacity", out var opacity) && opacity.TryGetDouble(out var o)) s.GlassOpacity = o;
-            if (message.TryGetProperty("glassBlur", out var blur) && blur.TryGetInt32(out var b)) s.GlassBlur = b;
-            if (message.TryGetProperty("motion", out var motion) && motion.ValueKind is JsonValueKind.True or JsonValueKind.False) s.Motion = motion.GetBoolean();
-            if (message.TryGetProperty("privacy", out var privacy) && privacy.ValueKind is JsonValueKind.True or JsonValueKind.False) s.PrivacyMode = privacy.GetBoolean();
-            if (message.TryGetProperty("crawlers", out var crawlers) && crawlers.TryGetInt32(out var c)) s.Crawlers = c;
-            if (message.TryGetProperty("refreshMs", out var refresh) && refresh.TryGetInt32(out var r)) s.TelemetryIntervalMs = r;
-            if (message.TryGetProperty("openBrowser", out var open) && open.ValueKind is JsonValueKind.True or JsonValueKind.False) s.OpenBrowser = open.GetBoolean();
-        });
-        if (message.TryGetProperty("resetGlass", out var reset) && reset.ValueKind == JsonValueKind.True) AppSettings.ResetGlass();
-        var json = SettingsJson();
-        foreach (var view in new[] { "shell", "connections", "system", "topology" }) Broadcast(view, json);
-        if (privacyBefore != AppSettings.Current.PrivacyMode)
-        {
-            Log(AppSettings.Current.PrivacyMode ? "PRIVACY: on. Names, addresses, and serial-like values are masked." : "PRIVACY: off.");
-            Broadcast("shell", $"{{\"type\":\"log\",\"lines\":{JsonSerializer.Serialize(LogLines())}}}");
-            PublishFromCapture();
-        }
+        if (_firmware is not null) Send(client, "shell", FirmwareJson(_firmware));
     }
 
     // ---- Reading the hardware -------------------------------------------------------------------------
@@ -220,6 +99,8 @@ internal sealed class Hub
         }
     }
 
+    private void PublishFromReading() => PublishFromCapture();
+
     // Builds every view from what was last read, with the current privacy setting (no new read).
     private void PublishFromCapture(DiscoveryResult? discovery = null)
     {
@@ -256,36 +137,10 @@ internal sealed class Hub
 
     // ---- Messages from the views ----------------------------------------------------------------------
 
-    public async Task HandleAsync(Client? client, string view, JsonElement message)
+    private async Task HandlePlatformAsync(Client? client, string view, string? type, JsonElement message)
     {
-        var type = message.TryGetProperty("type", out var t) ? t.GetString() : null;
-        if (type == "ready")
-        {
-            if (client is null) return;
-            Send(client, view, SettingsJson());
-            if (view == "shell")
-            {
-                Send(client, "shell", $"{{\"type\":\"meta\",\"data\":{JsonSerializer.Serialize(Meta(), Json.Options)}}}");
-                Send(client, "shell", $"{{\"type\":\"log\",\"lines\":{JsonSerializer.Serialize(LogLines())}}}");
-                if (_lastHeader is not null) Send(client, "shell", _lastHeader);
-                if (_firmware is not null) Send(client, "shell", FirmwareJson(_firmware));
-            }
-            if (_payloads.TryGetValue(view, out var payload)) Send(client, view, payload);
-            else if (view == "system" && _capture is not null) _ = LoadSystemAsync();
-            return;
-        }
-
         switch (view, type)
         {
-            case ("shell", "tab"):
-                if (client is not null && message.TryGetProperty("name", out var name)) client.ActiveTab = name.GetString() ?? "overview";
-                break;
-            case ("shell", "visibility"):
-                if (client is not null && message.TryGetProperty("hidden", out var hidden)) client.Hidden = hidden.ValueKind == JsonValueKind.True;
-                break;
-            case ("shell", "settings"):
-                ApplySettings(message);
-                break;
             case ("shell", "rescan"):
                 Log("SCAN: reading every device again, at your request.");
                 _payloads.TryRemove("system", out _);
@@ -299,21 +154,11 @@ internal sealed class Hub
                 Broadcast("shell", FirmwareJson(_firmware));
                 if (_firmware.Updates.Count > 0) PublishFromCapture();
                 break;
-            case ("shell", "quit"):
-                Log("Stopping, at your request.");
-                Quit?.Invoke();
-                break;
             case ("connections", "refresh"):
                 await LoadAsync(rediscover: true);
                 break;
             case ("connections", "lanscan"):
                 await LoadAsync(rediscover: true, sweep: true);
-                break;
-            case ("connections", "speedtest"):
-                await RunSpeedTestAsync();
-                break;
-            case ("connections", "speedcancel"):
-                _speedCts?.Cancel();
                 break;
             case ("connections", "plan"):
                 await BuildPlanAsync(measure: false);
@@ -324,14 +169,12 @@ internal sealed class Hub
             case ("connections", "eject"):
                 if (message.TryGetProperty("id", out var id) && id.GetString() is { } nodeId) await EjectAsync(nodeId);
                 break;
-            case ("connections", "wan"):
-                await LookupWanAsync();
-                break;
         }
     }
 
     private object Meta() => new
     {
+        platform = Platform,
         version = AppInfo.Version,
         commit = AppInfo.Commit,
         runtime = Environment.Version.ToString(),
@@ -341,54 +184,14 @@ internal sealed class Hub
         root = _capture?.Root ?? false,
         kernel = Sys.Read("/proc/sys/kernel/osrelease") ?? "",
         distro = Distro.Read().PrettyName,
-        tools = new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "apt-get", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
-            .Select(n => new { name = n, path = Tools.Find(n) }).ToList()
+        agent = Agent?.Label,
+        ssh = Agent is null ? SshTool.Describe() : null,
+        tools = new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
+            .Select(n => new { name = n, path = Tools.Find(n) }).Where(t => t.path is not null || t.name is "iw" or "nmcli" or "bluetoothctl" or "udisksctl" or "fwupdmgr" or "systemctl").ToList()
     };
 
     private static string FirmwareJson(FirmwareReport report) =>
         $"{{\"type\":\"firmware\",\"data\":{JsonSerializer.Serialize(report, Json.Options)}}}";
-
-    private async Task RunSpeedTestAsync()
-    {
-        _speedCts?.Cancel();
-        var cts = _speedCts = new CancellationTokenSource();
-        Log($"SPEED TEST: testing against Cloudflare ({SpeedTest.Server}) at your request.");
-        void Send(SpeedTestUpdate update)
-        {
-            if (AppSettings.Current.PrivacyMode) update.Edge = null;
-            Broadcast("connections", JsonSerializer.Serialize(update, Json.Options));
-        }
-        try
-        {
-            var result = await Task.Run(() => SpeedTest.RunAsync(Send, cts.Token), cts.Token);
-            Send(result);
-            Log($"SPEED TEST: {result.DownloadMbps:0.#} Mbps down, {result.UploadMbps:0.#} Mbps up, {result.LatencyMs:0} ms latency; used {result.UsedMegabytes:0} MB.");
-        }
-        catch (OperationCanceledException)
-        {
-            Send(new SpeedTestUpdate { Phase = "error", Error = "Stopped." });
-        }
-        catch (Exception ex)
-        {
-            Send(new SpeedTestUpdate { Phase = "error", Error = ex.Message });
-            Log("SPEED TEST: " + ex.Message);
-        }
-    }
-
-    private async Task LookupWanAsync()
-    {
-        _wanCts?.Cancel();
-        _wanCts = new CancellationTokenSource();
-        Log($"PUBLIC IP: asked Cloudflare ({NetworkProbe.WanLookupUrl}) at your request.");
-        var result = await NetworkProbe.LookupPublicAddressAsync(_wanCts.Token);
-        if (result.Ok && AppSettings.Current.PrivacyMode)
-        {
-            result.Ip = "Hidden (privacy mode)";
-            result.Location = null;
-            result.Edge = null;
-        }
-        Broadcast("connections", JsonSerializer.Serialize(result, Json.Options));
-    }
 
     // The optimization plan, built from the last map plus a one-second interrupt sample; "measure" also counts
     // interrupts per device for ten seconds.
@@ -434,59 +237,12 @@ internal sealed class Hub
         if (ok) await LoadAsync(rediscover: false);
     }
 
-    // ---- Live loops -------------------------------------------------------------------------------------
+    // ---- Live --------------------------------------------------------------------------------------------
 
-    /// <summary>Header numbers for every dashboard, and flowing rates for the ones showing Connections or Overview.</summary>
-    public async Task RunTelemetryAsync(CancellationToken stopping)
+    private (string? Header, string? Flow) SampleLive(bool detailed)
     {
-        while (!stopping.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(AppSettings.Current.TelemetryIntervalMs, stopping);
-                if (_clients.Values.All(c => c.Hidden)) continue;
-                var (header, flow) = _telemetry.Sample(_capture);
-                _lastHeader = Telemetry.HeaderJson(header);
-                Broadcast("shell", _lastHeader, c => !c.Hidden);
-                var flowJson = Telemetry.FlowJson(flow);
-                Broadcast("connections", flowJson, c => !c.Hidden && c.ActiveTab == "connections");
-                Broadcast("shell", $"{{\"type\":\"flow\",\"data\":{flowJson}}}", c => !c.Hidden && c.ActiveTab == "overview");
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log("LIVE: " + ex.Message);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Watches for devices coming and going (USB, drives, network, PCI hotplug) while a dashboard is open, and
-    /// reads the map again about half a second after something changes.
-    /// </summary>
-    public async Task RunDeviceWatchAsync(CancellationToken stopping)
-    {
-        while (!stopping.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(1500, stopping);
-                if (_capture is null || _clients.IsEmpty) continue;
-                var signature = DeviceSignature();
-                if (signature == _signature) continue;
-                await Task.Delay(400, stopping);
-                _signature = DeviceSignature();
-                Log("CHANGE: a device was added or removed; reading the map again.");
-                await LoadAsync(rediscover: false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
+        var (header, flow) = _telemetry.Sample(_capture);
+        return (Telemetry.HeaderJson(header), Telemetry.FlowJson(flow));
     }
 
     private static string DeviceSignature() => string.Join("|", new[]
@@ -517,9 +273,10 @@ internal sealed class Hub
             $"Distribution: {Distro.Read().PrettyName}",
             $"Kernel: {Sys.Read("/proc/sys/kernel/osrelease")}",
             $"Running as root: {(capture?.Root == true ? "yes" : "no")}",
+            $"Started by: {(Agent is null ? "this computer" : "another BoardScout over SSH")}",
             $"Data folder: {DataFolder.Root}",
             $"Settings: glass {AppSettings.Current.GlassEffects} ({AppSettings.Current.GlassOpacity:0.##}, {AppSettings.Current.GlassBlur}px), motion {AppSettings.Current.Motion}, privacy {AppSettings.Current.PrivacyMode}, refresh {AppSettings.Current.TelemetryIntervalMs} ms",
-            $"Tools: {string.Join(", ", new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "udevadm" }.Select(t => $"{t} {(Tools.Has(t) ? "yes" : "no")}"))}"
+            $"Tools: {string.Join(", ", new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "udevadm", "ssh" }.Select(t => $"{t} {(Tools.Has(t) ? "yes" : "no")}"))}"
         };
         if (capture is not null)
         {

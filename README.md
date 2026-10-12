@@ -3,10 +3,11 @@
 A portable app that maps your motherboard, bandwidth, drivers, storage, and operating system in one
 place: what is plugged in where, what each part is good for, what needs attention, and how long your
 OS will keep patching it. It never installs drivers or firmware. It runs on Windows, and on Linux in
-your browser ([BoardScout for Linux](docs/linux.md)).
+your browser ([BoardScout for Linux](docs/linux.md)), and it can open any other Linux or Windows
+machine you reach with SSH ([Machines](docs/remote.md)).
 
-**Status:** v1.10.0 (2026-10-11) · Windows 10/11 and Linux (x64, arm64) · .NET 10 · MIT license ·
-[Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
+**Status:** v2.0.0 (2026-10-11) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
+.NET 10 · MIT license · [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
 
@@ -16,10 +17,13 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-1.10.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-1.10.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets` and `DriverScout` beside it. |
-| `BoardScout-1.10.0-SHA256SUMS.txt` | Checksums for both. |
-| `BoardScout-1.10.0-linux-x64`, `-linux-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
+| `BoardScout-2.0.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-2.0.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `DriverScout` beside it. |
+| `BoardScout-2.0.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-2.0.0-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
+
+To open Linux machines from Windows (or the other way round), put the builds those machines need
+next to `BoardScout.exe`, or let the Machines page fetch them from the release when it needs one.
 
 No installer, no admin rights, and no .NET install needed; the .NET 10 runtime is built in.
 Scans, reports, settings, and the web views' profile live in a `Data` folder beside the exe. If
@@ -136,9 +140,12 @@ dependencies, requirements, and legal notices. *Copy diagnostics* gathers what a
 | Desktop, Windows 10 or 11 (x64) | Yes — the PC it is developed and tested on. |
 | Laptop | Yes. The firmware's chassis type tells BoardScout it is a laptop; the plan adds battery state, and memory advice skips slot placement it can't know for laptop boards. |
 | Windows Server 2016 or later, with Desktop Experience | Yes, with the WebView2 Runtime installed (Topology, Connections, and System need it). Wi-Fi details stay empty without the Wireless LAN service; memory advice skips slot placement, since server boards fill slots differently. |
-| Server Core | No — there is no desktop to show the window. |
+| Server Core | No window, but its dashboard opens from another PC over SSH ([Machines](docs/remote.md)), or with `BoardScout.exe --serve` in a browser. Not tried on Server Core. |
 | Linux on x64 (desktop or headless server) | Yes, with the [Linux edition](docs/linux.md), in your browser. Tested on Ubuntu 26.04 (Dell OptiPlex 3050, headless, reached over SSH). Any current glibc distribution should run it; others are untested. |
-| Linux on Arm64 (Raspberry Pi 4/5 with a 64-bit OS) | Built (`linux-arm64`); untested on hardware. 32-bit Raspberry Pi OS can't run it. |
+| Linux on Arm64 (Raspberry Pi 4/5 with a 64-bit OS) | Built (`linux-arm64`); untested on hardware. |
+| Linux on 32-bit ARMv7 (Raspberry Pi OS 32-bit) | Built (`linux-arm`); untested on hardware. ARMv6 boards (Pi 1, Zero) can't run .NET. |
+| Alpine and other musl distributions | Built (`linux-musl-x64`, `linux-musl-arm64`), with Alpine's packages and updates; untested on Alpine. |
+| Another PC or server you reach with SSH | Yes: the Machines tab opens its dashboard or checks it, Linux or Windows ([Machines](docs/remote.md)). |
 | Virtual machine | Runs, but shows the hypervisor's virtual devices rather than real hardware. |
 | Windows 11 on Arm | Should run the x64 build under Windows' emulation; untested. Windows 10 on Arm can't run x64 apps. |
 | 32-bit Windows | No. |
@@ -169,6 +176,9 @@ Only these, and only when you ask:
   public speed test (`speed.cloudflare.com`) for a few seconds — at most 400 MB down and 150 MB up,
   which only very fast connections reach — and the Scan Log records it.
 - Links you click (official update pages, PawnIO, Report issue) open in your browser.
+- **Machines** connects with SSH to the machines you open or check, and copies BoardScout there. If a
+  machine needs a build this computer doesn't have, **Get** downloads it from this version's GitHub
+  release (checked against the release's SHA256SUMS), only when you click it.
 
 Everything else is local, including the optimization plan and its interrupt measurement (a Windows
 kernel trace kept in memory for 10 seconds). Scans use built-in Windows tools, and the Topology, Connections, and
@@ -253,10 +263,27 @@ MAC addresses.
   search the network like *Find more devices*); `--plan-json` prints the optimization plan (add
   `--profile`, as administrator, for the per-driver interrupt measurement); `--scan` runs a headless
   scan; `--check-drivers` also checks drivers.
+- `BoardScout.exe --serve` serves this PC's dashboard to a browser without the window (add
+  `--listen 0.0.0.0` for your network, `--port N`, `--no-browser`). `--machines`, `--check NAME|all`,
+  and `--connect NAME` work the Machines tab from a terminal; see [docs/remote.md](docs/remote.md).
+  `--summary-json` prints this PC's one-line health summary, and `--data DIR` uses another data folder.
 - Topology, Connections, and System need the Microsoft Edge WebView2 Runtime (built into Windows 11
   and current Windows 10). Without it those views say so; the rest works.
 - A drive with no temperature on Connections is normal: without administrator rights, Windows
   reports temperature only for some drives (usually NVMe).
+
+## Machines: other PCs and servers over SSH
+
+The **Machines** tab lists every `Host` in your `~/.ssh/config` plus machines you add. **Open
+dashboard** signs in with your SSH keys, copies this version of BoardScout into a folder on the
+machine, starts it there serving only that machine, and shows its dashboard through the same SSH
+connection: the board, Topology, Connections with live traffic, the plan, Drivers, Storage, and
+System, for Linux and Windows machines alike. Closing it ends the connection and BoardScout stops
+there. **Check all** runs each machine once and puts support status, updates, failed security
+checks, slow links, full disks, and the top fixes side by side. Keys only, never passwords; host keys
+are shown for you to compare before they are trusted. Details: [docs/remote.md](docs/remote.md).
+
+![The Machines tab with a Linux server checked over SSH](docs/screenshots/machines.png)
 
 ## BoardScout for Linux
 
@@ -282,12 +309,14 @@ then launches the portable build.
 
     dotnet test tests\BoardScout.Tests
 
-runs the unit tests (drive type from model numbers, eject result messages).
+runs the unit tests (drive type from model numbers, eject result messages, and the Machines page's
+probing, quoting, parsing, and SSH error handling).
 
     .\Build-Linux.ps1
 
-builds the Linux edition for linux-x64 and linux-arm64 (`build\BoardScout-<version>-linux-*` plus
-`.tar.gz` and checksums) after running `tests\BoardScout.Linux.Tests`.
+builds the Linux edition for linux-x64, linux-arm64, linux-arm, linux-musl-x64, and linux-musl-arm64
+(`build\BoardScout-<version>-linux-*` plus `.tar.gz` and checksums) after running
+`tests\BoardScout.Linux.Tests`.
 
 Source layout:
 
@@ -296,11 +325,16 @@ Source layout:
 - `src\BoardScout.App\Services` — scanning, driver checks, telemetry, System tab data, the device
   tree, network probe, Connections map, firmware (SMBIOS) memory reader, interrupt sampling and
   tracing, and the optimization plan
-- `src\BoardScout.App\Assets` — Topology, Connections, and System web views, plus `vendor\` (QuickLiquid, D3)
+- `src\BoardScout.App\Assets` — Topology, Connections, System, and Machines web views, plus `vendor\` (QuickLiquid, D3)
+- `src\BoardScout.App\Shell` — the browser dashboard (both editions serve it)
+- `src\BoardScout.App\Web` — its server and engine: `Hub.cs` is shared, `Hub.Windows.cs` and
+  `WindowsOverview.cs` are the Windows half (agent and `--serve` modes)
+- `src\BoardScout.App\Remote` — the Machines page: SSH, probing, copying, tunnels, summaries (shared)
 - `src\BoardScout.App\DriverScout` — the bundled PowerShell scan engine and its notices
 - `src\BoardScout.Linux` — the Linux edition: `Platform` reads `/sys` and `/proc`, `Views` builds the
-  same payloads the web views use, `Live` streams telemetry, and `Shell` is the browser dashboard. It
-  compiles the Windows app's shared models and network code (`*.Windows.cs` files stay Windows-only).
+  same payloads the web views use, and `Live` (with `Hub.Linux.cs`) streams telemetry. It compiles the
+  Windows app's shared models, web server, Remote code, and network code (`*.Windows.cs` files stay
+  Windows-only).
 
 ## License and legal
 

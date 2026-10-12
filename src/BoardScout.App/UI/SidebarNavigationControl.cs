@@ -21,6 +21,7 @@ public sealed class SidebarNavigationControl : Control
         new("Storage", "Find full and external drives"),
         new("Efficiency", "See fixes and upgrade ideas"),
         new("System", "OS personality, patches, and software"),
+        new("Machines", "Other PCs and servers, over SSH"),
         new("Scan Log", "Troubleshoot inventory checks")
     ];
 

@@ -1,4 +1,5 @@
-/* BoardScout for Linux: the dashboard shell. Colors match the shared web views (and the Windows app's AppTheme). */
+/* BoardScout's browser dashboard shell, for Linux and for Windows PCs reached over SSH (or --serve).
+   Colors match the shared web views and the Windows app's AppTheme. */
 :root {
   color-scheme: dark;
   --bg: #060b10; --surface: #0c1620; --raised: #111e2c; --border: #1c2a3c;
@@ -77,6 +78,15 @@ body.solid .glass { background: var(--raised); border-color: var(--border); box-
 #privacyChip { display: none; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
   color: #ddd6fe; background: rgba(167,139,250,.18); border: 1px solid rgba(167,139,250,.5); }
 body.privacy #privacyChip { display: inline-block; }
+#remoteChip { display: none; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+  color: #99f6e4; background: rgba(45,212,191,.14); border: 1px solid rgba(45,212,191,.5); }
+body.agent #remoteChip { display: inline-block; }
+
+/* Wording and screens for one platform, or for a dashboard opened over SSH (agent) versus one on this computer
+   (local). Nothing platform-specific shows until the first settings message says which platform this is. */
+body:not(.platform-linux):not(.platform-windows) [data-only],
+body.platform-linux [data-only="windows"], body.platform-windows [data-only="linux"],
+body.agent [data-mode="local"], body:not(.agent) [data-mode="agent"] { display: none !important; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; position: relative; }
 .btn {
   cursor: pointer; border-radius: 12px; padding: 8px 15px; font-weight: 600; font-size: 13px; min-height: 36px;

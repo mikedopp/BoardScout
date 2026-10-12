@@ -1,5 +1,70 @@
 # Changelog
 
+## 2.0.0 — 2026-10-11
+
+Machines: any Linux or Windows machine you reach with SSH.
+
+### Added
+- **Machines** (a tab in the Windows app and in the Linux edition's dashboard; guide in
+  `docs/remote.md`). It lists every `Host` in `~/.ssh/config` plus machines you add (`user@host`,
+  `host:port`, an optional key file and folder). **Open dashboard** signs in with your SSH keys, copies
+  this exact version of BoardScout into a folder on the machine (only when the copy there is missing or
+  its SHA-256 differs), starts it there serving that machine only, and shows its full dashboard
+  through the same SSH connection: in a window of its own in the Windows app, in a new tab in a
+  browser. Closing it ends the connection, and BoardScout stops on the machine. **Check** and **Check
+  all** run BoardScout once on each machine and show support status, updates waiting, security checks
+  that didn't pass, slow links, the fullest filesystem, CPU temperature, and the top fixes; with two or
+  more checked, a table compares them.
+  - Keys only: SSH runs with `BatchMode`, so it never prompts and BoardScout never sees a password.
+    New host keys are shown as fingerprints to compare, and trusted ones go in BoardScout's own
+    `known_hosts`; a changed host key is refused. Windows' OpenSSH refusing a key file that another
+    account can read is explained, with two fixes (limit the file to you, or use Git's ssh).
+  - Machines it can open: Linux on x64, Arm64, 32-bit ARMv7, and musl (Alpine); Windows 10, 11, and
+    Server 2019 or later (Windows on Arm through x64 emulation). macOS, BSD, and 32-bit systems are
+    named as unsupported.
+  - The build a machine needs comes from this program itself, a file beside it, or the project's build
+    folder; otherwise **Get** downloads it from this version's GitHub release and keeps it only if it
+    matches the release's checksum file.
+  - One SSH connection per open dashboard carries both BoardScout there and the tunnel. On Windows,
+    those SSH processes end with BoardScout even if it crashes; the copy on the machine also stops by
+    itself after three idle minutes.
+  - From a terminal: `--machines`, `--check NAME|all` (JSON), `--connect NAME`, with `--trust` and
+    `--key FILE`.
+- **Windows browser dashboard.** `BoardScout.exe --serve` serves this PC's dashboard to a browser without
+  the window (`--listen`, `--port`, `--no-browser`); it's also what a Windows machine runs when opened
+  over SSH. Overview board, Topology, Connections with live traffic and the plan, Drivers with
+  **Check drivers** and links to official pages, Storage, Efficiency, System, and the Scan Log, built
+  from the same map, DriverScout inventory, and sensors as the app.
+- **Linux builds for more machines:** `linux-arm` (32-bit Raspberry Pi OS), `linux-musl-x64` and
+  `linux-musl-arm64` (Alpine), beside `linux-x64` and `linux-arm64`.
+- **Linux updates waiting** for dnf (from its cached package lists), zypper, pacman (against the last
+  sync), and apk, and Alpine's installed packages on the System view.
+- `--summary-json` (both editions) prints the machine's one-line health summary; `--data DIR` uses
+  another data folder for one run.
+
+### Changed
+- The browser dashboard's server, engine, and shell are shared by both editions (`src/BoardScout.App/Web`,
+  `Shell`); the Linux edition keeps its own half (`Hub.Linux.cs`). Each dashboard's access cookie now
+  has its own name, so several dashboards on 127.0.0.1 (this one and remote ones through tunnels) don't
+  sign each other out.
+- The Windows app includes ASP.NET Core (Kestrel) for agent and `--serve` modes, and its settings
+  gain glass opacity and blur for the browser dashboard.
+- The Windows version pop-out lists the Machines page's dependencies (ssh, known_hosts, remote folders,
+  the GitHub releases host) and says that BoardScout keeps no credentials.
+
+### Tested
+- Windows app → Linux (Ubuntu 26.04, Dell OptiPlex 3050) over SSH with Git's ssh: the first open copied
+  BoardScout (51 MB) and the dashboard opened in the app's own window; closing the window stopped it
+  there. Checks from the Machines tab and from `--check`; `--connect` in a browser; ending BoardScout
+  abruptly ended its SSH connection and the copy on the machine. Windows' ssh refusing a key file with a
+  leftover account's permissions was explained, and switching to Git's ssh from the card worked.
+- Windows `--serve` and agent mode on this PC: the board, live tiles, Machines tab, access key (401
+  without it), and per-agent cookie.
+- 93 Windows and 76 Linux unit tests.
+- Not tried: opening a Windows machine over SSH, the Linux edition as the one opening other machines,
+  the host-key trust flow, the GitHub download, and the arm, Arm64, and musl builds on hardware. The
+  dnf, zypper, pacman, and apk readers were checked against their documented output only.
+
 ## 1.10.0 — 2026-10-11
 
 BoardScout for Linux.

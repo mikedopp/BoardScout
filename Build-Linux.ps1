@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('linux-x64', 'linux-arm64')]
-    [string[]]$Runtime = @('linux-x64', 'linux-arm64'),
+    # glibc x64 and Arm64 (most distributions), musl (Alpine), and 32-bit ARMv7 (Raspberry Pi OS 32-bit).
+    [ValidateSet('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64', 'linux-arm')]
+    [string[]]$Runtime = @('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64', 'linux-arm'),
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipTests

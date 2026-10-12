@@ -1,5 +1,6 @@
-// BoardScout for Linux: the dashboard shell. One event stream from the server feeds the shell and, through
-// postMessage, the shared views in their frames (Topology, Connections, System).
+// BoardScout's browser dashboard shell: the Linux edition, and Windows PCs reached over SSH or served with
+// --serve. One event stream from the server feeds the shell and, through postMessage, the shared views in their
+// frames (Topology, Connections, System, Machines).
 'use strict';
 
 const $ = id => document.getElementById(id);
@@ -20,8 +21,10 @@ function sv(tag, attrs, parent) {
 const state = {
   client: '', settings: null, meta: null, overview: null, telemetry: null, flow: null,
   firmware: null, firmwareBusy: false, log: [], tab: 'overview', frames: {},
-  zoom: 1, panX: 0, panY: 0, selected: null, driverFilter: 'All', badge: null, reading: true
+  zoom: 1, panX: 0, panY: 0, selected: null, driverFilter: 'All', badge: null, reading: true,
+  platform: '', agent: false, driverCheck: null
 };
+const windows = () => state.platform === 'windows';
 // The views' bridge reads the client id from here, so the server knows which dashboard a request came from.
 window.BoardScoutShell = { get client() { return state.client; } };
 
@@ -149,16 +152,17 @@ function handle(message) {
       break;
     case 'firmwarebusy': state.firmwareBusy = true; renderFirmware(); break;
     case 'firmware': state.firmwareBusy = false; state.firmware = message.data; renderFirmware(); break;
+    case 'drivercheck': state.driverCheck = message; renderDriverButton(); break;
     case 'error': setStatus('Reading failed: ' + message.message); badge('error'); break;
   }
 }
 
 // ---- Tabs ----------------------------------------------------------------------------------------------
 
-const TABS = ['overview', 'topology', 'connections', 'drivers', 'storage', 'efficiency', 'system', 'log'];
+const TABS = ['overview', 'topology', 'connections', 'drivers', 'storage', 'efficiency', 'system', 'machines', 'log'];
 
 function setTab(name) {
-  if (!TABS.includes(name)) name = 'overview';
+  if (!TABS.includes(name) || (name === 'machines' && state.agent)) name = 'overview';
   state.tab = name;
   for (const section of document.querySelectorAll('.tab')) section.classList.toggle('on', section.dataset.tab === name);
   for (const button of document.querySelectorAll('.navbtn')) {
@@ -178,8 +182,30 @@ function setTab(name) {
 
 // ---- Settings ------------------------------------------------------------------------------------------
 
+// Which platform this dashboard reads (Linux, or Windows), and whether it was opened over SSH by another
+// BoardScout: the wording, the Drivers tab's button, and the Machines tab follow.
+function applyPlatform(s) {
+  const platform = s.platform === 'windows' ? 'windows' : 'linux';
+  const agent = !!s.agent;
+  if (platform === state.platform && agent === state.agent) return;
+  state.platform = platform;
+  state.agent = agent;
+  document.body.classList.toggle('platform-windows', platform === 'windows');
+  document.body.classList.toggle('platform-linux', platform === 'linux');
+  document.body.classList.toggle('agent', agent);
+  $('remoteChip').textContent = agent ? `Over SSH${s.remoteName ? ' · ' + s.remoteName : ''}` : '';
+  $('navDrivers').textContent = windows() ? 'Drivers and official update pages' : 'Kernel drivers and firmware';
+  $('navSystem').textContent = windows() ? 'Windows, updates, apps, tasks' : 'Distribution, packages, timers';
+  $('popTitle').textContent = `BoardScout${windows() ? '' : ' for Linux'}${agent ? ' · over SSH' : ''}`;
+  $('diagStop').textContent = agent ? 'Disconnect' : 'Stop BoardScout';
+  renderDriverButton();
+  if (agent && state.tab === 'machines') setTab('overview');
+  if (state.overview) renderOverview();
+}
+
 function applySettings(s) {
   state.settings = s;
+  applyPlatform(s);
   const root = document.documentElement.style;
   root.setProperty('--glass-a', String(s.glassOpacity));
   root.setProperty('--glass-blur', s.glassBlur + 'px');
@@ -343,7 +369,8 @@ function renderBoard() {
 
   const viewport = sv('g', { id: 'vp' }, svg);
   sv('rect', { x: 20, y: 20, width: 1080, height: height - 40, rx: 24, fill: 'url(#pcb)', stroke: 'rgba(255,255,255,.08)' }, viewport);
-  sv('text', { x: 44, y: 58, fill: '#3d9eff', 'font-size': 12, 'font-weight': 700, 'letter-spacing': '.12em' }, viewport).textContent = 'BOARD LAYOUT · AS LINUX REPORTS IT';
+  sv('text', { x: 44, y: 58, fill: '#3d9eff', 'font-size': 12, 'font-weight': 700, 'letter-spacing': '.12em' }, viewport).textContent =
+    `BOARD LAYOUT · AS ${windows() ? 'WINDOWS' : 'LINUX'} REPORTS IT`;
   sv('text', { x: 1076, y: 58, fill: '#c9d6e6', 'font-size': 14, 'font-weight': 600, 'text-anchor': 'end' }, viewport).textContent = `${o.title} · ${o.formFactor}`;
   if (dimms.length) {
     const mem = sv('text', { x: 672, y: 92, fill: '#bef264', 'font-size': 12, 'font-weight': 600, id: 'liveMem' }, viewport);
@@ -582,11 +609,13 @@ function renderDrivers() {
   }));
   const query = $('driverSearch').value.trim().toLowerCase();
   const shown = rows.filter(r => (state.driverFilter === 'All' || driverGroup(r) === state.driverFilter) &&
-    (!query || [r.device, r.category, r.driver, r.version, r.source, r.firmware, r.status].some(v => (v || '').toLowerCase().includes(query))));
+    (!query || [r.device, r.category, r.driver, r.version, r.source, r.firmware, r.status, r.latest].some(v => (v || '').toLowerCase().includes(query))));
   const table = $('driversTable');
   table.replaceChildren();
   const head = el('tr');
-  for (const h of ['Device', 'Kind', 'Driver', 'Version and source', 'Firmware', 'Status']) head.append(el('th', null, h));
+  // Windows: the driver's version and date, and what the driver check found (with the official page).
+  const columns = windows() ? ['Device', 'Kind', 'Driver', 'Date and source', 'Latest', 'Status'] : ['Device', 'Kind', 'Driver', 'Version and source', 'Firmware', 'Status'];
+  for (const h of columns) head.append(el('th', null, h));
   table.append(el('thead'));
   table.firstChild.append(head);
   const body = el('tbody');
@@ -595,11 +624,36 @@ function renderDrivers() {
     const device = el('td', null, r.device);
     if (r.node) { device.style.cursor = 'pointer'; device.title = 'Show on the Connections map'; device.onclick = () => showOnMap(r.node); }
     const status = el('td', 'tone-' + (r.tone === 'warn' ? 'warn' : r.tone === 'good' ? 'good' : 'info'), r.status);
-    tr.append(device, el('td', null, r.category), el('td', 'num', r.driver), el('td', null, [r.version, r.source].filter(Boolean).join(' · ')), el('td', 'num', r.firmware || ''), status);
+    if (r.url) {
+      const link = el('a', null, ' Official page');
+      link.href = r.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      status.append(link);
+    }
+    tr.append(device, el('td', null, r.category), el('td', 'num', r.driver), el('td', null, [r.version, r.source].filter(Boolean).join(' · ')),
+      el('td', 'num', (windows() ? r.latest : r.firmware) || ''), status);
     body.append(tr);
   }
-  if (!shown.length) { const tr = el('tr'); const td = el('td', 'muted', 'Nothing matches.'); td.colSpan = 6; tr.append(td); body.append(tr); }
+  if (!shown.length) {
+    const tr = el('tr');
+    const td = el('td', 'muted', rows.length ? 'Nothing matches.' : windows() ? 'The inventory is still running; drivers show up when it finishes.' : 'Nothing read yet.');
+    td.colSpan = 6; tr.append(td); body.append(tr);
+  }
   table.append(body);
+}
+
+// Windows: the header's button checks drivers (DriverScout) instead of fwupd firmware.
+function renderDriverButton() {
+  const button = $('firmwareBtn');
+  if (!windows()) {
+    button.textContent = 'Check firmware';
+    button.title = 'Ask fwupd which firmware updates are waiting (nothing is installed)';
+    button.disabled = state.firmwareBusy;
+    return;
+  }
+  const c = state.driverCheck || {};
+  button.textContent = c.busy ? 'Checking drivers…' : c.scanning ? 'Taking inventory…' : 'Check drivers';
+  button.title = 'Look for newer drivers on vendor, OEM, and Windows Update catalog pages (nothing is installed)' + (c.checkedAt ? `. Last checked ${c.checkedAt}.` : '');
+  button.disabled = !!c.busy || !!c.scanning;
 }
 
 function renderFirmware() {
@@ -670,7 +724,7 @@ function renderStorage() {
   table.append(head);
   for (const d of o.disks) {
     const tr = el('tr');
-    const name = el('td', 'num', '/dev/' + d.name);
+    const name = el('td', 'num', windows() ? d.name : '/dev/' + d.name);
     if (d.node) { name.style.cursor = 'pointer'; name.title = 'Show on the Connections map'; name.onclick = () => showOnMap(d.node); }
     tr.append(name, el('td', null, d.model), el('td', null, d.kind), el('td', null, d.bus.toUpperCase()), el('td', 'num', fmtBytes(d.sizeBytes)),
       el('td', 'num', d.firmware || ''), el('td', 'num', d.temperatureC != null ? Math.round(d.temperatureC) + '°C' : '—'));
@@ -707,7 +761,7 @@ function renderLog(all, line) {
 function renderMeta() {
   const m = state.meta;
   $('versionText').textContent = 'v' + m.version;
-  $('popVersion').textContent = `v${m.version}${m.commit ? ` (${m.commit})` : ''} · .NET ${m.runtime} · ${m.distro}`;
+  $('popVersion').textContent = `v${m.version}${m.commit ? ` (${m.commit})` : ''} · .NET ${m.runtime} · ${m.platform === 'windows' ? m.windows : m.distro}`;
   const deps = $('depsTable');
   deps.replaceChildren();
   const row = (name, value, isCode) => {
@@ -717,14 +771,19 @@ function renderMeta() {
     tr.append(el('td', null, name), td);
     deps.append(tr);
   };
-  row('Credentials', 'None. BoardScout uses no accounts, passwords, API keys, or tokens; the dashboard\'s access key is made fresh each time it starts and kept only in the data folder.');
+  row('Credentials', 'None. BoardScout uses no accounts, passwords, API keys, or tokens; the dashboard\'s access key is made fresh each time it starts and kept only in the data folder.' +
+    (m.agent != null ? ' This copy was started over SSH with the key of the account it runs as; it holds no SSH keys itself.' : ' Machines signs in with your own SSH keys and never asks for or keeps a password.'));
+  if (m.agent == null && m.ssh) row('SSH (Machines)', `${m.ssh}; ~/.ssh/config and known_hosts, plus BoardScout's own known_hosts in the data folder`);
+  if (m.platform === 'windows') { renderWindowsMeta(m, row); return; }
   row('Linux interfaces', '/sys/bus/pci, /sys/bus/usb, /sys/block, /sys/class/net, /sys/class/hwmon, /sys/class/drm, /sys/class/dmi/id, /proc/interrupts, /proc/diskstats, /proc/net/*, /run/udev/data/+dmi:id, /etc/os-release', true);
   const what = {
     iw: 'Wi-Fi link details and the router\'s model from its beacons', nmcli: 'Wi-Fi details and connection names (NetworkManager)',
     bluetoothctl: 'Paired Bluetooth devices (BlueZ)', udisksctl: 'Eject for USB drives (udisks2)', fwupdmgr: 'Firmware versions and updates (fwupd, LVFS)',
     systemctl: 'Timers, services, and default target', 'apt-get': 'Updates waiting (simulated, read-only)', 'dpkg-query': 'Installed packages (Debian, Ubuntu)',
-    rpm: 'Installed packages (Fedora, RHEL)', snap: 'Installed snaps', flatpak: 'Installed Flatpak apps', dotnet: '.NET runtimes and SDKs on this computer',
-    udevadm: 'Memory slots, on systems where udev\'s cache isn\'t readable'
+    rpm: 'Installed packages (Fedora, RHEL, openSUSE)', snap: 'Installed snaps', flatpak: 'Installed Flatpak apps', dotnet: '.NET runtimes and SDKs on this computer',
+    udevadm: 'Memory slots, on systems where udev\'s cache isn\'t readable', dnf: 'Updates waiting, from dnf\'s cached metadata (Fedora, RHEL)',
+    zypper: 'Updates waiting, from cached repositories (openSUSE)', pacman: 'Installed packages and updates waiting against the last sync (Arch)',
+    apk: 'Installed packages and updates waiting (Alpine)'
   };
   for (const t of m.tools) row(t.name, `${t.path ? t.path : 'not installed'} — ${what[t.name] || ''}`);
   row('Bundled data', 'IEEE OUI registry (oui.tsv), PCI ID Repository (pci.ids), USB ID Repository (usb.ids), inside the app');
@@ -732,16 +791,40 @@ function renderMeta() {
   row('Runtime', `.NET ${m.runtime}, built into the program (no .NET install needed)`);
   row('Data folder', m.dataFolder, true);
   row('Environment', 'BOARDSCOUT_DATA (data folder), XDG_DATA_HOME, DISPLAY / WAYLAND_DISPLAY (opening the browser)', true);
+  if (m.agent == null) row('On machines it opens', '~/.cache/boardscout on Linux, %LOCALAPPDATA%\\BoardScout\\Remote on Windows: its copy, settings, and inventory there', true);
   row('Dashboard address', m.url, true);
-  row('External hosts', 'Only when you click: 1.1.1.1/cdn-cgi/trace (public IP) and speed.cloudflare.com (speed test). fwupd talks to the LVFS on its own schedule.');
+  row('External hosts', 'Only when you click: 1.1.1.1/cdn-cgi/trace (public IP) and speed.cloudflare.com (speed test). fwupd talks to the LVFS on its own schedule.' +
+    (m.agent == null ? ' Machines: the machines you open, over SSH; github.com/mikedopp/BoardScout/releases only when you click Get for a build this computer lacks.' : ''));
+  versionsTable([['BoardScout', `${m.version}${m.commit ? ` (${m.commit})` : ''}`], ['.NET runtime', m.runtime], ['Distribution', m.distro], ['Kernel', m.kernel],
+    ['Running as', m.root ? 'root' : m.user], ['Started', m.agent != null ? `over SSH${m.agent ? ' (as ' + m.agent + ')' : ''}` : 'on this computer'],
+    ['Dashboard', m.url], ['Data folder', m.dataFolder]]);
+}
+
+function versionsTable(rows) {
   const versions = $('versionsTable');
   versions.replaceChildren();
-  for (const [k, v] of [['BoardScout', `${m.version}${m.commit ? ` (${m.commit})` : ''}`], ['.NET runtime', m.runtime], ['Distribution', m.distro], ['Kernel', m.kernel],
-    ['Running as', m.root ? 'root' : m.user], ['Dashboard', m.url], ['Data folder', m.dataFolder]]) {
+  for (const [k, v] of rows) {
     const tr = el('tr');
     tr.append(el('td', null, k), el('td', null, v));
     versions.append(tr);
   }
+}
+
+// What the Windows edition depends on when it serves this dashboard (over SSH, or --serve).
+function renderWindowsMeta(m, row) {
+  row('Windows interfaces', 'SetupAPI and the PnP device tree, USB hub IOCTLs, storage IOCTLs, SMBIOS, WMI/CIM, the registry, IP Helper, WLAN API, performance counters', true);
+  row('DriverScout', 'Inventory and driver checks: PowerShell scripts bundled with the app (Windows PowerShell 5.1), read-only');
+  row('LibreHardwareMonitor', `CPU, GPU, chipset, and fan sensors (MPL-2.0). Board sensors need the PawnIO driver (${m.sensors?.pawnIo ? 'installed' + (m.sensors.pawnIoVersion ? ' ' + m.sensors.pawnIoVersion : '') : 'not installed'}) and administrator rights (${m.sensors?.elevated ? 'yes' : 'no'}).`);
+  row('Bundled data', 'IEEE OUI registry (oui.tsv), PCI ID Repository (pci.ids), USB ID Repository (usb.ids), inside the app');
+  row('Bundled libraries', 'ASP.NET Core (this dashboard\'s server), D3 7, QuickLiquid, Skitter, FlashStream, Glimmer badge: all served from the app, never a CDN');
+  row('Runtime', `.NET ${m.runtime}, built into the program (no .NET install needed)`);
+  row('Data folder', m.dataFolder, true);
+  row('Environment', 'BOARDSCOUT_DATA (data folder), DOTNET_BUNDLE_EXTRACT_BASE_DIR (where the program unpacks itself)', true);
+  row('Dashboard address', m.url, true);
+  row('External hosts', 'Only when you click: 1.1.1.1/cdn-cgi/trace (public IP), speed.cloudflare.com (speed test), and vendor, OEM, and Microsoft Update catalog pages (Check drivers).');
+  versionsTable([['BoardScout', `${m.version}${m.commit ? ` (${m.commit})` : ''}`], ['.NET runtime', m.runtime], ['Windows', m.windows],
+    ['Running as', `${m.user}${m.root ? ' (administrator)' : ''}`], ['Started', m.agent != null ? `over SSH${m.agent ? ' (as ' + m.agent + ')' : ''}` : 'on this PC (--serve)'],
+    ['Dashboard', m.url], ['Data folder', m.dataFolder]]);
 }
 
 let lastFocus = null;
@@ -781,7 +864,7 @@ function init() {
   window.addEventListener('hashchange', () => setTab(location.hash.slice(1)));
 
   $('scanBtn').onclick = () => { state.reading = true; badge('thinking'); setStatus('Reading every device again…'); post('shell', { type: 'rescan' }); };
-  $('firmwareBtn').onclick = () => { setTab('drivers'); post('shell', { type: 'firmware' }); };
+  $('firmwareBtn').onclick = () => { setTab('drivers'); post('shell', { type: windows() ? 'drivers' : 'firmware' }); };
   $('firmwareBtn2').onclick = () => post('shell', { type: 'firmware' });
   const menu = $('exportMenu');
   $('exportBtn').onclick = e => {
@@ -820,7 +903,8 @@ function init() {
   $('diagLog').onclick = () => { closePop(); setTab('log'); };
   $('diagStop').onclick = () => {
     post('shell', { type: 'quit' });
-    setStatus('BoardScout stopped. Start it again from the app menu or with boardscout.');
+    setStatus(state.agent ? 'Disconnected: BoardScout stopped on that machine. Open it again from Machines.'
+      : windows() ? 'BoardScout stopped. Start it again with BoardScout.exe --serve.' : 'BoardScout stopped. Start it again from the app menu or with boardscout.');
     closePop();
   };
   $('dataFolderBtn').onclick = () => state.meta && copy(state.meta.dataFolder, 'Data folder path');

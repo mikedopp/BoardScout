@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BoardScout</AssemblyName>
     <RootNamespace>BoardScout</RootNamespace>
-    <Version>1.10.0</Version>
+    <Version>2.0.0</Version>
     <Product>BoardScout</Product>
     <Description>Portable motherboard, storage, and driver health dashboard.</Description>
     <Authors>mikedopp</Authors>
@@ -35,6 +35,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BoardScout.Tests" />
+    <!-- Kestrel: the browser dashboard this app serves when another BoardScout opens it over SSH (agent mode)
+         or when it runs without a window (serve mode). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
@@ -57,6 +60,11 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="Assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <!-- The browser dashboard's shell, shared with the Linux edition. -->
+    <Content Include="Shell\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

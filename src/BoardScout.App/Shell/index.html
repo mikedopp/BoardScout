@@ -18,6 +18,7 @@
         <span class="glimmer-dot" aria-hidden="true"></span><span id="versionText">v…</span>
       </button>
       <button id="privacyChip" type="button" title="Privacy mode is on: names, addresses, and serial-like values are masked. Click to turn it off.">Privacy on</button>
+      <span id="remoteChip" title="This dashboard runs on another machine and reaches you through an SSH tunnel. It stops when you disconnect.">Over SSH</span>
     </div>
     <div id="subtitle">&nbsp;</div>
   </div>
@@ -50,10 +51,11 @@
     <button class="navbtn" data-tab="overview"><b>Overview</b><small>Hover parts · zoom and pan</small></button>
     <button class="navbtn" data-tab="topology"><b>Topology</b><small>Follow lanes and shared bandwidth</small></button>
     <button class="navbtn" data-tab="connections"><b>Connections</b><small>Every device, link, and live traffic</small></button>
-    <button class="navbtn" data-tab="drivers"><b>Drivers</b><small>Kernel drivers and firmware</small></button>
+    <button class="navbtn" data-tab="drivers"><b>Drivers</b><small id="navDrivers">Kernel drivers and firmware</small></button>
     <button class="navbtn" data-tab="storage"><b>Storage</b><small>Filesystems and drives</small></button>
     <button class="navbtn" data-tab="efficiency"><b>Efficiency</b><small>Fixes and upgrade ideas</small></button>
-    <button class="navbtn" data-tab="system"><b>System</b><small>Distribution, packages, timers</small></button>
+    <button class="navbtn" data-tab="system"><b>System</b><small id="navSystem">Distribution, packages, timers</small></button>
+    <button class="navbtn" data-tab="machines" data-mode="local"><b>Machines</b><small>Other PCs and servers, over SSH</small></button>
     <button class="navbtn" data-tab="log"><b>Scan Log</b><small>What was read, and when</small></button>
     <div class="quick">
       <div class="eyebrow" style="margin:0">Quick start</div>
@@ -87,7 +89,7 @@
             <div class="eyebrow">Interactive map</div>
             <h3>Hover over a part</h3>
             <span class="status-chip">Live telemetry ready</span>
-            <p class="muted">Move over the CPU, memory, drives, slots, ports, or the chipset for its status, live use, and what the kernel reports about it.</p>
+            <p class="muted">Move over the CPU, memory, drives, slots, ports, or the chipset for its status, live use, and what this computer reports about it.</p>
           </div>
           <h4>System details</h4>
           <table class="facts" id="details"></table>
@@ -98,18 +100,20 @@
     <section class="tab" data-tab="topology" aria-label="Topology"><div class="frame-card glass"><iframe title="Topology" data-src="/views/topology.html"></iframe></div></section>
     <section class="tab" data-tab="connections" aria-label="Connections"><div class="frame-card glass"><iframe title="Connections" data-src="/views/connections.html"></iframe></div></section>
     <section class="tab" data-tab="system" aria-label="System"><div class="frame-card glass"><iframe title="System" data-src="/views/system.html"></iframe></div></section>
+    <section class="tab" data-tab="machines" aria-label="Machines"><div class="frame-card glass"><iframe title="Machines" data-src="/views/machines.html"></iframe></div></section>
 
     <section class="tab" data-tab="drivers" aria-label="Drivers">
       <div class="panel glass">
         <h2>Drivers and firmware</h2>
-        <div class="sub">Every device's kernel driver, where it came from, and the firmware versions Linux can see. In-tree drivers update with the kernel.</div>
+        <div class="sub" data-only="linux">Every device's kernel driver, where it came from, and the firmware versions Linux can see. In-tree drivers update with the kernel.</div>
+        <div class="sub" data-only="windows">Every component's driver from the last inventory. Check drivers asks vendor, OEM, and Windows Update catalog pages for newer ones; BoardScout links to the official page and never installs anything.</div>
         <div class="toolbar">
           <input class="search" id="driverSearch" type="search" placeholder="Search drivers…" aria-label="Search drivers">
           <div class="chips" id="driverChips"></div>
         </div>
         <div class="table-wrap"><table class="grid" id="driversTable"></table></div>
       </div>
-      <div class="panel glass fw" id="firmwareBox">
+      <div class="panel glass fw" id="firmwareBox" data-only="linux">
         <h2>Firmware updates (fwupd)</h2>
         <div class="sub">fwupd and the Linux Vendor Firmware Service update BIOS, SSD, dock, and peripheral firmware on many machines. BoardScout only asks what's waiting; installing stays with fwupd.</div>
         <div id="firmwareBody"><button class="btn" id="firmwareBtn2">Check firmware</button></div>
@@ -158,7 +162,7 @@
 <div id="popout" class="glass" role="dialog" aria-modal="true" aria-labelledby="popTitle">
   <div class="pop-head">
     <div>
-      <h2 id="popTitle">BoardScout for Linux</h2>
+      <h2 id="popTitle">BoardScout</h2>
       <div class="muted" id="popVersion"></div>
     </div>
     <button class="btn small x" id="popClose" aria-label="Close">Close</button>
@@ -196,23 +200,37 @@
     <div class="pop-pane" data-pane="help" role="tabpanel">
       <h3>What each screen does</h3>
       <ul>
-        <li><b>Overview</b>: the board as Linux reports it: CPU, memory slots, PCIe lanes and M.2, SATA ports, USB, and the chipset. Hover anything.</li>
+        <li data-only="linux"><b>Overview</b>: the board as Linux reports it: CPU, memory slots, PCIe lanes and M.2, SATA ports, USB, and the chipset. Hover anything.</li>
+        <li data-only="windows"><b>Overview</b>: the board as Windows reports it: CPU, memory slots, graphics and M.2 lanes, SATA, USB, and the chipset. Hover anything.</li>
         <li><b>Topology</b>: what connects straight to the CPU and what shares the chipset's link.</li>
         <li><b>Connections</b>: every device and the link it negotiated, live traffic, Live drives, search (Ctrl+F or /), and the Optimization plan.</li>
-        <li><b>Drivers</b>: the kernel driver behind each device, and firmware versions; Check firmware asks fwupd what's waiting.</li>
-        <li><b>System</b>: what your distribution says about you, its support dates, a security check, packages, history, and timers.</li>
+        <li data-only="linux"><b>Drivers</b>: the kernel driver behind each device, and firmware versions; Check firmware asks fwupd what's waiting.</li>
+        <li data-only="windows"><b>Drivers</b>: each component's driver; Check drivers looks for newer ones on vendor and OEM pages and links to them.</li>
+        <li data-only="linux"><b>System</b>: what your distribution says about you, its support dates, a security check, packages, history, and timers.</li>
+        <li data-only="windows"><b>System</b>: Windows' personality, support dates, upgrade readiness, updates, apps, and scheduled tasks.</li>
+        <li data-mode="local"><b>Machines</b>: other PCs and servers. Open one's dashboard, or check them all at once, over SSH with your own keys.</li>
       </ul>
-      <h3>Running BoardScout</h3>
-      <ul>
-        <li>It runs in your browser and serves only this computer by default. There's no tray icon: stop it here (Diagnostics → Stop BoardScout) or with Ctrl+C where it runs.</li>
-        <li><code>boardscout --install</code> adds it to your app menu; that entry stops BoardScout when its last tab closes.</li>
-        <li>On a server: <code>boardscout --listen 0.0.0.0</code>, then open the printed link from another computer. Anyone with that link can see this machine's details.</li>
-        <li>Nothing needs root. Running it again opens the dashboard that's already running.</li>
+      <h3 data-mode="agent">This dashboard is on another machine</h3>
+      <ul data-mode="agent">
+        <li>A BoardScout on your computer started it over SSH. It serves only that machine itself, and you reach it through the SSH connection.</li>
+        <li>Disconnect (in Diagnostics) or closing the dashboard on your computer stops it. It also stops on its own after a few idle minutes.</li>
+        <li>Its copy and settings live in <code data-only="linux">~/.cache/boardscout</code><code data-only="windows">%LOCALAPPDATA%\BoardScout\Remote</code> on that machine.</li>
+      </ul>
+      <h3 data-mode="local">Running BoardScout</h3>
+      <ul data-mode="local">
+        <li data-only="linux">It runs in your browser and serves only this computer by default. There's no tray icon: stop it here (Diagnostics → Stop BoardScout) or with Ctrl+C where it runs.</li>
+        <li data-only="linux"><code>boardscout --install</code> adds it to your app menu; that entry stops BoardScout when its last tab closes.</li>
+        <li data-only="linux">On a server: <code>boardscout --listen 0.0.0.0</code>, then open the printed link from another computer. Anyone with that link can see this machine's details.</li>
+        <li data-only="windows">This is <code>BoardScout.exe --serve</code>: the browser dashboard for this PC, without the app's window. Stop it here (Diagnostics → Stop BoardScout) or with Ctrl+C.</li>
+        <li>Other machines: the Machines tab, or <code>--connect NAME</code> and <code>--check all</code> from a terminal.</li>
+        <li>Nothing needs root or administrator rights. Running it again opens the dashboard that's already running.</li>
       </ul>
       <h3>What goes online</h3>
       <ul>
         <li>Only when you click: <em>Look up my public IP</em> (one request to Cloudflare's 1.1.1.1) and <em>Test my Internet speed</em> (speed.cloudflare.com). The Scan Log records both.</li>
+        <li data-only="windows">Check drivers asks vendor, OEM, and Microsoft Update catalog pages about this PC's components.</li>
         <li>The Connections map talks to your local network only: your router, its web certificate, and devices' own names (multicast DNS, NetBIOS, UPnP).</li>
+        <li data-mode="local">Machines: SSH to the machines you open or check. A build a machine needs and this computer doesn't have comes from this version's GitHub release, and only when you click Get.</li>
       </ul>
     </div>
     <div class="pop-pane" data-pane="diag" role="tabpanel">

@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using BoardScout.Live;
+using BoardScout.Models;
 using BoardScout.Platform;
+using BoardScout.Remote;
 using BoardScout.Services;
 using BoardScout.Views;
 using BoardScout.Web;
@@ -27,6 +29,19 @@ internal sealed record LaunchOptions
     public string? Directory { get; init; }
     public string? Error { get; init; }
 
+    /// <summary>Started over SSH by another BoardScout (see ServeOptions.Agent).</summary>
+    public bool Agent { get; init; }
+    public string? Label { get; init; }
+    public bool WatchStdin { get; init; }
+
+    /// <summary>A data folder for this run (sets $BOARDSCOUT_DATA).</summary>
+    public string? Data { get; init; }
+
+    /// <summary>The machine for --check and --connect.</summary>
+    public string? Machine { get; init; }
+    public bool Trust { get; init; }
+    public string? Key { get; init; }
+
     public static LaunchOptions Parse(IReadOnlyList<string> args)
     {
         var options = new LaunchOptions();
@@ -47,8 +62,15 @@ internal sealed record LaunchOptions
                 "--privacy" => options with { Privacy = true },
                 "--sweep" => options with { Sweep = true },
                 "--profile" => options with { Profile = true },
-                "--connections-json" or "--plan-json" or "--system-json" or "--scan-json" or "--diagnostics" or "--install" or "--uninstall" => options with { Command = arg[2..] },
+                "--connections-json" or "--plan-json" or "--system-json" or "--scan-json" or "--summary-json" or "--diagnostics" or "--install" or "--uninstall" or "--machines" => options with { Command = arg[2..] },
                 "--selftest" => Next() is { } directory ? options with { Command = "selftest", Directory = directory } : options with { Error = "--selftest needs a folder to write into" },
+                "--check" or "--connect" => Next() is { } machine && !machine.StartsWith('-') ? options with { Command = arg[2..], Machine = machine } : options with { Error = $"{arg} needs a machine: a name from --machines, a Host from ~/.ssh/config, or user@host" },
+                "--trust" => options with { Trust = true },
+                "--key" => Next() is { } key ? options with { Key = key } : options with { Error = "--key needs a private key file" },
+                "--agent" => options with { Agent = true, OpenBrowser = false },
+                "--label" => Next() is { } label ? options with { Label = label } : options with { Error = "--label needs a name" },
+                "--watch-stdin" => options with { WatchStdin = true },
+                "--data" => Next() is { } data ? options with { Data = data } : options with { Error = "--data needs a folder" },
                 _ => options with { Error = $"Unknown option: {arg}" }
             };
             if (options.Error is not null) break;
@@ -96,12 +118,22 @@ internal static class Program
           --scan-json           Print the hardware scan (what Export saves)
           --diagnostics         Print what an issue report needs (always masked)
           --selftest DIR        Write all of the above into DIR, for checking a machine without a browser
+          --summary-json        Print this machine's one-line health summary
 
+        Other machines, over SSH (your keys and ~/.ssh/config; BoardScout never asks for a password):
+          --machines            List the machines on the Machines page
+          --check NAME|all      Print a machine's health summary (NAME: from --machines, a Host, or user@host)
+          --connect NAME        Open a machine's dashboard through an SSH tunnel; Ctrl+C disconnects
+          --trust               Trust a machine's host key the first time (its fingerprint is printed)
+          --key FILE            Sign in with this private key
+
+          --data DIR            Keep settings and data in DIR for this run
           -V, --version         Print the version
           -h, --help            Show this help
 
         Settings, the log, and the running dashboard's address live in ~/.local/share/boardscout
-        (or $BOARDSCOUT_DATA). Nothing here needs root; nothing is installed system-wide.
+        (or $BOARDSCOUT_DATA). Nothing here needs root; nothing is installed system-wide. On a machine
+        it opens over SSH, BoardScout keeps its copy in ~/.cache/boardscout.
         """;
 
     private static async Task<int> Main(string[] args)
@@ -130,6 +162,7 @@ internal static class Program
         }
 
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        if (options.Data is not null) Environment.SetEnvironmentVariable("BOARDSCOUT_DATA", Path.GetFullPath(options.Data));
         AppSettings.Load(DataFolder.Root);
         Privacy.Learn(null);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrashLog(e.ExceptionObject as Exception);
@@ -161,15 +194,43 @@ internal static class Program
                     return 0;
                 case "selftest":
                     return await SelfTestAsync(options.Directory!, privacy);
+                case "summary-json":
+                    Console.WriteLine(JsonSerializer.Serialize(await SummaryAsync(privacy), MachineSummaries.Ascii));
+                    return 0;
+                case "machines" or "check" or "connect":
+                    return await RemoteCli.RunAsync(options.Command, options.Machine, DataFolder.Root, privacy, options.Trust, options.Key,
+                        options.OpenBrowser && AppSettings.Current.OpenBrowser ? Desktop.OpenBrowser : null);
             }
 
-            if (WebServer.RunningInstance() is { } running)
+            Tools.Ran += line => Hub.Current.Log("RAN: " + line);
+            if (options.Agent)
+            {
+                // Started over SSH by another BoardScout: serve only this machine, on any free port, until it disconnects.
+                if (options.Privacy) AppSettings.Current.PrivacyMode = true;
+                return await WebServer.RunAsync(new ServeOptions
+                {
+                    Agent = true,
+                    Port = options.Port,
+                    Label = options.Label,
+                    WatchStdin = options.WatchStdin,
+                    DataRoot = DataFolder.Root
+                });
+            }
+            if (WebServer.RunningInstance(DataFolder.Root) is { } running)
             {
                 Console.WriteLine($"BoardScout is already running: {running.Url}");
                 if (options.OpenBrowser) Desktop.OpenBrowser(running.Url);
                 return 0;
             }
-            return await WebServer.RunAsync(options with { OpenBrowser = options.OpenBrowser && AppSettings.Current.OpenBrowser });
+            return await WebServer.RunAsync(new ServeOptions
+            {
+                Listen = options.Listen,
+                Port = options.Port,
+                DefaultPort = AppSettings.Current.Port,
+                StopWhenClosed = options.StopWhenClosed,
+                DataRoot = DataFolder.Root,
+                Started = options.OpenBrowser && AppSettings.Current.OpenBrowser ? Desktop.OpenBrowser : null
+            });
         }
         catch (Exception ex)
         {
@@ -227,6 +288,20 @@ internal static class Program
         Console.WriteLine($"PLAN={plan.Sections.Count} sections, {plan.Sections.Sum(s => s.Items.Count(i => i.Tone is "improve" or "warn"))} things to improve");
         Console.WriteLine($"READ={capture.CaptureMs} ms");
         return 0;
+    }
+
+    // This machine's one-row health summary, for a BoardScout elsewhere that checks every machine at once.
+    private static async Task<MachineSummary> SummaryAsync(bool privacy)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var capture = await Task.Run(HardwareCapture.Read);
+        var map = LinuxConnections.Build(capture, privacy, null);
+        var cores = await LinuxPlan.SampleCoresAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+        var plan = LinuxPlan.Build(capture, map, cores, null, privacy);
+        var system = JsonSerializer.Deserialize<SystemInfoSnapshot>(await LinuxSystemInfo.GatherJsonAsync(capture)) ?? new SystemInfoSnapshot();
+        var title = LinuxOverview.Build(capture, map, plan, privacy).Title;
+        return MachineSummaries.Build("linux", title, system, map.Snapshot, plan, capture.Volumes.Select(v => (v.MountPoint, v.SizeBytes, v.FreeBytes)),
+            Sensors.Cpu(Sensors.Read()), capture.Root, clock.ElapsedMilliseconds, privacy);
     }
 
     private static string Pretty(string json) => JsonNode.Parse(json)?.ToJsonString(Json.Indented) ?? json;

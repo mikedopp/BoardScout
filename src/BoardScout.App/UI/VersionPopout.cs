@@ -74,6 +74,7 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         ("LibreHardwareMonitorLib", PackageVersion("LibreHardwareMonitorLib") ?? "0.9.6", "MPL-2.0"),
         ("Microsoft.Web.WebView2", PackageVersion("Microsoft.Web.WebView2.Core") ?? "1.0.4191.47", "BSD-3-Clause"),
         ("System.Management", PackageVersion("System.Management") ?? "10.0.12", "MIT"),
+        ("ASP.NET Core (Kestrel)", Environment.Version.ToString(), "MIT"),
         ("QuickLiquid", "0.1.2", "MIT"),
         ("D3.js", "7.9.0", "ISC")
     ];
@@ -159,11 +160,21 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         Add(Section("Dependencies"));
         foreach (var (name, version, license) in Dependencies)
             Add(Detail($"{name} {version} ({license})"));
+        Add(Detail("Credentials: none. Machines signs in with your own SSH keys; BoardScout never asks for or keeps a password.",
+            width: PopoutWidth - 44));
+
+        Add(Section("Machines (other PCs over SSH)"));
+        Add(Detail($"SSH: {Remote.SshTool.Describe()}", width: PopoutWidth - 44));
+        Add(Detail(@"Reads ~\.ssh\config and known_hosts; host keys you trust on the Machines tab go in known_hosts in the data folder", width: PopoutWidth - 44));
+        Add(Detail(@"On each machine: ~/.cache/boardscout (Linux) or %LOCALAPPDATA%\BoardScout\Remote (Windows)", width: PopoutWidth - 44));
+        Add(Detail("Builds for other machines: beside BoardScout.exe, or from github.com/mikedopp/BoardScout/releases when you click Get (checked against SHA256SUMS)",
+            width: PopoutWidth - 44));
 
         Add(Section("Requirements"));
         Add(Detail("Windows 10 or 11, x64 or ARM64"));
-        Add(Detail("WebView2 Runtime (Evergreen) for Topology, Connections, and System"));
+        Add(Detail("WebView2 Runtime (Evergreen) for Topology, Connections, System, Machines"));
         Add(Detail("Administrator + PawnIO for CPU, VRM, and fan sensors"));
+        Add(Detail("OpenSSH client (built into Windows, or Git's) for Machines"));
 
         Add(Section("Legal"));
         Add(Detail("MIT License · trademarks belong to their owners"));

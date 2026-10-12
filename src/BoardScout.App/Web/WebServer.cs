@@ -5,11 +5,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using BoardScout.Live;
-using BoardScout.Platform;
 using BoardScout.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +19,35 @@ namespace BoardScout.Web;
 
 /// <summary>Where the running dashboard is, so a second launch can open it instead of starting another.</summary>
 internal sealed record InstanceInfo(int Pid, int Port, string Url, string Listen);
+
+/// <summary>How to serve the dashboard.</summary>
+internal sealed record ServeOptions
+{
+    /// <summary>An address to serve on besides this computer (e.g. 0.0.0.0); null serves this computer only.</summary>
+    public string? Listen { get; init; }
+    public int? Port { get; init; }
+    public int DefaultPort { get; init; } = 8797;
+
+    /// <summary>Stop when the last dashboard tab closes (after a grace period).</summary>
+    public bool StopWhenClosed { get; init; }
+
+    /// <summary>
+    /// Started by another BoardScout over SSH: serve this computer only on any free port, print the port and key
+    /// as one line for that BoardScout to read, and stop when it disconnects or nobody has used it for a while.
+    /// </summary>
+    public bool Agent { get; init; }
+
+    /// <summary>The name the other BoardScout reached this computer by, shown in the dashboard's header.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>Stop when standard input closes (the SSH session ended).</summary>
+    public bool WatchStdin { get; init; }
+
+    public required string DataRoot { get; init; }
+
+    /// <summary>Called with the dashboard's link (with its key) once it is serving.</summary>
+    public Action<string>? Started { get; init; }
+}
 
 /// <summary>
 /// Serves the dashboard: the shell, the shared web views (with a small bridge that stands in for WebView2's
@@ -26,28 +57,31 @@ internal sealed record InstanceInfo(int Pid, int Port, string Url, string Listen
 /// </summary>
 internal static class WebServer
 {
-    private const string Cookie = "boardscout_key";
-    private static readonly string[] Views = ["shell", "connections", "system", "topology"];
+    /// <summary>The line an agent prints when it is ready; the rest of the line is JSON with its port and key.</summary>
+    public const string AgentReady = "BOARDSCOUT-AGENT ";
 
-    public static string InstanceFile => Path.Combine(DataFolder.Root, "instance.json");
+    private static readonly string[] Views = ["shell", "connections", "system", "topology", "machines"];
+    private static readonly TimeSpan AgentIdleLimit = TimeSpan.FromMinutes(3);
 
-    public static async Task<int> RunAsync(LaunchOptions options)
+    public static string InstanceFile(string dataRoot) => Path.Combine(dataRoot, "instance.json");
+
+    public static async Task<int> RunAsync(ServeOptions options)
     {
         var hub = Hub.Current;
-        Tools.Ran += line => hub.Log("RAN: " + line);
-        var lan =options.Listen is not null && options.Listen != "127.0.0.1" && options.Listen != "localhost";
-        var address = options.Listen is null or "localhost" ? IPAddress.Loopback : IPAddress.Parse(options.Listen.Trim('[', ']'));
-        var port = options.Port ?? AppSettings.Current.Port;
-        port = FreePort(address, port);
-        if (port == 0)
+        hub.DataRoot = options.DataRoot;
+        if (options.Agent) hub.Agent = new AgentInfo(options.Label ?? "");
+        var lan = !options.Agent && options.Listen is not null && options.Listen is not ("127.0.0.1" or "localhost");
+        var address = options.Agent || options.Listen is null or "localhost" ? IPAddress.Loopback : IPAddress.Parse(options.Listen.Trim('[', ']'));
+        var port = options.Agent ? options.Port ?? 0 : FreePort(address, options.Port ?? options.DefaultPort);
+        if (!options.Agent && port == 0)
         {
-            Console.Error.WriteLine($"No free port near {options.Port ?? AppSettings.Current.Port}; choose one with --port.");
+            Console.Error.WriteLine($"No free port near {options.Port ?? options.DefaultPort}; choose one with --port.");
             return 1;
         }
         var token = RandomNumberGenerator.GetHexString(32, lowercase: true);
-        var hostForUrl = lan ? (options.Listen is "0.0.0.0" or "::" or "[::]" ? Dns.GetHostName() : options.Listen) : "127.0.0.1";
-        var url = $"http://{hostForUrl}:{port}/?key={token}";
-        hub.ListenUrl = lan ? $"http://{hostForUrl}:{port}/" : $"http://127.0.0.1:{port}/";
+        // Several dashboards can share 127.0.0.1 (this one and remote ones through SSH tunnels); browsers keep
+        // cookies per host, not per port, so each agent's key gets its own cookie name.
+        var cookie = options.Agent ? "boardscout_" + RandomNumberGenerator.GetHexString(8, lowercase: true) : "boardscout_key";
 
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();
@@ -55,13 +89,14 @@ internal static class WebServer
         {
             kestrel.AddServerHeader = false;
             kestrel.Listen(address, port);
-            if (!lan) kestrel.Listen(IPAddress.IPv6Loopback, port, _ => { });
+            if (!lan && !options.Agent) kestrel.Listen(IPAddress.IPv6Loopback, port, _ => { });
         });
         var app = builder.Build();
         hub.Quit = () => app.Lifetime.StopApplication();
 
         app.Use(async (context, next) =>
         {
+            hub.Touch();
             var headers = context.Response.Headers;
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
@@ -75,6 +110,7 @@ internal static class WebServer
                 return;
             }
             // Bound to this computer only: refuse other host names (a page on another site can't rebind to us).
+            // The port isn't checked: through an SSH tunnel the browser uses the tunnel's own port.
             if (!lan && context.Request.Host.Host is not ("127.0.0.1" or "localhost" or "[::1]" or "::1"))
             {
                 context.Response.StatusCode = 403;
@@ -84,17 +120,17 @@ internal static class WebServer
             {
                 if (CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(key.ToString()), Encoding.ASCII.GetBytes(token)))
                 {
-                    context.Response.Cookies.Append(Cookie, token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Path = "/", IsEssential = true });
+                    context.Response.Cookies.Append(cookie, token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Path = "/", IsEssential = true });
                     context.Response.Redirect(path);
                     return;
                 }
             }
-            var cookie = context.Request.Cookies[Cookie] ?? "";
-            if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(cookie), Encoding.ASCII.GetBytes(token)))
+            var presented = context.Request.Cookies[cookie] ?? "";
+            if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(presented), Encoding.ASCII.GetBytes(token)))
             {
                 context.Response.StatusCode = 401;
                 context.Response.ContentType = "text/html; charset=utf-8";
-                await context.Response.WriteAsync(LockedPage);
+                await context.Response.WriteAsync(options.Agent ? AgentLockedPage : LockedPage);
                 return;
             }
             await next();
@@ -133,37 +169,62 @@ internal static class WebServer
         if (options.StopWhenClosed) WatchForLastClose(hub, app.Lifetime);
 
         await app.StartAsync();
-        DataFolder.WritePrivate(InstanceFile, JsonSerializer.Serialize(new InstanceInfo(Environment.ProcessId, port, url, options.Listen ?? "127.0.0.1")));
-        hub.Log($"BoardScout {AppInfo.Version} serving {hub.ListenUrl} ({(lan ? "on your network" : "this computer only")}).");
+        if (options.Agent)
+        {
+            var bound = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault();
+            port = bound is not null && Uri.TryCreate(bound, UriKind.Absolute, out var uri) ? uri.Port : port;
+        }
+        var url = $"http://{(lan ? (options.Listen is "0.0.0.0" or "::" or "[::]" ? Dns.GetHostName() : options.Listen) : "127.0.0.1")}:{port}/?key={token}";
+        hub.ListenUrl = url[..url.IndexOf("?key=", StringComparison.Ordinal)];
+        if (!options.Agent)
+            WritePrivate(InstanceFile(options.DataRoot), JsonSerializer.Serialize(new InstanceInfo(Environment.ProcessId, port, url, options.Listen ?? "127.0.0.1")));
+        hub.Log(options.Agent
+            ? $"BoardScout {AppInfo.Version} started over SSH{(string.IsNullOrEmpty(options.Label) ? "" : $" by a BoardScout that calls this computer {options.Label}")}; serving this computer only."
+            : $"BoardScout {AppInfo.Version} serving {hub.ListenUrl} ({(lan ? "on your network" : "this computer only")}).");
         _ = hub.LoadAsync(rediscover: false);
 
-        Console.WriteLine($"BoardScout {AppInfo.Version} is running.");
-        Console.WriteLine($"Open: {url}");
-        if (lan) Console.WriteLine("Anyone who has this link can see this computer's details. Keep it private; Ctrl+C stops BoardScout.");
-        else Console.WriteLine("Only this computer can open it. Ctrl+C stops BoardScout.");
-        if (options.OpenBrowser) Desktop.OpenBrowser(url);
+        if (options.Agent)
+        {
+            // The BoardScout that started this reads this one line, then reaches the port through its SSH tunnel.
+            Console.Out.WriteLine(AgentReady + JsonSerializer.Serialize(new { port, key = token, version = AppInfo.Version, platform = Hub.PlatformName }));
+            Console.Out.Flush();
+            WatchAgent(hub, app.Lifetime, options.WatchStdin, stopping.Token);
+        }
+        else
+        {
+            Console.WriteLine($"BoardScout {AppInfo.Version} is running.");
+            Console.WriteLine($"Open: {url}");
+            if (lan) Console.WriteLine("Anyone who has this link can see this computer's details. Keep it private; Ctrl+C stops BoardScout.");
+            else Console.WriteLine("Only this computer can open it. Ctrl+C stops BoardScout.");
+        }
+        options.Started?.Invoke(url);
 
         await app.WaitForShutdownAsync();
         stopping.Cancel();
         try { await loops; } catch (OperationCanceledException) { }
-        // Only this instance's own address: a newer instance may already have written its own.
-        try
+        if (!options.Agent)
         {
-            if (File.Exists(InstanceFile) && JsonSerializer.Deserialize<InstanceInfo>(File.ReadAllText(InstanceFile))?.Pid == Environment.ProcessId)
-                File.Delete(InstanceFile);
+            // Only this instance's own address: a newer instance may already have written its own.
+            try
+            {
+                var file = InstanceFile(options.DataRoot);
+                if (File.Exists(file) && JsonSerializer.Deserialize<InstanceInfo>(File.ReadAllText(file))?.Pid == Environment.ProcessId)
+                    File.Delete(file);
+            }
+            catch { }
         }
-        catch { }
         return 0;
     }
 
     /// <summary>The running dashboard's link, when one is running for this user.</summary>
-    public static InstanceInfo? RunningInstance()
+    public static InstanceInfo? RunningInstance(string dataRoot)
     {
         try
         {
-            if (!File.Exists(InstanceFile)) return null;
-            var info = JsonSerializer.Deserialize<InstanceInfo>(File.ReadAllText(InstanceFile));
-            if (info is null || info.Pid == Environment.ProcessId || !Directory.Exists($"/proc/{info.Pid}")) return null;
+            var file = InstanceFile(dataRoot);
+            if (!File.Exists(file)) return null;
+            var info = JsonSerializer.Deserialize<InstanceInfo>(File.ReadAllText(file));
+            if (info is null || info.Pid == Environment.ProcessId || !Alive(info.Pid)) return null;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
             var host = info.Listen is "0.0.0.0" or "::" or "[::]" or "127.0.0.1" ? "127.0.0.1" : info.Listen;
             var answer = http.GetStringAsync($"http://{host}:{info.Port}/api/ping").GetAwaiter().GetResult();
@@ -173,6 +234,69 @@ internal static class WebServer
         {
             return null;
         }
+    }
+
+    private static bool Alive(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // An agent stops when its SSH session ends (standard input closes, or nothing reads what it writes), or when
+    // nobody has used it for a few minutes: a BoardScout that went away without saying so leaves nothing running.
+    private static void WatchAgent(Hub hub, IHostApplicationLifetime lifetime, bool watchStdin, CancellationToken stopping)
+    {
+        if (watchStdin)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var input = Console.OpenStandardInput();
+                    var buffer = new byte[256];
+                    while (await input.ReadAsync(buffer, stopping) > 0) { }
+                    hub.Log("The SSH session ended; stopping.");
+                    lifetime.StopApplication();
+                }
+                catch (OperationCanceledException) { }
+                catch { }
+            }, stopping);
+        }
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (!stopping.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(15), stopping);
+                    try
+                    {
+                        Console.Out.WriteLine("BOARDSCOUT-ALIVE");
+                        Console.Out.Flush();
+                    }
+                    catch (IOException)
+                    {
+                        hub.Log("The SSH session ended; stopping.");
+                        lifetime.StopApplication();
+                        return;
+                    }
+                    if (!hub.AnyClients && hub.Idle > AgentIdleLimit)
+                    {
+                        hub.Log($"Nobody has used this dashboard for {AgentIdleLimit.TotalMinutes:0} minutes; stopping.");
+                        lifetime.StopApplication();
+                        return;
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+        }, stopping);
     }
 
     // A dashboard opened from the app menu stops when its last browser tab closes (after a grace period).
@@ -252,7 +376,7 @@ internal static class WebServer
     // The shared views talk to WebView2; the bridge script gives them the same API over this server.
     private static IResult ViewPage(string name)
     {
-        if (name is not ("connections" or "system" or "topology")) return Results.NotFound();
+        if (name is not ("connections" or "system" or "topology" or "machines")) return Results.NotFound();
         var path = Path.Combine(AppContext.BaseDirectory, "Assets", name + ".html");
         if (!File.Exists(path)) return Results.NotFound();
         var html = File.ReadAllText(path);
@@ -292,6 +416,19 @@ internal static class WebServer
         return Results.File(Encoding.UTF8.GetBytes(json), "application/json", $"boardscout-{what}-{host}-{DateTime.Now:yyyyMMdd-HHmm}.json");
     }
 
+    /// <summary>Writes a file only this user can read (the instance file carries the access key).</summary>
+    public static void WritePrivate(string path, string text)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, text);
+        if (!OperatingSystem.IsWindows())
+        {
+            try { File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+            catch { }
+        }
+        File.Move(temp, path, overwrite: true);
+    }
+
     // The configured port, or the next free one after it.
     private static int FreePort(IPAddress address, int start)
     {
@@ -320,5 +457,15 @@ internal static class WebServer
         <body><main><h1>This dashboard needs its key</h1>
         <p>Open the link BoardScout printed when it started (it ends in <code>?key=…</code>).</p>
         <p>On this computer, running <code>boardscout</code> again opens it for you.</p></main></body></html>
+        """;
+
+    private const string AgentLockedPage = """
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><title>BoardScout</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0c1620;color:#e8edf4;font:15px/1.5 system-ui,sans-serif}
+        main{max-width:440px;padding:28px;border-radius:18px;background:#111e2c;border:1px solid #1c2a3c}h1{font-size:18px;margin:0 0 8px}p{color:#8a9bb2;margin:6px 0}</style></head>
+        <body><main><h1>Open this from the Machines page</h1>
+        <p>This dashboard was started over SSH by another BoardScout, and only the link it opened carries the key.</p>
+        <p>Go back to Machines and choose Open again.</p></main></body></html>
         """;
 }

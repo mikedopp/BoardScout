@@ -3,6 +3,7 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text;
 using BoardScout.Models;
+using BoardScout.Remote;
 using BoardScout.Services;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -20,6 +21,11 @@ public sealed class MainForm : Form
     private readonly GlassCard _systemCard = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _connectionsWebView = new() { Dock = DockStyle.Fill };
     private readonly GlassCard _connectionsCard = new() { Dock = DockStyle.Fill };
+    private readonly WebView2 _machinesWebView = new() { Dock = DockStyle.Fill };
+    private readonly GlassCard _machinesCard = new() { Dock = DockStyle.Fill };
+    private readonly List<RemoteWindow> _remoteWindows = [];
+    private MachinesController? _machines;
+    private bool _machinesReady;
     private bool _topologyReady;
     private bool _systemReady;
     private bool _connectionsReady;
@@ -160,9 +166,13 @@ public sealed class MainForm : Form
             NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
             _deviceChangeTimer.Dispose();
             _deviceSettleTimer.Dispose();
+            // Remote dashboards end with this window: their SSH sessions close, and BoardScout stops on each machine.
+            foreach (var window in _remoteWindows.ToList()) window.Close();
+            _machines?.Dispose();
             _topologyWebView.Dispose();
             _systemWebView.Dispose();
             _connectionsWebView.Dispose();
+            _machinesWebView.Dispose();
         };
         _deviceChangeTimer.Tick += (_, _) =>
         {
@@ -298,6 +308,7 @@ public sealed class MainForm : Form
         _tabs.TabPages.Add(BuildStorageTab());
         _tabs.TabPages.Add(BuildSuggestionsTab());
         _tabs.TabPages.Add(BuildWebTab("System", _systemCard, _systemWebView));
+        _tabs.TabPages.Add(BuildWebTab("Machines", _machinesCard, _machinesWebView));
         _tabs.TabPages.Add(BuildLogTab());
         _navigation.SelectedIndexChanged += (_, _) =>
         {
@@ -573,6 +584,78 @@ public sealed class MainForm : Form
             PostSettings(_systemWebView);
             if (_systemPayload is not null) _systemWebView.CoreWebView2.PostWebMessageAsJson(_systemPayload);
         });
+        await InitializeWebViewAsync(_machinesWebView, _machinesCard, "machines.html", () =>
+        {
+            _machinesReady = true;
+            PostSettings(_machinesWebView);
+            Machines.SendState();
+        });
+        if (_machinesWebView.CoreWebView2 is { } machines)
+            machines.WebMessageReceived += async (_, e) =>
+            {
+                try
+                {
+                    using var message = System.Text.Json.JsonDocument.Parse(e.WebMessageAsJson);
+                    await Machines.HandleAsync(message.RootElement.Clone());
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("MACHINES: " + ex.Message);
+                }
+            };
+    }
+
+    // ---- Machines: other PCs and servers over SSH --------------------------------------------------------
+
+    private MachinesController Machines
+    {
+        get
+        {
+            if (_machines is not null) return _machines;
+            var controller = new MachinesController(_service.DataRoot, PostToMachines, line => OnUiThread(() => AppendLog(line)));
+            // Remote dashboards open in a window of their own here, not in a browser tab.
+            controller.OpenNative = session =>
+            {
+                OnUiThread(() => ShowRemote(session));
+                return true;
+            };
+            controller.SessionEnded += session => OnUiThread(() => _remoteWindows.FirstOrDefault(w => w.Session == session)?.Close());
+            return _machines = controller;
+        }
+    }
+
+    private void OnUiThread(Action action)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            if (InvokeRequired) BeginInvoke(action);
+            else action();
+        }
+        catch (InvalidOperationException) { } // also ObjectDisposedException: the window is closing
+    }
+
+    private void PostToMachines(string json) => OnUiThread(() =>
+    {
+        if (_machinesReady) _machinesWebView.CoreWebView2?.PostWebMessageAsJson(json);
+    });
+
+    private void ShowRemote(RemoteSession session)
+    {
+        if (_remoteWindows.FirstOrDefault(w => w.Session == session) is { } open)
+        {
+            if (open.WindowState == FormWindowState.Minimized) open.WindowState = FormWindowState.Normal;
+            open.Activate();
+            return;
+        }
+        var window = new RemoteWindow(session, _service.DataRoot);
+        window.FormClosed += (_, _) =>
+        {
+            _remoteWindows.Remove(window);
+            _machines?.Closed(session);
+        };
+        _remoteWindows.Add(window);
+        window.Show();
     }
 
     private bool ConnectionsVisible => _connectionsPage is not null && _tabs.SelectedTab == _connectionsPage && Visible;
@@ -1706,9 +1789,11 @@ public sealed class MainForm : Form
         if (_topologyReady) PostSettings(_topologyWebView);
         if (_systemReady) PostSettings(_systemWebView);
         if (_connectionsReady) PostSettings(_connectionsWebView);
+        if (_machinesReady) PostSettings(_machinesWebView);
         if (_privacyShown != Privacy.Enabled)
         {
             _privacyShown = Privacy.Enabled;
+            _machines?.SendState();
             _privacyChip.Visible = Privacy.Enabled;
             RenderLog();
             BindStorage();

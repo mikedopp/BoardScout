@@ -7,22 +7,6 @@ using BoardScout.Views;
 
 namespace BoardScout.Live;
 
-/// <summary>The header tiles' numbers: processor, memory, temperatures, fans, and network, right now.</summary>
-internal sealed record HeaderTelemetry(
-    double Cpu,
-    double MemoryUsedGb,
-    double MemoryTotalGb,
-    double? CpuTemp,
-    double? GpuTemp,
-    double? ChipsetTemp,
-    IReadOnlyList<FanReading> Fans,
-    double NetIn,
-    double NetOut,
-    double? GpuWatts,
-    string SampledAt);
-
-internal sealed record FanReading(string Name, int Rpm);
-
 /// <summary>
 /// Samples the kernel's counters (/proc/stat, /proc/meminfo, /proc/net/dev, /proc/diskstats, hwmon) and turns
 /// the change since the last sample into rates: what the header tiles and the Connections map's flowing dots show.
@@ -109,7 +93,7 @@ internal sealed class Telemetry
             flow.Temperatures.TryGetValue("cpu", out var c) ? c : null,
             flow.Temperatures.TryGetValue("gpu", out var g) ? g : null,
             flow.Temperatures.TryGetValue("chipset", out var h) ? h : null,
-            Sensors.Fans(chips).Select(f => new FanReading(f.Name, f.Rpm)).ToList(),
+            Sensors.Fans(chips).Select(f => new HeaderFan(f.Name, f.Rpm)).ToList(),
             Math.Round(netIn),
             Math.Round(netOut),
             Sensors.GpuWatts(chips) is { } watts ? Math.Round(watts, 1) : null,

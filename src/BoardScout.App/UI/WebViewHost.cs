@@ -23,11 +23,14 @@ internal static class WebViewHost
         }
     }
 
+    /// <summary>The one browser environment every view and remote dashboard window shares.</summary>
+    public static Task<CoreWebView2Environment> EnvironmentAsync(string dataRoot) =>
+        _environment ??= CoreWebView2Environment.CreateAsync(null, Path.Combine(dataRoot, "WebView2"));
+
     /// <summary>Creates the view's browser, maps Assets, and navigates to the page.</summary>
     public static async Task InitializeAsync(WebView2 view, string dataRoot, string page)
     {
-        _environment ??= CoreWebView2Environment.CreateAsync(null, Path.Combine(dataRoot, "WebView2"));
-        var environment = await _environment;
+        var environment = await EnvironmentAsync(dataRoot);
         await view.EnsureCoreWebView2Async(environment);
 
         var core = view.CoreWebView2;

@@ -4,13 +4,15 @@ BoardScout is MIT-licensed (see [LICENSE](LICENSE)). The release builds are self
 they also redistribute the components below. Each keeps its own license. Nothing here is
 modified from the published version.
 
-Last reviewed for BoardScout 1.10.0 (2026-10-11), which added the Linux edition.
+Last reviewed for BoardScout 2.0.0 (2026-10-11), which added Machines (other computers over SSH) and
+the Windows browser dashboard.
 
 ## Libraries compiled into BoardScout.exe
 
 | Component | Version | License | Source |
 | --- | --- | --- | --- |
 | .NET runtime and Windows Forms | 10.0.12 | MIT | https://github.com/dotnet/runtime, https://github.com/dotnet/winforms |
+| ASP.NET Core (Kestrel web server, for `--serve` and machines opened over SSH) | 10.0.12 | MIT | https://github.com/dotnet/aspnetcore |
 | LibreHardwareMonitorLib | 0.9.6 | MPL-2.0 | https://github.com/LibreHardwareMonitor/LibreHardwareMonitor |
 | BlackSharp.Core (LibreHardwareMonitorLib dependency) | 1.0.7 | MPL-2.0 | https://github.com/Blacktempel/BlackSharp |
 | DiskInfoToolkit (LibreHardwareMonitorLib dependency) | 1.1.2 | MPL-2.0 | https://github.com/Blacktempel/DiskInfoToolkit |
@@ -32,7 +34,7 @@ kernel's own files instead, and its views run in the browser you already have.
 
 ### Glimmer badge 0.4.0
 
-`Shell/glimmer/` (Linux edition): the orb on the version button. MIT, Copyright (c) 2026 mikedopp; its look
+`Shell/glimmer/` (the browser dashboard, in both editions): the orb on the version button. MIT, Copyright (c) 2026 mikedopp; its look
 follows "orb" by LerSent001 (MIT). The license texts and credits travel in that folder (`LICENSE`,
 `LICENSE-orb-LerSent001`, `NOTICE.md`).
 
@@ -154,8 +156,18 @@ The Linux edition also bundles `pci.ids` from the same folder (the PCI ID Reposi
 ## Linux tools used when present (not bundled)
 
 `iw`, NetworkManager's `nmcli`, BlueZ's `bluetoothctl`, udisks2's `udisksctl`, fwupd's `fwupdmgr`,
-`systemctl`, `udevadm`, and the package tools (`apt-get`, `rpm`, `snap`, `flatpak`) belong to their own
-projects and are run read-only when installed; BoardScout ships none of them.
+`systemctl`, `udevadm`, and the package tools (`apt-get`, `dnf`, `zypper`, `pacman`, `apk`, `rpm`, `snap`,
+`flatpak`) belong to their own projects and are run read-only when installed; BoardScout ships none of them.
+
+## SSH (Machines), used when present (not bundled)
+
+The Machines page runs the computer's own OpenSSH client (`ssh`, `scp`, `ssh-keyscan`, `ssh-keygen`):
+Windows' OpenSSH (Microsoft's Win32-OpenSSH, BSD-style license), Git for Windows' copy, or the
+distribution's `openssh-client` on Linux. OpenSSH belongs to the OpenBSD project; BoardScout ships no
+part of it.
+
+When a machine needs a build this computer doesn't have, **Get** downloads that file and the release's
+checksum file from `https://github.com/mikedopp/BoardScout/releases` (GitHub, Inc.), only when clicked.
 
 ## Online services used on request
 
@@ -196,6 +208,8 @@ respective owners and are used for identification only.
 - **Lexar** is a trademark of Longsys Electronics.
 - **Noctua** is a trademark of Rascom Computerdistribution GmbH.
 - **Cloudflare** is a trademark of Cloudflare, Inc.
+- **OpenSSH** is a trademark of the OpenBSD Foundation; **GitHub** and **Git for Windows** belong to
+  GitHub, Inc. and the Git for Windows project.
 - **Linux** is the registered trademark of Linus Torvalds. **Ubuntu** is a trademark of Canonical Ltd.;
   **Debian** of Software in the Public Interest, Inc.; **Fedora** and **Red Hat** of Red Hat, Inc.;
   **Raspberry Pi** of Raspberry Pi Ltd.

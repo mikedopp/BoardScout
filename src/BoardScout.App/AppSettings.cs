@@ -6,7 +6,17 @@ namespace BoardScout;
 /// <summary>User preferences, kept as settings.json in the data folder so the portable app carries them.</summary>
 internal sealed class AppSettings
 {
+    public const double DefaultGlassOpacity = 0.62;
+    public const int DefaultGlassBlur = 18;
+
     public bool GlassEffects { get; set; } = true;
+
+    /// <summary>How see-through the browser dashboard's glass panels are, from 0.35 (most) to 1 (solid).</summary>
+    public double GlassOpacity { get; set; } = DefaultGlassOpacity;
+
+    /// <summary>Backdrop blur behind the browser dashboard's glass panels, in pixels.</summary>
+    public int GlassBlur { get; set; } = DefaultGlassBlur;
+
     public bool Motion { get; set; } = true;
     public int TelemetryIntervalMs { get; set; } = 1000;
     public bool MinimizeToTray { get; set; } = true;
@@ -51,9 +61,19 @@ internal sealed class AppSettings
         Changed?.Invoke(null, EventArgs.Empty);
     }
 
+    /// <summary>Glass settings back to their defaults; everything else stays.</summary>
+    public static void ResetGlass() => Update(s =>
+    {
+        s.GlassEffects = true;
+        s.GlassOpacity = DefaultGlassOpacity;
+        s.GlassBlur = DefaultGlassBlur;
+    });
+
     private void Normalize()
     {
         TelemetryIntervalMs = Math.Clamp(TelemetryIntervalMs, 500, 10_000);
         Crawlers = Math.Clamp(Crawlers, 0, 8);
+        GlassOpacity = Math.Round(Math.Clamp(double.IsFinite(GlassOpacity) ? GlassOpacity : DefaultGlassOpacity, 0.35, 1), 2);
+        GlassBlur = Math.Clamp(GlassBlur, 0, 40);
     }
 }

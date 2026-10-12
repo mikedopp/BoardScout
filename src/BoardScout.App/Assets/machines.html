@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoardScout · Machines</title>
+<style>
+/* Same colors and glass as the other views, so the page and the window read as one surface. */
+:root {
+    --bg: #060b10; --surface: #0c1620; --raised: #111e2c; --border: #1c2a3c; --border-soft: rgba(255,255,255,.06);
+    --text: #e8edf4; --muted: #8a9bb2; --faint: #4a6080;
+    --accent: #3d9eff; --accent-soft: rgba(61,158,255,.13);
+    --good: #10b981; --warning: #f59e0b; --critical: #ef4444; --purple: #a78bfa; --teal: #2dd4bf;
+    --glass-a: .62; --glass-blur: 14px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scrollbar-color: #2a3a4f transparent; }
+body {
+    color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.5; min-height: 100vh;
+    background:
+        radial-gradient(rgba(255,255,255,.045) 1px, transparent 1.2px) 0 0 / 22px 22px,
+        radial-gradient(900px 480px at 6% -6%, rgba(61,158,255,.17), transparent 62%),
+        radial-gradient(700px 440px at 94% 4%, rgba(167,139,250,.13), transparent 62%),
+        radial-gradient(820px 520px at 58% 104%, rgba(45,212,191,.09), transparent 62%),
+        var(--surface);
+    background-attachment: fixed;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 24px 28px 40px; }
+section { margin-bottom: 24px; }
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: .09em; color: var(--accent); text-transform: uppercase;
+    margin: 0 0 11px 2px; display: flex; align-items: center; gap: 10px; }
+.section-title .count { color: var(--faint); letter-spacing: .02em; font-weight: 500; text-transform: none; }
+.glass {
+    position: relative; border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.012) 55%), rgba(12,22,32,var(--glass-a));
+    border: 1px solid rgba(255,255,255,.075); border-top-color: rgba(255,255,255,.16);
+    box-shadow: 0 12px 34px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+}
+/* Solid panels: glass off, or the system asks for less transparency, more contrast, or its own colors. */
+body.no-glass .glass { background: var(--raised); border-color: var(--border); box-shadow: none; backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+    .glass { background: var(--raised); border-color: var(--border); box-shadow: none; backdrop-filter: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: var(--raised); } }
+
+/* Hero */
+.hero { padding: 24px 28px; display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.hero-text { flex: 1 1 420px; min-width: 0; }
+.hero h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 6px; }
+.hero p { color: var(--muted); max-width: 760px; }
+.hero .how { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px; font-size: 12px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); color: var(--text); }
+.pill b { color: var(--teal); font-weight: 600; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Buttons and fields */
+.btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px; padding: 7px 14px; cursor: pointer; transition: background .15s, border-color .15s, transform .1s; white-space: nowrap; }
+.btn:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.2); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible, .field input:focus-visible, select:focus-visible, a.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: linear-gradient(180deg, #4aa8ff, #2d86e6); border-color: rgba(120,190,255,.6); color: #fff; box-shadow: 0 6px 18px rgba(61,158,255,.28); }
+.btn.primary:hover { background: linear-gradient(180deg, #5cb2ff, #3a90ee); }
+.btn.danger { color: #fca5a5; border-color: rgba(239,68,68,.35); }
+.btn.quiet { background: none; border-color: transparent; color: var(--muted); }
+.btn.quiet:hover { color: var(--text); background: rgba(255,255,255,.05); }
+.btn:disabled { opacity: .45; cursor: default; transform: none; }
+a.btn { text-decoration: none; display: inline-block; }
+.field { display: grid; gap: 4px; }
+.field label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.field input, select { font: inherit; font-size: 13px; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px; padding: 8px 12px; outline: none; width: 100%; }
+select option { background: var(--raised); }
+.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(61,158,255,.18); }
+.field small { color: var(--faint); font-size: 11.5px; }
+
+/* Add form */
+.add { padding: 18px 22px; display: none; }
+.add.open { display: block; }
+.add-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px 16px; }
+.add-foot { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.add-message { font-size: 13px; color: var(--warning); }
+.add-message.ok { color: var(--good); }
+details.more summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-top: 12px; }
+details.more[open] summary { margin-bottom: 10px; }
+
+/* Machine cards */
+.machines { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+.card { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card.open-now { border-color: rgba(16,185,129,.45); box-shadow: 0 12px 34px rgba(0,0,0,.34), 0 0 0 1px rgba(16,185,129,.25), inset 0 1px 0 rgba(255,255,255,.05); }
+.card-head { display: flex; gap: 12px; align-items: flex-start; }
+.os-icon { flex: 0 0 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-weight: 700; font-size: 13px;
+    background: rgba(61,158,255,.14); color: var(--accent); border: 1px solid rgba(61,158,255,.3); }
+.os-icon.linux { background: rgba(250,204,21,.12); color: #facc15; border-color: rgba(250,204,21,.3); }
+.os-icon.windows { background: rgba(61,158,255,.14); color: #7cc4ff; }
+.os-icon.unknown { background: rgba(138,155,178,.1); color: var(--muted); border-color: rgba(138,155,178,.25); }
+.card-title { min-width: 0; flex: 1; }
+.card-title h3 { font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-title .sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid; white-space: nowrap; }
+.chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.idle { color: var(--muted); border-color: rgba(138,155,178,.3); background: rgba(138,155,178,.08); }
+.chip.idle::before { background: var(--faint); }
+.chip.working { color: var(--accent); border-color: rgba(61,158,255,.4); background: rgba(61,158,255,.12); }
+.chip.working::before { animation: pulse 1s ease-in-out infinite; }
+.chip.open { color: var(--good); border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.12); }
+.chip.ok { color: var(--teal); border-color: rgba(45,212,191,.35); background: rgba(45,212,191,.1); }
+.chip.error { color: var(--warning); border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.12); }
+.chip.source { color: var(--purple); border-color: rgba(167,139,250,.35); background: rgba(167,139,250,.1); }
+.chip.source::before { display: none; }
+@keyframes pulse { 50% { opacity: .3; } }
+body.no-motion .chip.working::before { animation: none; }
+.progress { height: 5px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--teal)); border-radius: 3px; transition: width .3s; }
+.progress.indeterminate i { width: 35%; animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+body.no-motion .progress.indeterminate i { animation: none; width: 100%; opacity: .5; }
+.stage { color: var(--muted); font-size: 12.5px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--border-soft); min-width: 0; }
+.stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.stat .v { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tone-good { color: var(--good); } .tone-info { color: var(--accent); } .tone-warning, .tone-warn { color: var(--warning); } .tone-critical, .tone-fail { color: var(--critical); }
+.fixes { font-size: 12.5px; color: var(--muted); display: grid; gap: 3px; }
+.fixes div { padding-left: 15px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fixes div::before { content: '\25B8'; position: absolute; left: 1px; color: var(--warning); }
+.problem { border-radius: 12px; padding: 11px 13px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.28); display: grid; gap: 8px; }
+.problem p { font-size: 13px; }
+.problem code, .fp code { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #cfe6ff; background: rgba(0,0,0,.25); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+.problem .detail { color: var(--muted); font-size: 12px; }
+.fp { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.actions .spacer { flex: 1; }
+.note { color: var(--muted); font-size: 12px; }
+
+/* Empty state */
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+.empty h2 { color: var(--text); font-size: 17px; margin-bottom: 6px; }
+
+/* Table of every machine */
+.table-card { padding: 14px 18px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 860px; }
+thead th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid rgba(255,255,255,.09); white-space: nowrap; }
+tbody td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: top; }
+tbody tr { cursor: pointer; transition: background .15s; }
+tbody tr:hover { background: rgba(61,158,255,.06); }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Footer: which SSH program, and what BoardScout keeps */
+.foot { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; padding: 14px 18px; font-size: 12.5px; color: var(--muted); }
+.foot select { width: auto; min-width: 220px; }
+.foot .grow { flex: 1 1 360px; }
+
+.rise { animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+body.no-motion .rise { animation: none; }
+@media (prefers-reduced-motion: reduce) { .rise, .chip.working::before, .progress.indeterminate i { animation: none; } }
+@media (max-width: 720px) {
+    .container { padding: 16px 16px 32px; }
+    .machines { grid-template-columns: 1fr; }
+    .add-grid { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hero { padding: 18px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <section class="hero glass rise" id="hero">
+    <div class="hero-text">
+      <h1>Machines</h1>
+      <p>Open another PC's or server's dashboard, or check them all at once. BoardScout signs in with your SSH keys, copies itself into a folder there, and
+        serves that machine's dashboard to this computer only, through the SSH connection. Closing the dashboard stops it there.</p>
+      <div class="how">
+        <span class="pill"><b>Linux</b> x64, Arm64, Arm, Alpine</span>
+        <span class="pill"><b>Windows</b> 10, 11, Server 2019+</span>
+        <span class="pill">Keys only, never passwords</span>
+        <span class="pill">Nothing left running</span>
+      </div>
+    </div>
+    <div class="hero-actions">
+      <button class="btn" id="addBtn" aria-expanded="false" aria-controls="addForm">Add machine</button>
+      <button class="btn primary" id="checkAllBtn">Check all</button>
+    </div>
+  </section>
+
+  <section class="add glass" id="addForm" aria-label="Add a machine">
+    <div class="add-grid">
+      <div class="field">
+        <label for="fTarget">SSH address</label>
+        <input id="fTarget" autocomplete="off" spellcheck="false" placeholder="admin@192.168.1.20, server:2222, or a Host from your SSH config">
+        <small>What you'd type after <code>ssh</code>. Hosts in your SSH config are listed already.</small>
+      </div>
+      <div class="field">
+        <label for="fName">Name <span style="font-weight:400">(optional)</span></label>
+        <input id="fName" autocomplete="off" placeholder="Living room NAS">
+      </div>
+    </div>
+    <details class="more">
+      <summary>Key file and folder</summary>
+      <div class="add-grid">
+        <div class="field">
+          <label for="fKey">Private key file <span style="font-weight:400">(optional)</span></label>
+          <input id="fKey" autocomplete="off" spellcheck="false" placeholder="~/.ssh/id_ed25519">
+          <small>Only when SSH wouldn't find it on its own. BoardScout keeps the path, never the key.</small>
+        </div>
+        <div class="field">
+          <label for="fFolder">Folder on the machine <span style="font-weight:400">(optional)</span></label>
+          <input id="fFolder" autocomplete="off" spellcheck="false" placeholder="~/.cache/boardscout">
+          <small>Where BoardScout keeps its copy there.</small>
+        </div>
+      </div>
+    </details>
+    <div class="add-foot">
+      <button class="btn primary" id="fAdd">Add</button>
+      <button class="btn quiet" id="fCancel">Cancel</button>
+      <span class="add-message" id="fMessage" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section id="fleetSection" hidden>
+    <div class="section-title">Every machine at a glance <span class="count" id="fleetCount"></span></div>
+    <div class="table-card glass"><div class="table-wrap"><table id="fleet"></table></div></div>
+  </section>
+
+  <section>
+    <div class="section-title">Machines <span class="count" id="count"></span></div>
+    <div class="machines" id="list"></div>
+  </section>
+
+  <section class="foot glass" aria-label="SSH program">
+    <div class="field" style="gap:2px">
+      <label for="sshClient">SSH program</label>
+      <select id="sshClient"></select>
+    </div>
+    <div class="grow" id="sshNote"></div>
+    <button class="btn quiet" id="unhideBtn" hidden></button>
+  </section>
+</div>
+
+<script>
+'use strict';
+const state = { data: null, settings: {}, adding: false };
+// Inside the Windows app, remote dashboards open in a window of its own; in a browser, in a new tab.
+const NATIVE = location.hostname === 'app.boardscout';
+const $ = id => document.getElementById(id);
+function h(tag, attrs, children) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+        if (v === undefined || v === null || v === false) continue;
+        if (k === 'className') el.className = v;
+        else if (k === 'text') el.textContent = v;
+        else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+        else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of [].concat(children || [])) if (c != null && c !== false) el.append(typeof c === 'string' ? document.createTextNode(c) : c);
+    return el;
+}
+const post = message => window.chrome.webview.postMessage(message);
+
+window.chrome.webview.addEventListener('message', e => {
+    const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (!msg) return;
+    if (msg.type === 'settings') applySettings(msg);
+    else if (msg.type === 'machines') { state.data = msg; render(); }
+    else if (msg.type === 'added') added(msg);
+    else if (msg.type === 'open' && !NATIVE) openTab(msg.url);
+});
+
+function applySettings(s) {
+    state.settings = s;
+    document.body.classList.toggle('no-glass', !s.glass);
+    document.body.classList.toggle('no-motion', s.motion === false);
+    document.body.classList.toggle('privacy', !!s.privacy);
+    if (s.glassOpacity != null) document.documentElement.style.setProperty('--glass-a', String(s.glassOpacity));
+    if (s.glassBlur != null) document.documentElement.style.setProperty('--glass-blur', s.glassBlur + 'px');
+}
+
+// The browser dashboard opens a remote dashboard in a new tab (the Windows app opens its own window instead).
+function openTab(url) {
+    const tab = window.open(url, '_blank');
+    if (tab) { try { tab.opener = null; } catch { /* another origin */ } }
+}
+
+const STAGE = {
+    probe: 'Connecting over SSH…', check: 'Looking at what is there…', copy: 'Copying BoardScout to the machine…',
+    start: 'Starting BoardScout there…', tunnel: 'Opening the SSH tunnel…', summary: 'Reading the machine (about half a minute)…'
+};
+
+function osOf(m) {
+    const os = m.host?.os || m.summary?.platform;
+    return os === 'linux' || os === 'windows' ? os : 'unknown';
+}
+
+function render() {
+    const d = state.data;
+    if (!d) return;
+    $('count').textContent = d.machines.length ? `${d.machines.length}` : '';
+    if (!d.machines.length && !state.adding) toggleAdd(true);
+    renderFleet(d);
+    const list = $('list');
+    list.replaceChildren(...(d.machines.length ? d.machines.map(card) : [emptyState()]));
+    renderFoot(d);
+}
+
+function emptyState() {
+    return h('div', { className: 'empty glass' }, [
+        h('h2', { text: 'No machines yet' }),
+        h('p', { text: 'Add one above with the address you use with ssh. Every Host in your SSH config also shows up here on its own.' })
+    ]);
+}
+
+function card(m) {
+    const os = osOf(m);
+    const working = m.status === 'working';
+    const open = !!m.session;
+    const pretty = m.host?.pretty || m.summary?.os || '';
+    const el = h('article', { className: 'card glass' + (open ? ' open-now' : ''), id: 'm-' + m.id, 'aria-label': m.name });
+    const chipText = working ? (m.action === 'check' ? 'Checking' : 'Connecting') : open ? `Open since ${m.session.since}` :
+        m.status === 'error' ? 'Needs attention' : m.summary ? `Checked ${m.summary.checkedAt.slice(11)}` : 'Not checked';
+    el.append(h('div', { className: 'card-head' }, [
+        h('div', { className: 'os-icon ' + os, 'aria-hidden': 'true', text: os === 'linux' ? 'LX' : os === 'windows' ? 'WIN' : '?' }),
+        h('div', { className: 'card-title' }, [
+            h('h3', { text: m.summary && !state.data.privacy ? `${m.name} · ${m.summary.title}` : m.name, title: m.name }),
+            h('div', { className: 'sub', text: [m.target, pretty].filter(Boolean).join(' · ') })
+        ]),
+        h('div', { style: 'display:grid;gap:6px;justify-items:end' }, [
+            h('span', { className: 'chip ' + (working ? 'working' : open ? 'open' : m.status === 'error' ? 'error' : m.summary ? 'ok' : 'idle'), text: chipText }),
+            m.source === 'ssh-config' ? h('span', { className: 'chip source', text: 'SSH config', title: 'A Host from your ~/.ssh/config' }) : null
+        ])
+    ]));
+
+    if (working) {
+        const bar = h('div', { className: 'progress' + (m.percent == null ? ' indeterminate' : ''), role: 'progressbar', 'aria-label': STAGE[m.stage] || 'Working',
+            'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': m.percent == null ? null : String(m.percent) }, [h('i')]);
+        if (m.percent != null) bar.firstChild.style.width = m.percent + '%';
+        el.append(h('div', { className: 'stage', text: (STAGE[m.stage] || 'Working…') + (m.percent != null ? ` ${m.percent}%` : '') }), bar);
+    }
+
+    if (m.problem) el.append(problem(m));
+    if (m.host?.note) el.append(h('div', { className: 'note', text: m.host.note }));
+    if (m.host?.admin === false && os === 'windows') el.append(h('div', { className: 'note', text: 'Signed in without administrator rights: CPU and fan sensors and per-driver interrupt timing need an administrator account.' }));
+    if (m.summary) el.append(...summary(m.summary));
+
+    const actions = h('div', { className: 'actions' });
+    if (open) {
+        actions.append(NATIVE || !m.session.url
+            ? h('button', { className: 'btn primary', text: 'Show dashboard', onclick: () => post({ type: 'show', id: m.id }) })
+            : h('a', { className: 'btn primary', href: m.session.url, target: '_blank', rel: 'noopener', text: 'Show dashboard' }));
+        actions.append(h('button', { className: 'btn', text: 'Disconnect', onclick: () => post({ type: 'disconnect', id: m.id }) }));
+    } else {
+        actions.append(h('button', { className: 'btn primary', text: 'Open dashboard', disabled: working, onclick: () => post({ type: 'open', id: m.id }) }));
+    }
+    actions.append(h('button', { className: 'btn', text: m.summary ? 'Check again' : 'Check', disabled: working, onclick: () => post({ type: 'check', id: m.id }) }));
+    if (working) actions.append(h('button', { className: 'btn quiet', text: 'Stop', onclick: () => post({ type: 'cancel', id: m.id }) }));
+    actions.append(h('span', { className: 'spacer' }));
+    actions.append(h('button', {
+        className: 'btn quiet', text: m.source === 'ssh-config' ? 'Hide' : 'Remove',
+        title: m.source === 'ssh-config' ? 'Hide this Host here (your SSH config is not changed)' : 'Remove this machine from the list',
+        onclick: () => post({ type: 'remove', id: m.id })
+    }));
+    el.append(actions);
+    return el;
+}
+
+function problem(m) {
+    const p = m.problem;
+    const box = h('div', { className: 'problem', role: 'alert' }, [h('p', { text: p.message })]);
+    if (p.kind === 'hostkey' && p.fingerprints?.length) {
+        box.append(h('div', { className: 'fp' }, [
+            h('div', { text: 'Its host key fingerprints:' }),
+            ...p.fingerprints.map(f => h('div', null, [h('code', { text: f })])),
+            h('div', { text: 'On the machine, ssh-keygen -lf on /etc/ssh/ssh_host_ed25519_key.pub (Linux) or C:\\ProgramData\\ssh\\ssh_host_ed25519_key.pub (Windows) shows its own.' })
+        ]));
+    }
+    if (p.detail) box.append(h('div', { className: 'detail' }, ['SSH said: ', h('code', { text: p.detail })]));
+    const fixes = h('div', { className: 'actions' });
+    if (p.kind === 'hostkey' && p.fingerprints?.length) fixes.append(h('button', { className: 'btn primary', text: 'They match: trust this machine', onclick: () => post({ type: 'trust', id: m.id }) }));
+    if (p.canFixKey) fixes.append(h('button', { className: 'btn', text: 'Limit the key file to me', onclick: () => post({ type: 'fixkey', id: m.id }) }));
+    if (p.canUseGit) fixes.append(h('button', { className: 'btn', text: "Use Git's SSH instead", onclick: () => post({ type: 'sshclient', client: 'git', retry: m.id }) }));
+    if (p.kind === 'no-build' && p.rid) {
+        const busy = state.data.download;
+        fixes.append(h('button', {
+            className: 'btn primary', disabled: !!busy,
+            text: busy?.rid === p.rid ? `Downloading… ${busy.percent ?? ''}${busy.percent != null ? '%' : ''}` : `Get the ${p.rid} build from GitHub`,
+            title: `Downloads this version's ${p.rid} build from the BoardScout release on GitHub and checks it against the release's SHA256SUMS.`,
+            onclick: () => post({ type: 'download', rid: p.rid })
+        }));
+        if (state.data.downloadError) box.append(h('div', { className: 'detail', text: state.data.downloadError }));
+    }
+    if (!['hostkey', 'no-build', 'unsupported'].includes(p.kind) || (p.kind === 'hostkey' && !p.fingerprints?.length))
+        fixes.append(h('button', { className: 'btn', text: 'Try again', onclick: () => post({ type: m.action === 'check' ? 'check' : 'open', id: m.id }) }));
+    if (fixes.childElementCount) box.append(fixes);
+    return box;
+}
+
+function stat(k, v, tone, title) {
+    return h('div', { className: 'stat', title: title || v }, [h('div', { className: 'k', text: k }), h('div', { className: 'v' + (tone ? ' tone-' + tone : ''), text: v || '—' })]);
+}
+
+function summary(s) {
+    const failing = s.checks.filter(c => c.state === 'fail').length;
+    const out = [h('div', { className: 'stats' }, [
+        stat('Support', s.support, s.supportTone),
+        stat('Updates', s.patches, s.patchTone),
+        stat('Checks', s.checks.length ? `${s.checks.length} not passing` : 'All passing', failing ? 'critical' : s.checks.length ? 'warning' : 'good',
+            s.checks.map(c => `${c.label}: ${c.detail}`).join('\n') || 'Every security check passed'),
+        stat('Processor', s.cpu),
+        stat('Memory', s.memory),
+        stat('Up for', s.uptime),
+        stat('Fullest', s.fullest ? `${s.fullest} ${Math.round(s.fullestPercent)}%` : '—', s.fullestPercent >= 95 ? 'critical' : s.fullestPercent >= 85 ? 'warning' : null),
+        stat('Slow links', String(s.slowLinks), s.slowLinks ? 'warning' : 'good'),
+        stat('CPU temp', s.cpuTemp != null ? `${s.cpuTemp}°C` : 'Not reported', s.cpuTemp >= 90 ? 'critical' : s.cpuTemp >= 80 ? 'warning' : null)
+    ])];
+    if (s.fixes.length) out.push(h('div', { className: 'fixes' }, [
+        ...s.fixes.slice(0, 3).map(f => h('div', { text: f, title: f })),
+        s.fixes.length > 3 ? h('div', { text: `and ${s.fixes.length - 3} more in its plan`, style: 'color:var(--faint)' }) : null
+    ]));
+    return out;
+}
+
+function renderFleet(d) {
+    const rows = d.machines.filter(m => m.summary);
+    $('fleetSection').hidden = rows.length < 2;
+    if (rows.length < 2) return;
+    $('fleetCount').textContent = `${rows.length} checked`;
+    const table = $('fleet');
+    table.replaceChildren();
+    const head = h('tr');
+    for (const t of ['Machine', 'System', 'Support', 'Updates', 'Checks', 'Fixes', 'Slow links', 'Fullest', 'CPU temp', 'Checked']) head.append(h('th', { text: t, scope: 'col' }));
+    table.append(h('thead', null, [head]));
+    const body = h('tbody');
+    for (const m of rows) {
+        const s = m.summary;
+        const tr = h('tr', { tabindex: '0', onclick: () => focusCard(m.id), onkeydown: e => { if (e.key === 'Enter') focusCard(m.id); } }, [
+            h('td', null, [h('b', { text: m.name }), h('div', { style: 'color:var(--muted);font-size:12px', text: state.data.privacy ? '' : s.title })]),
+            h('td', { text: s.os }),
+            h('td', { className: 'tone-' + s.supportTone, text: s.support }),
+            h('td', { className: 'tone-' + s.patchTone, text: s.patches }),
+            h('td', { className: 'num ' + (s.checks.some(c => c.state === 'fail') ? 'tone-critical' : s.checks.length ? 'tone-warning' : 'tone-good'),
+                text: s.checks.length ? String(s.checks.length) : '✓', title: s.checks.map(c => c.label).join(', ') }),
+            h('td', { className: 'num' + (s.fixes.length ? ' tone-warning' : ''), text: String(s.fixes.length) }),
+            h('td', { className: 'num' + (s.slowLinks ? ' tone-warning' : ''), text: String(s.slowLinks) }),
+            h('td', { className: 'num' + (s.fullestPercent >= 85 ? ' tone-warning' : ''), text: s.fullest ? `${Math.round(s.fullestPercent)}% ${s.fullest}` : '—' }),
+            h('td', { className: 'num', text: s.cpuTemp != null ? `${s.cpuTemp}°C` : '—' }),
+            h('td', { className: 'num', text: s.checkedAt.slice(5) })
+        ]);
+        body.append(tr);
+    }
+    table.append(body);
+}
+
+function focusCard(id) {
+    const el = $('m-' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: state.settings.motion === false ? 'auto' : 'smooth', block: 'center' });
+    el.querySelector('button')?.focus({ preventScroll: true });
+}
+
+function renderFoot(d) {
+    const select = $('sshClient');
+    select.replaceChildren(h('option', { value: 'auto', text: 'Automatic' + (d.ssh.current ? ` (${d.ssh.current.label})` : '') }),
+        ...d.ssh.options.map(o => h('option', { value: o.id, text: o.label })));
+    select.value = d.ssh.options.some(o => o.id === d.ssh.choice) ? d.ssh.choice : 'auto';
+    $('sshNote').textContent = d.ssh.current
+        ? `Using ${d.ssh.current.path}. BoardScout never asks for or keeps a password: SSH signs in with your keys, your SSH agent, or the key file you chose. Host keys you trust here go in BoardScout's own known_hosts.`
+        : 'No SSH program was found on this computer. On Windows, add OpenSSH Client in Settings > System > Optional features; on Linux, install openssh-client.';
+    const unhide = $('unhideBtn');
+    unhide.hidden = !d.hidden;
+    unhide.textContent = `Show ${d.hidden} hidden SSH config host${d.hidden === 1 ? '' : 's'}`;
+    $('checkAllBtn').disabled = !d.machines.length || d.machines.every(m => m.status === 'working');
+}
+
+function toggleAdd(open) {
+    state.adding = open;
+    $('addForm').classList.toggle('open', open);
+    $('addBtn').setAttribute('aria-expanded', String(open));
+    if (open) setTimeout(() => $('fTarget').focus(), 0);
+}
+
+function added(msg) {
+    const box = $('fMessage');
+    box.classList.toggle('ok', msg.ok);
+    if (msg.ok) {
+        box.textContent = 'Added. Open its dashboard or check it below.';
+        for (const id of ['fTarget', 'fName', 'fKey', 'fFolder']) $(id).value = '';
+        setTimeout(() => { if (state.data?.machines.length) { toggleAdd(false); box.textContent = ''; } }, 1600);
+    } else box.textContent = msg.message || "Couldn't add that machine.";
+}
+
+$('addBtn').onclick = () => toggleAdd(!state.adding);
+$('fCancel').onclick = () => { toggleAdd(false); $('fMessage').textContent = ''; };
+$('fAdd').onclick = () => post({ type: 'add', target: $('fTarget').value, name: $('fName').value, identity: $('fKey').value, folder: $('fFolder').value });
+for (const id of ['fTarget', 'fName', 'fKey', 'fFolder']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('fAdd').click(); });
+$('checkAllBtn').onclick = () => post({ type: 'checkall' });
+$('sshClient').onchange = () => post({ type: 'sshclient', client: $('sshClient').value });
+$('unhideBtn').onclick = () => post({ type: 'unhide' });
+post({ type: 'ready' });
+</script>
+</body>
+</html>

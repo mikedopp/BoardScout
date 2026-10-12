@@ -350,6 +350,7 @@ internal static partial class LinuxSystemInfo
         if (File.Exists("/var/lib/dpkg/status")) list.AddRange(ReadDpkg());
         else if (Tools.Has("rpm")) list.AddRange(ReadRpm());
         else if (Directory.Exists("/var/lib/pacman/local")) list.AddRange(ReadPacman());
+        else if (File.Exists("/lib/apk/db/installed")) list.AddRange(ParseApkInstalled(Sys.Lines("/lib/apk/db/installed")));
         if (Tools.Run("snap", ["list", "--color=never", "--unicode=never"], 6000) is { } snaps)
         {
             foreach (var line in snaps.Split('\n').Skip(1))
@@ -440,6 +441,43 @@ internal static partial class LinuxSystemInfo
                 Size = long.TryParse(Field("SIZE"), out var bytes) ? Size(bytes) : ""
             };
         }
+    }
+
+    /// <summary>
+    /// Alpine's /lib/apk/db/installed: one block per package, "P:name", "V:version", "m:maintainer", "I:size". It
+    /// records when a package was built, not installed, so the install date stays empty.
+    /// </summary>
+    internal static List<SoftwareEntry> ParseApkInstalled(IEnumerable<string> lines)
+    {
+        var result = new List<SoftwareEntry>();
+        string? name = null, version = null, maintainer = null, size = null;
+        void Flush()
+        {
+            if (name is not null)
+                result.Add(new SoftwareEntry
+                {
+                    Name = name,
+                    Version = version ?? "",
+                    Publisher = Maintainer().Replace(maintainer ?? "", "").Trim(),
+                    Size = long.TryParse(size, out var bytes) ? Size(bytes) : ""
+                });
+            name = version = maintainer = size = null;
+        }
+        foreach (var line in lines)
+        {
+            if (line.Length == 0) { Flush(); continue; }
+            if (line.Length < 2 || line[1] != ':') continue;
+            var value = line[2..];
+            switch (line[0])
+            {
+                case 'P': name = value; break;
+                case 'V': version = value; break;
+                case 'm': maintainer = value; break;
+                case 'I': size = value; break;
+            }
+        }
+        Flush();
+        return result;
     }
 
     private static string Size(long bytes) => bytes switch
@@ -558,11 +596,77 @@ internal static partial class LinuxSystemInfo
         if (Tools.Has("dnf"))
         {
             var automatic = Tools.Run("systemctl", "is-enabled", "dnf-automatic.timer")?.Trim() == "enabled" || Tools.Run("systemctl", "is-enabled", "dnf5-automatic.timer")?.Trim() == "enabled";
-            return new UpdateState("dnf", null, null, null, automatic, "Checking for Fedora updates downloads metadata, so BoardScout leaves it to dnf");
+            // -C: only the package lists already downloaded (exit 100 means updates are waiting). Nothing is fetched.
+            var (code, output, _) = Tools.RunFull("dnf", ["-C", "-q", "check-update"], 30000);
+            return code is 0 or 100
+                ? new UpdateState("dnf", ParseDnfUpdates(output).Count, null, null, automatic, null)
+                : new UpdateState("dnf", null, null, null, automatic, "dnf has no package lists cached for this account; dnf check-update would download them");
+        }
+        if (Tools.Has("zypper"))
+        {
+            var (code, output, _) = Tools.RunFull("zypper", ["--non-interactive", "--no-refresh", "-q", "list-updates"], 30000);
+            var automatic = Tools.Run("systemctl", "is-enabled", "transactional-update.timer")?.Trim() == "enabled";
+            return code is 0 or >= 100 and < 110
+                ? new UpdateState("zypper", ParseZypperUpdates(output).Count, null, null, automatic, null)
+                : new UpdateState("zypper", null, null, null, automatic, "Couldn't ask zypper which updates are waiting");
         }
         if (Tools.Has("pacman"))
-            return new UpdateState("pacman", null, null, null, false, "Rolling release: run pacman -Syu to update");
+        {
+            // Against the package lists from the last sync (pacman -Sy); exit 1 with nothing printed means none.
+            var (code, output, _) = Tools.RunFull("pacman", ["-Qu"], 20000);
+            return code is 0 or 1
+                ? new UpdateState("pacman", ParsePacmanUpdates(output).Count, null, PacmanLastUpgrade(), false, null)
+                : new UpdateState("pacman", null, null, null, false, "Rolling release: run pacman -Syu to update");
+        }
+        if (Tools.Has("apk"))
+        {
+            var (code, output, _) = Tools.RunFull("apk", ["version", "-l", "<"], 20000);
+            return code == 0
+                ? new UpdateState("apk", ParseApkUpdates(output).Count, null, null, false, null)
+                : new UpdateState("apk", null, null, null, false, "Couldn't ask apk which updates are waiting");
+        }
         return new UpdateState(distro.Name, null, null, null, false, null);
+    }
+
+    /// <summary>dnf check-update: "name.arch  version  repository" lines, up to any "Obsoleting" section.</summary>
+    internal static List<string> ParseDnfUpdates(string output)
+    {
+        var names = new List<string>();
+        foreach (var raw in output.Split('\n'))
+        {
+            var line = raw.TrimEnd();
+            if (line.StartsWith("Obsoleting", StringComparison.Ordinal)) break;
+            if (line.StartsWith(' ')) continue;
+            var f = line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length == 3 && f[0].Contains('.') && char.IsDigit(f[1][0])) names.Add(f[0]);
+        }
+        return names;
+    }
+
+    /// <summary>zypper list-updates: a table whose update rows start with "v |".</summary>
+    internal static List<string> ParseZypperUpdates(string output) =>
+        output.Split('\n').Select(l => l.Split('|').Select(c => c.Trim()).ToArray())
+            .Where(c => c.Length >= 5 && c[0] == "v").Select(c => c[2]).ToList();
+
+    /// <summary>pacman -Qu: "name 1.0-1 -> 1.1-1".</summary>
+    internal static List<string> ParsePacmanUpdates(string output) =>
+        output.Split('\n').Where(l => l.Contains(" -> ", StringComparison.Ordinal)).Select(l => l.Split(' ')[0]).ToList();
+
+    /// <summary>apk version -l '&lt;': "name-1.2-r0   &lt; 1.2-r1" under an "Installed: Available:" header.</summary>
+    internal static List<string> ParseApkUpdates(string output) =>
+        output.Split('\n').Where(l => l.Contains(" < ", StringComparison.Ordinal) && !l.StartsWith("Installed", StringComparison.Ordinal))
+            .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0]).ToList();
+
+    private static DateTime? PacmanLastUpgrade()
+    {
+        DateTime? latest = null;
+        foreach (var line in Sys.Lines("/var/log/pacman.log"))
+        {
+            if (!line.Contains("starting full system upgrade", StringComparison.Ordinal)) continue;
+            var close = line.IndexOf(']');
+            if (line.StartsWith('[') && close > 1 && DateTime.TryParse(line[1..close], CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)) latest = d;
+        }
+        return latest;
     }
 
     private static DateTime? AptLastUpdate()
