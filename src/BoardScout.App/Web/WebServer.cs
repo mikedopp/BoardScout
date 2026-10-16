@@ -60,7 +60,7 @@ internal static class WebServer
     /// <summary>The line an agent prints when it is ready; the rest of the line is JSON with its port and key.</summary>
     public const string AgentReady = "BOARDSCOUT-AGENT ";
 
-    private static readonly string[] Views = ["shell", "connections", "system", "topology", "machines"];
+    private static readonly string[] Views = ["shell", "overview", "connections", "system", "topology", "machines"];
     private static readonly TimeSpan AgentIdleLimit = TimeSpan.FromMinutes(3);
 
     public static string InstanceFile(string dataRoot) => Path.Combine(dataRoot, "instance.json");
@@ -376,7 +376,7 @@ internal static class WebServer
     // The shared views talk to WebView2; the bridge script gives them the same API over this server.
     private static IResult ViewPage(string name)
     {
-        if (name is not ("connections" or "system" or "topology" or "machines")) return Results.NotFound();
+        if (name is not ("overview" or "connections" or "system" or "topology" or "machines")) return Results.NotFound();
         var path = Path.Combine(AppContext.BaseDirectory, "Assets", name + ".html");
         if (!File.Exists(path)) return Results.NotFound();
         var html = File.ReadAllText(path);

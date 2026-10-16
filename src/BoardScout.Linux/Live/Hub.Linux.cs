@@ -113,7 +113,7 @@ internal sealed partial class Hub
         Publish("connections", $"{{\"type\":\"connections\",\"data\":{LinuxConnections.ToJson(map.Snapshot)}}}");
         var plan = LinuxPlan.Build(capture, map, new CoreSample([]), null, privacy);
         var overview = LinuxOverview.Build(capture, map, plan, privacy, _firmware);
-        Publish("shell", $"{{\"type\":\"overview\",\"data\":{JsonSerializer.Serialize(overview, Json.Options)}}}");
+        PublishOverview($"{{\"type\":\"overview\",\"data\":{JsonSerializer.Serialize(overview, Json.Options)}}}");
         Publish("topology", $"{{\"type\":\"scan\",\"scan\":{LinuxOverview.ScanJson(capture, privacy, indented: false)}}}");
         if (!_payloads.ContainsKey("system")) _ = LoadSystemAsync();
     }

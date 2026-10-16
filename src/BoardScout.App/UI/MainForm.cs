@@ -5,6 +5,7 @@ using System.Text;
 using BoardScout.Models;
 using BoardScout.Remote;
 using BoardScout.Services;
+using BoardScout.Views;
 using Microsoft.Web.WebView2.WinForms;
 
 namespace BoardScout.UI;
@@ -14,7 +15,8 @@ public sealed class MainForm : Form
     private readonly DriverScoutService _service = new();
     private readonly DriverDownloadService _downloadService;
     private readonly SystemTelemetryService _telemetryService = new();
-    private readonly BoardMapControl _boardMap = new() { Dock = DockStyle.Fill };
+    private readonly WebView2 _overviewWebView = new() { Dock = DockStyle.Fill };
+    private readonly Panel _overviewHost = new();
     private readonly WebView2 _topologyWebView = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _systemWebView = new() { Dock = DockStyle.Fill };
     private readonly GlassCard _topologyCard = new() { Dock = DockStyle.Fill };
@@ -57,9 +59,10 @@ public sealed class MainForm : Form
     private bool _changedSinceRefresh;
     private readonly Dictionary<string, string> _netKeys = [];
     private readonly List<(TabPage Page, WebView2 View)> _webTabs = [];
-    private readonly GlassMetricTile _tempTile = new("TEMP", "—");
-    private readonly GlassMetricTile _fanTile = new("FANS", "—");
-    private readonly GlassMetricTile _networkTile = new("NET", "—");
+    private readonly GaugeTile _cpuGauge = new("CPU load", spark: true, Color.Empty) { SparkFloor = 25, Width = 188 };
+    private readonly GaugeTile _memoryGauge = new("Memory", spark: false, Color.Empty) { Width = 196 };
+    private readonly GaugeTile _tempGauge = new("Temperature", spark: false, Color.Empty) { Width = 188 };
+    private readonly GaugeTile _networkGauge = new("Network", spark: true, Color.Empty) { SparkFloor = 12_500, SparkShare = 0.27f, Width = 280 };
     private readonly ToolTip _toolTip = new() { InitialDelay = 300, AutoPopDelay = 12000 };
     private readonly RoundedButton _privacyChip = new();
     private readonly List<string> _logLines = [];
@@ -67,7 +70,6 @@ public sealed class MainForm : Form
     private readonly Label _title = new();
     private readonly Label _subtitle = new();
     private readonly FlowLayoutPanel _metrics = new();
-    private readonly FlowLayoutPanel _quickFacts = new();
     private readonly DataGridView _drivers = new();
     private readonly DataGridView _storage = new();
     private readonly DataGridView _suggestions = new();
@@ -75,17 +77,19 @@ public sealed class MainForm : Form
     private readonly Label _status = new();
     private readonly ProgressBar _progress = new();
     private readonly RoundedButton _scanButton = new();
-    private readonly RoundedButton _updatesButton = new();
-    private readonly RoundedButton _loadButton = new();
-    private readonly RoundedButton _exportButton = new();
+    private readonly RoundedButton _driversButton = new();
+    private readonly RoundedButton _moreButton = new();
     private readonly RoundedButton _cancelButton = new();
-    private readonly RoundedButton _downloadButton = new();
     private readonly RoundedButton _pimpButton = new();
+    private readonly RoundedButton _healthChip = new();
+    private readonly ContextMenuStrip _driversMenu = new();
+    private readonly ContextMenuStrip _moreMenu = new();
+    private readonly ToolStripMenuItem _checkDriversItem = new("Check for newer drivers");
+    private readonly ToolStripMenuItem _downloadDriversItem = new("Download the newer drivers");
+    private readonly ToolStripMenuItem _importItem = new("Import a scan…");
+    private readonly ToolStripMenuItem _exportItem = new("Export…");
     private readonly LinkLabel _feedbackLink = new();
     private readonly LinkLabel _dataFolderLink = new();
-    private readonly RoundedButton _zoomOutButton = new();
-    private readonly RoundedButton _zoomResetButton = new();
-    private readonly RoundedButton _zoomInButton = new();
     private readonly VersionButton _versionButton = new();
     private readonly ContentTabControl _tabs = new();
     private readonly SidebarNavigationControl _navigation = new();
@@ -93,18 +97,6 @@ public sealed class MainForm : Form
 
     private readonly AuroraPanel _header = new();
     private readonly Panel _statusPanel = new();
-    private readonly GlassCard _boardCard = new();
-    private readonly GlassCard _detailsCard = new();
-    private readonly Panel _boardToolbar = new();
-    private readonly GlassPanel _inspectPanel = new();
-    private readonly Label _factsHeading = new();
-    private readonly Label _inspectCategory = new();
-    private readonly Label _inspectTitle = new();
-    private readonly PillLabel _inspectStatus = new();
-    private readonly Label _inspectDetail = new();
-    private readonly Label _inspectCapabilityHeading = new();
-    private readonly Label _inspectCapability = new();
-    private readonly LinkLabel _inspectLink = new();
     private readonly NotifyIcon _trayIcon = new();
 
     private ScanManifest? _scan;
@@ -114,11 +106,24 @@ public sealed class MainForm : Form
     private CancellationTokenSource? _telemetryCts;
     private int _telemetryIntervalMs;
     private SystemTelemetry? _lastTelemetry;
-    private BoardPartDetails? _currentPartDetails;
+
+    // The Overview: the shared web view, the payload it was last sent, and whether the hardware changed since.
+    private TabPage? _overviewPage;
+    private bool _overviewReady;
+    private string? _overviewPayload;
+    private OverviewPayload? _overview;
+    private bool _overviewStale = true;
+    private bool _overviewLoading;
+    private bool _overviewReloadQueued;
+    private int _overviewVersion;
+    private int _overviewFans = -1;
     private VersionPopout? _versionPopout;
 
-    public MainForm()
+    private readonly string? _snapshotDir;
+
+    public MainForm(string? snapshotDir = null)
     {
+        _snapshotDir = snapshotDir;
         _downloadService = new DriverDownloadService(_service.DataRoot);
         AppSettings.Load(_service.DataRoot);
         AppTheme.SetDarkMode(true);
@@ -132,12 +137,19 @@ public sealed class MainForm : Form
         ForeColor = AppTheme.Text;
         Font = new Font("Segoe UI", 9.25f);
 
+        if (_snapshotDir is not null)
+        {
+            // Off every monitor, at a fixed size, so the renders are the same on any PC and nothing flashes on screen.
+            WindowState = FormWindowState.Normal;
+            StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
+            Bounds = new Rectangle(SystemInformation.VirtualScreen.Right + 200, SystemInformation.VirtualScreen.Top, 1920, 1080);
+        }
+
         BuildUi();
         BuildTrayIcon();
         HandleCreated += (_, _) => AppTheme.ApplyWindowTheme(this);
         _service.OutputReceived += ServiceOnOutputReceived;
-        _boardMap.PartHovered += (_, details) => ShowPartDetails(details);
-        _boardMap.ZoomChanged += (_, _) => _zoomResetButton.Text = $"{_boardMap.ZoomPercent}%";
         _versionButton.Click += (_, _) => ToggleVersionPopout();
         AppSettings.Changed += OnSettingsChanged;
         Privacy.Learn(null);
@@ -147,8 +159,12 @@ public sealed class MainForm : Form
             await LoadCachedDataAsync();
             if (_scan is null) _ = LoadSystemInfoAsync();
             StartTelemetry();
-            // The web views start after the cached board is on screen so they never delay it.
+            // The Overview reads the device tree (a fraction of a second) while the web views start.
+            var overview = LoadOverviewAsync(read: true);
             await InitializeWebViewsAsync();
+            await overview;
+            _telemetryService.DetailedRates = ConnectionsVisible || OverviewVisible;
+            if (_snapshotDir is not null) await SnapshotAsync(_snapshotDir);
             if (_measureOnStart && _connectionsPage is not null) _tabs.SelectedTab = _connectionsPage;
         };
         FormClosing += (_, _) =>
@@ -169,6 +185,7 @@ public sealed class MainForm : Form
             // Remote dashboards end with this window: their SSH sessions close, and BoardScout stops on each machine.
             foreach (var window in _remoteWindows.ToList()) window.Close();
             _machines?.Dispose();
+            _overviewWebView.Dispose();
             _topologyWebView.Dispose();
             _systemWebView.Dispose();
             _connectionsWebView.Dispose();
@@ -221,7 +238,9 @@ public sealed class MainForm : Form
     {
         _changedSinceRefresh = false;
         _connectionsStale = true;
+        _overviewStale = true;
         if (ConnectionsVisible) _ = LoadConnectionsAsync();
+        else if (OverviewVisible) _ = LoadOverviewAsync(read: true);
     }
 
     private void BuildTrayIcon()
@@ -325,9 +344,10 @@ public sealed class MainForm : Form
             if (_navigation.SelectedIndex != _tabs.SelectedIndex)
                 _navigation.SelectedIndex = _tabs.SelectedIndex;
             SyncWebViewVisibility();
-            // Per-disk and per-adapter rates are only sampled while the Connections map is on screen.
-            _telemetryService.DetailedRates = ConnectionsVisible;
+            // Per-disk and per-adapter rates are only sampled while the Connections map or the Overview is on screen.
+            _telemetryService.DetailedRates = ConnectionsVisible || OverviewVisible;
             if (ConnectionsVisible && _connectionsStale) _ = LoadConnectionsAsync();
+            if (OverviewVisible && _overviewStale) _ = LoadOverviewAsync(read: true);
         };
 
         _progress.Dock = DockStyle.Bottom;
@@ -335,24 +355,23 @@ public sealed class MainForm : Form
         _progress.Style = ProgressBarStyle.Marquee;
         _progress.MarqueeAnimationSpeed = 25;
         _progress.Visible = false;
-        foreach (var scrolling in new Control[] { _quickFacts, _drivers, _storage, _suggestions, _log })
+        foreach (var scrolling in new Control[] { _drivers, _storage, _suggestions, _log })
             AppTheme.UseDarkScrollbars(scrolling);
-        ShowPartDetails(null);
         ApplyTheme();
     }
 
     private void BuildHeader()
     {
         _header.Dock = DockStyle.Top;
-        _header.Height = 158;
+        _header.Height = 150;
         _header.BackColor = AppTheme.Surface;
-        _header.Padding = new Padding(24, 16, 24, 12);
+        _header.Padding = new Padding(24, 16, 24, 14);
         _header.Tag = "surface";
 
-        // Transparent layers so the header's aurora shows through behind the text and metrics.
+        // Transparent layers so the header's aurora shows through behind the text and gauges.
         var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
         _title.Text = "BoardScout";
-        _title.Font = new Font("Segoe UI Semibold", 21);
+        _title.Font = new Font("Segoe UI Semibold", 20);
         _title.ForeColor = AppTheme.Text;
         _title.BackColor = Color.Transparent;
         _title.AutoSize = true;
@@ -363,28 +382,33 @@ public sealed class MainForm : Form
         _subtitle.ForeColor = AppTheme.Muted;
         _subtitle.BackColor = Color.Transparent;
         _subtitle.AutoSize = true;
-        _subtitle.Location = new Point(2, 38);
+        _subtitle.Location = new Point(2, 39);
         _subtitle.Tag = "muted";
 
+        // Four live gauges: what the PC is doing right now. Storage, drivers, and fixes live in the Overview's panel.
         _metrics.AutoSize = true;
         _metrics.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _metrics.WrapContents = false;
-        _metrics.Location = new Point(0, 70);
+        _metrics.Location = new Point(0, 64);
         _metrics.BackColor = Color.Transparent;
         _metrics.Margin = new Padding(0);
-        _title.Resize += (_, _) =>
-        {
-            _versionButton.Location = new Point(_title.Right + 10, _title.Top + (_title.Height - _versionButton.Height) / 2);
-            _privacyChip.Location = new Point(_versionButton.Right + 8, _versionButton.Top);
-        };
-        _versionButton.Location = new Point(_title.PreferredSize.Width + 10, 6);
+        _metrics.Controls.AddRange([_cpuGauge, _memoryGauge, _tempGauge, _networkGauge]);
+
+        _title.Resize += (_, _) => LayoutTitleRow();
         textPanel.Controls.Add(_versionButton);
+
+        // How the PC is doing, in one chip; it opens the Efficiency tab.
+        _healthChip.Font = new Font("Segoe UI Semibold", 8.75f);
+        _healthChip.Height = 30;
+        _healthChip.Cursor = Cursors.Hand;
+        _healthChip.Visible = false;
+        _healthChip.Click += (_, _) => SelectTab("Efficiency");
+        textPanel.Controls.Add(_healthChip);
 
         // Visible whenever privacy mode is on, so a screenshot shows it was taken masked.
         _privacyChip.Text = "Privacy on";
         _privacyChip.Font = new Font("Segoe UI Semibold", 8.5f);
         _privacyChip.Size = new Size(104, 30);
-        _privacyChip.Location = new Point(_versionButton.Right + 8, _versionButton.Top);
         _privacyChip.BackColor = Color.FromArgb(38, 28, 62);
         _privacyChip.ForeColor = AppTheme.Purple;
         _privacyChip.FlatAppearance.BorderColor = AppTheme.Purple;
@@ -401,150 +425,91 @@ public sealed class MainForm : Form
         textPanel.Controls.Add(_title);
         textPanel.Controls.Add(_subtitle);
         textPanel.Controls.Add(_metrics);
+        LayoutTitleRow();
 
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 780,
+            Width = 470,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             Padding = new Padding(0, 4, 0, 0),
             BackColor = Color.Transparent
         };
 
+        // One primary action; the rest wait in two menus.
         ConfigureButton(_scanButton, "Scan now", async (_, _) => await RunScanAsync(), primary: true);
         ConfigureButton(_pimpButton, "Pimp My Build", (_, _) => OpenPimpMyBuild());
         AppTheme.StyleFeatureButton(_pimpButton);
         _pimpButton.Tag = "featureButton";
-        ConfigureButton(_updatesButton, "Check drivers", async (_, _) => await RunDriverCheckAsync());
-        ConfigureButton(_downloadButton, "Download drivers", async (_, _) => await DownloadDriversAsync());
-        ConfigureButton(_loadButton, "Import", async (_, _) => await LoadScanFromFileAsync());
-        ConfigureButton(_exportButton, "Export", (_, _) => ExportScan());
+        ConfigureButton(_driversButton, "Drivers  ▾", (_, _) => _driversMenu.Show(_driversButton, new Point(0, _driversButton.Height + 4)));
+        ConfigureButton(_moreButton, "More  ▾", (_, _) => _moreMenu.Show(_moreButton, new Point(0, _moreButton.Height + 4)));
         ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
+        _toolTip.SetToolTip(_scanButton, "Take a fresh hardware inventory (about half a minute). Only needed after hardware changes.");
+        _toolTip.SetToolTip(_pimpButton, "Open an upgrade report for this PC in your browser.");
+
+        _checkDriversItem.Click += async (_, _) => await RunDriverCheckAsync();
+        _downloadDriversItem.Click += async (_, _) => await DownloadDriversAsync();
+        _checkDriversItem.ToolTipText = "Ask vendor, OEM, and Windows Update catalog pages for newer drivers. Nothing is installed.";
+        _downloadDriversItem.ToolTipText = "Download what the last check found, or open its official page.";
+        var driversTab = new ToolStripMenuItem("Open the Drivers tab", null, (_, _) => SelectTab("Drivers"));
+        _driversMenu.Items.AddRange([_checkDriversItem, _downloadDriversItem, new ToolStripSeparator(), driversTab]);
+        _importItem.Click += async (_, _) => await LoadScanFromFileAsync();
+        _exportItem.Click += (_, _) => ExportScan();
+        _exportItem.ToolTipText = "A spec sheet, an upgrade planner, or the raw scan as JSON.";
+        _moreMenu.Items.AddRange([_exportItem, _importItem]);
+        foreach (var menu in new[] { _driversMenu, _moreMenu })
+        {
+            menu.Renderer = new DarkMenuRenderer();
+            menu.ShowItemToolTips = true;
+            menu.Font = new Font("Segoe UI", 9.5f);
+            menu.Padding = new Padding(4);
+            foreach (ToolStripItem item in menu.Items) item.Padding = new Padding(4, 5, 12, 5);
+        }
 
         _cancelButton.Visible = false;
-        _updatesButton.Enabled = false;
-        _downloadButton.Enabled = false;
-        _exportButton.Enabled = false;
+        _checkDriversItem.Enabled = false;
+        _downloadDriversItem.Enabled = false;
+        _exportItem.Enabled = false;
         _pimpButton.Enabled = false;
 
-        actions.Controls.AddRange([
-            _exportButton, _loadButton,
-            ToolbarSep(),
-            _downloadButton, _updatesButton,
-            ToolbarSep(),
-            _pimpButton, _scanButton, _cancelButton
-        ]);
+        actions.Controls.AddRange([_moreButton, _driversButton, ToolbarSep(), _pimpButton, _scanButton, _cancelButton]);
 
         _header.Controls.Add(textPanel);
         _header.Controls.Add(actions);
         _header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = AppTheme.Border, Tag = "border" });
     }
 
+    // The title, then the version button, the health chip, and the privacy chip, in one row.
+    private void LayoutTitleRow()
+    {
+        var x = _title.Left + _title.PreferredSize.Width + 10;
+        var top = _title.Top + (_title.PreferredSize.Height - _versionButton.Height) / 2;
+        _versionButton.Location = new Point(x, top);
+        x = _versionButton.Right + 8;
+        if (_healthChip.Visible)
+        {
+            _healthChip.Location = new Point(x, top);
+            x = _healthChip.Right + 8;
+        }
+        _privacyChip.Location = new Point(x, top);
+    }
+
+    // The board and its inspector are the shared web view (Assets/overview.html), the same page the browser
+    // dashboard shows. It brings its own cards, so it sits straight on the window's background.
     private TabPage BuildOverviewTab()
     {
         var page = NewPage("Overview");
-        var split = new SplitContainer
-        {
-            Orientation = Orientation.Vertical,
-            Size = new Size(1200, 600),
-            Dock = DockStyle.Fill,
-            BackColor = AppTheme.Background,
-            SplitterWidth = 12,
-            FixedPanel = FixedPanel.Panel2,
-            Panel1MinSize = 720,
-            Panel2MinSize = 360
-        };
-        split.SplitterDistance = 1100;
-        split.Tag = "background";
-
-        split.Panel1.BackColor = AppTheme.Background;
-        split.Panel1.Tag = "background";
-        split.Panel2.BackColor = AppTheme.Background;
-        split.Panel2.Tag = "background";
-        _boardCard.Dock = DockStyle.Fill;
-        _boardCard.Padding = new Padding(8);
-
-        BuildBoardToolbar();
-        _boardCard.Controls.Add(_boardMap);
-        _boardCard.Controls.Add(_boardToolbar);
-        split.Panel1.Controls.Add(_boardCard);
-
-        _detailsCard.Dock = DockStyle.Fill;
-        _detailsCard.Padding = new Padding(18, 16, 18, 16);
-
-        BuildInspector();
-        _factsHeading.Dock = DockStyle.Top;
-        _factsHeading.Height = 40;
-        _factsHeading.Text = "System details";
-        _factsHeading.Font = new Font("Segoe UI Semibold", 12);
-        _factsHeading.ForeColor = AppTheme.Text;
-        _factsHeading.Tag = "text";
-        _quickFacts.Dock = DockStyle.Fill;
-        _quickFacts.BackColor = AppTheme.Surface;
-        _quickFacts.FlowDirection = FlowDirection.TopDown;
-        _quickFacts.WrapContents = false;
-        _quickFacts.AutoScroll = true;
-        _quickFacts.Padding = new Padding(0, 2, 0, 0);
-        _quickFacts.Tag = "surface";
-        _quickFacts.SizeChanged += (_, _) => ResizeFactRows();
-        _detailsCard.Controls.Add(_quickFacts);
-        _detailsCard.Controls.Add(_factsHeading);
-        _detailsCard.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14, BackColor = AppTheme.Surface, Tag = "surface" });
-        _detailsCard.Controls.Add(_inspectPanel);
-        split.Panel2.Controls.Add(_detailsCard);
-        page.Controls.Add(split);
-        return page;
-    }
-
-    private void BuildBoardToolbar()
-    {
-        _boardToolbar.Dock = DockStyle.Top;
-        _boardToolbar.Height = 50;
-        _boardToolbar.BackColor = AppTheme.Surface;
-        _boardToolbar.Padding = new Padding(12, 6, 8, 6);
-        _boardToolbar.Tag = "surface";
-
-        var title = new Label
-        {
-            Dock = DockStyle.Left,
-            Width = 175,
-            Text = "Interactive board",
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font = new Font("Segoe UI Semibold", 11),
-            ForeColor = AppTheme.Text,
-            Tag = "text"
-        };
-        var hint = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = "Hover for status and capability  ·  mouse wheel to zoom  ·  drag to pan",
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = AppTheme.Muted,
-            Tag = "muted"
-        };
-        var zoom = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Right,
-            Width = 210,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            BackColor = Color.Transparent,
-            Padding = new Padding(0)
-        };
-        ConfigureButton(_zoomOutButton, "−", (_, _) => _boardMap.ZoomOut());
-        ConfigureButton(_zoomResetButton, "100%", (_, _) => _boardMap.ResetView());
-        ConfigureButton(_zoomInButton, "+", (_, _) => _boardMap.ZoomIn());
-        foreach (var button in new[] { _zoomOutButton, _zoomResetButton, _zoomInButton })
-            button.AutoSize = false;
-        _zoomOutButton.Size = new Size(42, 36);
-        _zoomResetButton.Size = new Size(76, 36);
-        _zoomInButton.Size = new Size(42, 36);
-        zoom.Controls.AddRange([_zoomOutButton, _zoomResetButton, _zoomInButton]);
-
-        _boardToolbar.Controls.Add(hint);
-        _boardToolbar.Controls.Add(title);
-        _boardToolbar.Controls.Add(zoom);
+        page.Padding = new Padding(0);
+        _overviewWebView.DefaultBackgroundColor = AppTheme.Background;
+        _overviewWebView.Visible = false;
+        _overviewHost.Dock = DockStyle.Fill;
+        _overviewHost.BackColor = AppTheme.Background;
+        _overviewHost.Tag = "background";
+        _overviewHost.Controls.Add(_overviewWebView);
+        page.Controls.Add(_overviewHost);
+        _webTabs.Add((page, _overviewWebView));
+        return _overviewPage = page;
     }
 
     private TabPage BuildWebTab(string name, GlassCard card, WebView2 view)
@@ -561,6 +526,15 @@ public sealed class MainForm : Form
 
     private async Task InitializeWebViewsAsync()
     {
+        await InitializeWebViewAsync(_overviewWebView, _overviewHost, "overview.html", () =>
+        {
+            _overviewReady = true;
+            PostSettings(_overviewWebView);
+            if (_overviewPayload is not null) _overviewWebView.CoreWebView2.PostWebMessageAsJson(_overviewPayload);
+            if (_lastTelemetry is not null) PostOverviewTelemetry(_lastTelemetry);
+        });
+        if (_overviewWebView.CoreWebView2 is { } overview)
+            overview.WebMessageReceived += OnOverviewMessage;
         await InitializeWebViewAsync(_topologyWebView, _topologyCard, "topology.html", () =>
         {
             _topologyReady = true;
@@ -660,6 +634,137 @@ public sealed class MainForm : Form
 
     private bool ConnectionsVisible => _connectionsPage is not null && _tabs.SelectedTab == _connectionsPage && Visible;
 
+    private bool OverviewVisible => _overviewPage is not null && _tabs.SelectedTab == _overviewPage && Visible;
+
+    // ---- Overview: the board, from the device tree, the inventory, and the plan -----------------------------
+
+    /// <summary>Reads the device tree again when asked (or when there is no read yet), then sends the Overview.</summary>
+    private async Task LoadOverviewAsync(bool read)
+    {
+        if (_overviewLoading)
+        {
+            _overviewReloadQueued = true;
+            return;
+        }
+        _overviewLoading = true;
+        try
+        {
+            do
+            {
+                _overviewReloadQueued = false;
+                if (read || _connectionsCapture is null)
+                {
+                    var capture = await Task.Run(ConnectionsService.Read);
+                    if (IsDisposed) return;
+                    _connectionsCapture = capture;
+                    _overviewStale = false;
+                }
+                read = false;
+                await PostOverviewAsync();
+            }
+            while (_overviewReloadQueued && !IsDisposed);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("OVERVIEW: " + ex.Message);
+        }
+        finally
+        {
+            _overviewLoading = false;
+        }
+    }
+
+    /// <summary>Builds the Overview from what was last read, with the current privacy setting (no new read).</summary>
+    private async Task PostOverviewAsync()
+    {
+        if (_connectionsCapture is not { } capture) return;
+        var version = ++_overviewVersion;
+        var (privacy, discovery, scan, report, telemetry, measured) = (Privacy.Enabled, _discovery, _scan, _report, _lastTelemetry, _interruptProfile);
+        var overview = await Task.Run(() =>
+        {
+            var map = ConnectionsService.Build(capture, privacy, discovery);
+            var plan = PlanService.Build(capture, map, [], measured, privacy, telemetry?.Power);
+            return WindowsOverview.Build(capture, map, scan, report, plan, telemetry, privacy);
+        });
+        if (IsDisposed || version != _overviewVersion) return;
+        _overview = overview;
+        _overviewFans = BoardFans(telemetry);
+        _overviewPayload = Json.Message("overview", System.Text.Json.JsonSerializer.Serialize(overview, Json.Options));
+        if (_overviewReady) _overviewWebView.CoreWebView2.PostWebMessageAsJson(_overviewPayload);
+        UpdateHealthChip();
+        BindSuggestions();
+    }
+
+    private static int BoardFans(SystemTelemetry? telemetry) =>
+        telemetry?.Fans.Count(f => !f.Name.StartsWith("GPU", StringComparison.OrdinalIgnoreCase)) ?? 0;
+
+    private void PostOverviewTelemetry(SystemTelemetry telemetry)
+    {
+        if (!_overviewReady || IsDisposed) return;
+        var core = _overviewWebView.CoreWebView2;
+        core.PostWebMessageAsJson(Json.Message("telemetry", System.Text.Json.JsonSerializer.Serialize(WindowsOverview.Header(telemetry), Json.Options)));
+        if (telemetry.InterfaceRates is not null)
+            core.PostWebMessageAsJson(Json.Message("flow", System.Text.Json.JsonSerializer.Serialize(WindowsOverview.Flow(telemetry, _netKeys), Json.Options)));
+    }
+
+    private void OnOverviewMessage(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using var message = System.Text.Json.JsonDocument.Parse(e.WebMessageAsJson);
+            var root = message.RootElement;
+            var type = root.TryGetProperty("type", out var value) ? value.GetString() : null;
+            if (type == "show" && root.TryGetProperty("node", out var node) && node.GetString() is { } id) ShowOnConnections(id);
+            else if (type == "tab" && root.TryGetProperty("name", out var name) && name.GetString() is { } tab) SelectTab(tab);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("OVERVIEW: " + ex.Message);
+        }
+    }
+
+    // Opens Connections and highlights the part's card once the map has drawn it.
+    private void ShowOnConnections(string id)
+    {
+        if (_connectionsPage is null) return;
+        _tabs.SelectedTab = _connectionsPage;
+        if (!_connectionsReady) return;
+        var quoted = System.Text.Json.JsonSerializer.Serialize(id, BoardScoutJson.Default.String);
+        _ = _connectionsWebView.CoreWebView2.ExecuteScriptAsync(
+            $"(function(){{let n=40;(function a(){{if(document.getElementById('c-'+{quoted})&&window.showNodes){{showNodes([{quoted}]);return}}if(--n>0)setTimeout(a,250)}})()}})()");
+    }
+
+    private void SelectTab(string name)
+    {
+        var page = _tabs.TabPages.Cast<TabPage>().FirstOrDefault(p => p.Text.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (page is not null) _tabs.SelectedTab = page;
+    }
+
+    // "Healthy", or how many things the plan and the inventory checks think deserve a look.
+    private void UpdateHealthChip()
+    {
+        if (_overview is not { } overview)
+        {
+            _healthChip.Visible = false;
+            LayoutTitleRow();
+            return;
+        }
+        var count = overview.Suggestions.Count(s => s.Severity != "info") +
+                    overview.Parts.Count(p => p.Tone == "warn" && !overview.Suggestions.Any(s => s.Title.Contains(p.Name, StringComparison.Ordinal)));
+        var good = count == 0;
+        _healthChip.Text = good ? "●  Healthy" : count == 1 ? "●  One thing worth a look" : $"●  {count} things worth a look";
+        _healthChip.ForeColor = good ? AppTheme.Good : AppTheme.Warning;
+        _healthChip.BackColor = good ? Color.FromArgb(16, 44, 36) : Color.FromArgb(52, 38, 18);
+        _healthChip.FlatAppearance.BorderColor = Color.FromArgb(150, good ? AppTheme.Good : AppTheme.Warning);
+        _healthChip.FlatAppearance.MouseOverBackColor = good ? Color.FromArgb(24, 58, 46) : Color.FromArgb(68, 50, 24);
+        _healthChip.FlatAppearance.MouseDownBackColor = _healthChip.BackColor;
+        _healthChip.Width = TextRenderer.MeasureText(_healthChip.Text, _healthChip.Font).Width + 30;
+        _healthChip.AccessibleName = good ? "Healthy. Opens the Efficiency tab." : $"{count} things worth a look. Opens the Efficiency tab.";
+        _toolTip.SetToolTip(_healthChip, good ? "Every check passed. Click for the Efficiency tab." : "The Overview's panel lists them; click for the Efficiency tab.");
+        _healthChip.Visible = true;
+        LayoutTitleRow();
+    }
+
     // Reads the hardware and network (fast), shows the map, then looks up router, network, and device names
     // in the background (a few seconds) and shows the map again with them. Names are reused for two minutes.
     private async Task LoadConnectionsAsync(bool rediscover = false, bool sweep = false)
@@ -685,6 +790,8 @@ public sealed class MainForm : Form
                 if (IsDisposed) return;
                 _connectionsCapture = capture;
                 _connectionsStale = false;
+                _overviewStale = false;
+                _ = PostOverviewAsync();
                 var gateways = string.Join(",", capture.Network.Routers.Keys.Order());
                 var fresh = _discovery is not null && !rediscover && !sweep && _discoveryGateways == gateways &&
                             DateTimeOffset.Now - _discovery.At < TimeSpan.FromMinutes(2);
@@ -918,7 +1025,7 @@ public sealed class MainForm : Form
             System.Text.Json.JsonSerializer.Serialize(flow, BoardScoutJson.Default.ConnectionFlow));
     }
 
-    private async Task InitializeWebViewAsync(WebView2 view, GlassCard card, string page, Action ready)
+    private async Task InitializeWebViewAsync(WebView2 view, Control card, string page, Action ready)
     {
         try
         {
@@ -941,78 +1048,6 @@ public sealed class MainForm : Form
                 Tag = "muted"
             });
         }
-    }
-
-    private void BuildInspector()
-    {
-        _inspectPanel.Dock = DockStyle.Top;
-        _inspectPanel.Height = 270;
-        _inspectPanel.Tag = "raised";
-
-        _inspectCategory.Font = new Font("Segoe UI Semibold", 8);
-        _inspectCategory.Location = new Point(16, 13);
-        _inspectCategory.Height = 18;
-        _inspectCategory.ForeColor = AppTheme.Accent;
-        _inspectCategory.Tag = "accent";
-
-        _inspectTitle.Font = new Font("Segoe UI Semibold", 14);
-        _inspectTitle.Location = new Point(16, 34);
-        _inspectTitle.Height = 30;
-        _inspectTitle.ForeColor = AppTheme.Text;
-        _inspectTitle.AutoEllipsis = true;
-        _inspectTitle.Tag = "text";
-
-        _inspectStatus.Font = new Font("Segoe UI Semibold", 9);
-        _inspectStatus.Location = new Point(16, 69);
-        _inspectStatus.Height = 26;
-        _inspectStatus.Padding = new Padding(10, 0, 10, 0);
-
-        _inspectDetail.Font = new Font("Segoe UI", 8.5f);
-        _inspectDetail.Location = new Point(16, 101);
-        _inspectDetail.Height = 38;
-        _inspectDetail.ForeColor = AppTheme.Muted;
-        _inspectDetail.Tag = "muted";
-
-        _inspectCapabilityHeading.Text = "Capability estimate";
-        _inspectCapabilityHeading.Font = new Font("Segoe UI Semibold", 8);
-        _inspectCapabilityHeading.Location = new Point(16, 145);
-        _inspectCapabilityHeading.Height = 18;
-        _inspectCapabilityHeading.ForeColor = AppTheme.Muted;
-        _inspectCapabilityHeading.Tag = "muted";
-
-        _inspectCapability.Font = new Font("Segoe UI", 9);
-        _inspectCapability.Location = new Point(16, 166);
-        _inspectCapability.Height = 50;
-        _inspectCapability.ForeColor = AppTheme.Text;
-        _inspectCapability.Tag = "text";
-
-        _inspectLink.Text = "Open official update page  ↗";
-        _inspectLink.Font = new Font("Segoe UI Semibold", 9);
-        _inspectLink.Location = new Point(16, 226);
-        _inspectLink.Height = 28;
-        _inspectLink.LinkColor = AppTheme.Accent;
-        _inspectLink.ActiveLinkColor = AppTheme.Good;
-        _inspectLink.VisitedLinkColor = AppTheme.Accent;
-        _inspectLink.Visible = false;
-        _inspectLink.LinkClicked += (_, _) => OpenOfficialUrl(_inspectLink.Tag as string);
-
-        // Transparent text so the inspector's glass shows behind it.
-        foreach (var label in new Label[] { _inspectCategory, _inspectTitle, _inspectDetail, _inspectCapabilityHeading, _inspectCapability, _inspectLink })
-            label.BackColor = Color.Transparent;
-
-        _inspectPanel.Controls.AddRange([
-            _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail,
-            _inspectCapabilityHeading, _inspectCapability, _inspectLink]);
-        _inspectPanel.SizeChanged += (_, _) => LayoutInspector();
-        LayoutInspector();
-    }
-
-    private void LayoutInspector()
-    {
-        var width = Math.Max(200, _inspectPanel.ClientSize.Width - 32);
-        foreach (var label in new Label[]
-                 { _inspectCategory, _inspectTitle, _inspectStatus, _inspectDetail, _inspectCapabilityHeading, _inspectCapability, _inspectLink })
-            label.Width = width;
     }
 
     private TabPage BuildDriversTab()
@@ -1255,11 +1290,11 @@ public sealed class MainForm : Form
         {
             var reportPath = await _service.CheckDriversAsync(_scanPath, token);
             _report = await _service.LoadReportAsync(reportPath, token);
-            _boardMap.SetDriverReport(_report);
             BindDrivers();
             BindSuggestions();
+            _ = PostOverviewAsync();
             var updates = _report.Results.Count(r => r.Status == "update-available");
-            _downloadButton.Enabled = true;
+            _downloadDriversItem.Enabled = true;
             _status.Text = $"Driver check complete — {updates} update{(updates == 1 ? "" : "s")} available for review.";
         });
     }
@@ -1420,19 +1455,16 @@ public sealed class MainForm : Form
         var board = _scan.SystemInfo.Baseboard;
         var cpu = _scan.Cpu;
         _title.Text = $"{board.Manufacturer} {board.Product}".Trim();
-        _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {cpu.Name}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
-        _boardMap.SetSnapshot(_scan);
-        _boardMap.SetDriverReport(_report);
+        _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {WindowsOverview.ShortCpuName(cpu.Name)}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
         _ = SendScanToTopologyAsync();
-        BindMetrics();
-        BindQuickFacts();
+        _ = PostOverviewAsync();
         BindDrivers();
         BindStorage();
         BindSuggestions();
         _ = LoadSystemInfoAsync();
-        _updatesButton.Enabled = true;
-        _downloadButton.Enabled = _report is not null;
-        _exportButton.Enabled = true;
+        _checkDriversItem.Enabled = true;
+        _downloadDriversItem.Enabled = _report is not null;
+        _exportItem.Enabled = true;
         _pimpButton.Enabled = true;
     }
 
@@ -1466,117 +1498,6 @@ public sealed class MainForm : Form
         static string Flag(bool on) => on ? "true" : "false";
         view.CoreWebView2?.PostWebMessageAsJson(
             $"{{\"type\":\"settings\",\"glass\":{Flag(AppSettings.Current.GlassEffects)},\"motion\":{Flag(Motion.Enabled)},\"privacy\":{Flag(Privacy.Enabled)},\"crawlers\":{AppSettings.Current.Crawlers}}}");
-    }
-
-    private void BindMetrics()
-    {
-        foreach (var control in _metrics.Controls.Cast<Control>().ToList())
-        {
-            _metrics.Controls.Remove(control);
-            if (control != _tempTile && control != _fanTile && control != _networkTile) control.Dispose();
-        }
-        if (_scan is null) return;
-        var usedTb = _scan.Volumes.Sum(v => v.SizeBytes - v.FreeBytes) / 1_099_511_627_776d;
-        var updateCount = _report?.Results.Count(r => r.Status == "update-available");
-        _metrics.Controls.Add(new GlassMetricTile("MEMORY", $"{_scan.TotalMemoryGb:0.#} GB"));
-        _metrics.Controls.Add(new GlassMetricTile("COMPONENTS", $"{_scan.Components.Count}"));
-        _metrics.Controls.Add(new GlassMetricTile("DATA USED", $"{usedTb:0.0} TB"));
-        _metrics.Controls.Add(new GlassMetricTile("UPDATES", updateCount?.ToString() ?? "—"));
-        _metrics.Controls.Add(_tempTile);
-        _metrics.Controls.Add(_fanTile);
-        _metrics.Controls.Add(_networkTile);
-    }
-
-    private void BindQuickFacts()
-    {
-        _quickFacts.Controls.Clear();
-        if (_scan is null) return;
-        var memory = _scan.Memory.Slots.FirstOrDefault();
-        AddFact("BIOS", $"{_scan.SystemInfo.Bios.Version} · {_scan.SystemInfo.Bios.ReleaseDate}");
-        AddFact("Memory", $"{_scan.TotalMemoryGb:0.#} GB · {_scan.Memory.Populated} of {_scan.Memory.TotalSlots} slots");
-        if (memory is not null) AddFact("Memory speed", $"{memory.SpeedMhz} / {memory.RatedMhz} MT/s");
-        AddFact("Storage", $"{_scan.Volumes.Count} mounted volumes");
-        AddFact("USB", $"{_scan.UsbDevices.Count(d => d.DeviceClass != "USB")} attached devices");
-        var problems = _scan.ProblemDevices.Count(d => d.ErrorCode != 0);
-        AddFact("Device health", problems == 0 ? "No reported errors" : $"{problems} error{(problems == 1 ? "" : "s")}",
-            problems == 0 ? AppTheme.Good : AppTheme.Critical);
-        AddFact("Last inventory", $"{_scan.Scan.TimestampUtc?.ToLocalTime():g}");
-        var ages = UpgradePlannerService.GetComponentAges(_scan);
-        if (ages.Count > 0)
-        {
-            AddFactSection("Component ages");
-            foreach (var age in ages)
-            {
-                if (age.AgeYears == 0)
-                {
-                    AddFact(age.Category, age.Name);
-                    continue;
-                }
-                var color = age.AgeYears switch { >= 5 => AppTheme.Critical, >= 3 => AppTheme.Warning, _ => AppTheme.Good };
-                AddFact(age.Category, $"{age.AgeYears} yr — {age.Generation} ({age.Released})", color);
-            }
-        }
-        AddFactSection("How BoardScout works");
-        AddFact("Startup", "Uses the latest cached inventory");
-        AddFact("Hardware scan", "Local and on demand");
-        AddFact("Driver check", "Review only — nothing is installed");
-    }
-
-    private void AddFact(string label, string value, Color? valueColor = null)
-    {
-        var width = Math.Max(220, _quickFacts.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10);
-        var row = new Panel
-        {
-            Width = width,
-            Height = 43,
-            BackColor = AppTheme.Surface,
-            Margin = new Padding(0),
-            Tag = "surface"
-        };
-        row.Controls.Add(new Label
-        {
-            Text = label,
-            ForeColor = AppTheme.Muted,
-            Font = new Font("Segoe UI", 8),
-            Location = new Point(0, 2),
-            Size = new Size(width, 16),
-            Tag = "muted"
-        });
-        row.Controls.Add(new Label
-        {
-            Text = value,
-            ForeColor = valueColor ?? AppTheme.Text,
-            Font = new Font("Segoe UI Semibold", 9.5f),
-            Location = new Point(0, 18),
-            Size = new Size(width, 21),
-            AutoEllipsis = true,
-            Tag = valueColor == AppTheme.Good ? "good" :
-                valueColor == AppTheme.Critical ? "critical" :
-                valueColor == AppTheme.Warning ? "warning" : "text"
-        });
-        _quickFacts.Controls.Add(row);
-    }
-
-    private void AddFactSection(string text)
-    {
-        var width = Math.Max(220, _quickFacts.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10);
-        _quickFacts.Controls.Add(new Label
-        {
-            Text = text,
-            ForeColor = AppTheme.Text,
-            Font = new Font("Segoe UI Semibold", 10),
-            Width = width,
-            Height = 36,
-            Padding = new Padding(0, 12, 0, 0),
-            Margin = new Padding(0, 6, 0, 0),
-            Tag = "text"
-        });
-    }
-
-    private void ResizeFactRows()
-    {
-        var width = Math.Max(220, _quickFacts.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10);
-        foreach (Control control in _quickFacts.Controls) control.Width = width;
     }
 
     private void BindDrivers()
@@ -1613,7 +1534,6 @@ public sealed class MainForm : Form
             SetDriverLink(_drivers.Rows[rowIndex], result);
             ColorDriverRow(_drivers.Rows[rowIndex], result.Status, new CurrentVersion());
         }
-        BindMetrics();
     }
 
     private static void SetDriverLink(DataGridViewRow row, DriverResult? result)
@@ -1660,6 +1580,22 @@ public sealed class MainForm : Form
     private void BindSuggestions()
     {
         _suggestions.Rows.Clear();
+        if (_overview is { } overview)
+        {
+            foreach (var suggestion in overview.Suggestions)
+            {
+                var (label, color) = suggestion.Severity switch
+                {
+                    "warning" => ("Fix", AppTheme.Warning),
+                    "improvement" => ("Improve", AppTheme.Good),
+                    _ => ("Info", AppTheme.Accent)
+                };
+                var rowIndex = _suggestions.Rows.Add(label, suggestion.Category, suggestion.Title,
+                    suggestion.Detail + (suggestion.Action is { Length: > 0 } action ? Environment.NewLine + "Next: " + action : ""));
+                _suggestions.Rows[rowIndex].Cells[0].Style.ForeColor = color;
+            }
+            return;
+        }
         if (_scan is null) return;
         foreach (var suggestion in SuggestionEngine.Analyze(_scan, _report))
         {
@@ -1783,12 +1719,76 @@ public sealed class MainForm : Form
         Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
     }
 
+    // ---- --snapshot: QA renders ------------------------------------------------------------------------------
+
+    // The window with glass on, with a part pinned in the Overview's panel, and with glass off; then BoardScout
+    // closes. Native controls draw through DrawToBitmap and the web view through its own capture, so nothing is
+    // read from the screen.
+    private async Task SnapshotAsync(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        var glassBefore = AppSettings.Current.GlassEffects;
+        try
+        {
+            AppSettings.Update(s => s.GlassEffects = true);
+            await Task.Delay(7000);
+            await SaveSnapshotAsync(Path.Combine(directory, "overview-glass.png"));
+            if (_overviewReady)
+            {
+                await _overviewWebView.CoreWebView2.ExecuteScriptAsync(
+                    "(()=>{const g=[...document.querySelectorAll('#board .part')].find(p=>/^Graphics/.test(p.getAttribute('aria-label')||''))" +
+                    "||document.querySelector('#board .part');g&&g.dispatchEvent(new MouseEvent('click',{bubbles:true}));})()");
+                await Task.Delay(800);
+                await SaveSnapshotAsync(Path.Combine(directory, "overview-pinned.png"));
+                await _overviewWebView.CoreWebView2.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))");
+            }
+            AppSettings.Update(s => s.GlassEffects = false);
+            await Task.Delay(2500);
+            await SaveSnapshotAsync(Path.Combine(directory, "overview-solid.png"));
+        }
+        catch (Exception ex)
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "snapshot-error.txt"), ex.ToString());
+        }
+        finally
+        {
+            AppSettings.Update(s => s.GlassEffects = glassBefore);
+            _trayIcon.Visible = false;
+            Close();
+        }
+    }
+
+    private async Task SaveSnapshotAsync(string path)
+    {
+        using var window = new Bitmap(Width, Height);
+        DrawToBitmap(window, new Rectangle(Point.Empty, Size));
+        var client = PointToScreen(Point.Empty);
+        var offset = new Point(client.X - Left, client.Y - Top);
+        using var picture = new Bitmap(ClientSize.Width, ClientSize.Height);
+        using (var g = Graphics.FromImage(picture))
+        {
+            g.DrawImage(window, new Rectangle(Point.Empty, ClientSize), new Rectangle(offset, ClientSize), GraphicsUnit.Pixel);
+            // DrawToBitmap leaves web views blank; each visible one is captured by WebView2 and drawn in its place.
+            foreach (var (_, view) in _webTabs.Where(t => t.View.Visible && t.View.CoreWebView2 is not null))
+            {
+                using var stream = new MemoryStream();
+                await view.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, stream);
+                stream.Position = 0;
+                using var page = Image.FromStream(stream);
+                var at = PointToClient(view.PointToScreen(Point.Empty));
+                g.DrawImage(page, new Rectangle(at, view.ClientSize));
+            }
+        }
+        picture.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+    }
+
     private void OnSettingsChanged(object? sender, EventArgs e)
     {
         if (IsDisposed) return;
         if (_telemetryIntervalMs != AppSettings.Current.TelemetryIntervalMs) StartTelemetry();
         _versionButton.RefreshMotion();
         _header.RefreshAurora();
+        if (_overviewReady) PostSettings(_overviewWebView);
         if (_topologyReady) PostSettings(_topologyWebView);
         if (_systemReady) PostSettings(_systemWebView);
         if (_connectionsReady) PostSettings(_connectionsWebView);
@@ -1802,7 +1802,11 @@ public sealed class MainForm : Form
             BindStorage();
             // The map masks MACs, Wi-Fi and device names, and IPv6 on the C# side, so it is rebuilt
             // from what was last read (no new read needed).
-            if (_connectionsCapture is not null) PostConnectionsMap(_discovery);
+            if (_connectionsCapture is not null)
+            {
+                PostConnectionsMap(_discovery);
+                _ = PostOverviewAsync();
+            }
             else _connectionsStale = true;
             _status.Text = Privacy.Enabled
                 ? "Privacy mode on — PC name, owner details, serial numbers, paths, and app lists are hidden in screens and exports."
@@ -1814,10 +1818,10 @@ public sealed class MainForm : Form
     private void SetBusy(bool busy, string message)
     {
         _scanButton.Enabled = !busy;
-        _updatesButton.Enabled = !busy && _scan is not null;
-        _downloadButton.Enabled = !busy && _report is not null;
-        _loadButton.Enabled = !busy;
-        _exportButton.Enabled = !busy && _scan is not null;
+        _checkDriversItem.Enabled = !busy && _scan is not null;
+        _downloadDriversItem.Enabled = !busy && _report is not null;
+        _importItem.Enabled = !busy;
+        _exportItem.Enabled = !busy && _scan is not null;
         _pimpButton.Enabled = !busy && _scan is not null;
         _cancelButton.Visible = busy;
         _progress.Visible = busy;
@@ -1828,15 +1832,7 @@ public sealed class MainForm : Form
     private void SetEmptyState()
     {
         _title.Text = "BoardScout";
-        _subtitle.Text = "No cached scan yet — run Scan now or import an existing DriverScout JSON file.";
-        BindMetrics();
-        _metrics.Controls.Add(new GlassMetricTile("SCANS", "0"));
-        _quickFacts.Controls.Clear();
-        AddFact("Portable", "Runs without an installer");
-        AddFact("Inventory", "Uses built-in Windows tools");
-        AddFact("Safe by design", "Never installs drivers automatically", AppTheme.Good);
-        _boardMap.SetSnapshot(null);
-        _boardMap.SetDriverReport(null);
+        _subtitle.Text = "No inventory yet: Scan now takes one (about half a minute), or import a DriverScout JSON file from More.";
     }
 
     private void ApplyTheme()
@@ -1857,10 +1853,11 @@ public sealed class MainForm : Form
         _tabs.ForeColor = AppTheme.Text;
         _log.BackColor = AppTheme.Surface;
         _log.ForeColor = AppTheme.Text;
-        _quickFacts.BackColor = AppTheme.Surface;
-        _inspectLink.LinkColor = AppTheme.Accent;
-        _inspectLink.ActiveLinkColor = AppTheme.Good;
-        _inspectLink.VisitedLinkColor = AppTheme.Accent;
+        _cpuGauge.Accent = AppTheme.Accent;
+        _memoryGauge.Accent = AppTheme.Accent;
+        _tempGauge.Accent = AppTheme.Good;
+        _networkGauge.Accent = AppTheme.Purple;
+        foreach (var gauge in new[] { _cpuGauge, _memoryGauge, _tempGauge, _networkGauge }) gauge.Invalidate();
         _dataFolderLink.LinkColor = AppTheme.Muted;
         _dataFolderLink.ActiveLinkColor = AppTheme.Accent;
         _feedbackLink.LinkColor = AppTheme.Muted;
@@ -1871,20 +1868,17 @@ public sealed class MainForm : Form
             column.ActiveLinkColor = AppTheme.Good;
             column.VisitedLinkColor = AppTheme.Accent;
         }
-        _boardMap.RefreshTheme();
         _navigation.RefreshTheme();
         AppTheme.ApplyWindowTheme(this);
         _tabs.Invalidate();
 
         if (_scan is not null)
         {
-            BindMetrics();
-            BindQuickFacts();
             BindDrivers();
             BindStorage();
             BindSuggestions();
         }
-        ShowPartDetails(_currentPartDetails);
+        UpdateHealthChip();
     }
 
     private static void ApplyTaggedTheme(Control root)
@@ -1926,65 +1920,6 @@ public sealed class MainForm : Form
         foreach (Control child in root.Controls) ApplyTaggedTheme(child);
     }
 
-    private void ShowPartDetails(BoardPartDetails? details)
-    {
-        _currentPartDetails = details;
-        if (details is null)
-        {
-            _inspectCategory.Text = "INTERACTIVE MAP";
-            _inspectTitle.Text = "Hover over a component";
-            _inspectStatus.Text = "Live telemetry ready";
-            _inspectDetail.Text = "Move over the CPU, memory, graphics, drives, ports, or open slots.";
-            _inspectCapability.Text = "BoardScout will explain current status, measured usage where available, and what each part is suited to doing.";
-            _inspectLink.Visible = false;
-            _inspectLink.Tag = null;
-            SetInspectorTone(PartStatusTone.Info);
-            return;
-        }
-
-        _inspectCategory.Text = details.Category;
-        _inspectTitle.Text = details.Title;
-        _inspectStatus.Text = details.Status;
-        _inspectDetail.Text = details.Detail;
-        _inspectCapability.Text = details.Capability;
-        _inspectLink.Tag = details.OfficialUrl;
-        _inspectLink.Visible = !string.IsNullOrWhiteSpace(details.OfficialUrl);
-        SetInspectorTone(details.Tone);
-    }
-
-    private void SetInspectorTone(PartStatusTone tone)
-    {
-        var foreground = tone switch
-        {
-            PartStatusTone.Good => AppTheme.Good,
-            PartStatusTone.Warning => AppTheme.Warning,
-            PartStatusTone.Critical => AppTheme.Critical,
-            PartStatusTone.Muted => AppTheme.Muted,
-            _ => AppTheme.Accent
-        };
-        var background = (tone, AppTheme.IsDark) switch
-        {
-            (PartStatusTone.Good, false) => Color.FromArgb(229, 244, 236),
-            (PartStatusTone.Good, true) => Color.FromArgb(24, 58, 46),
-            (PartStatusTone.Warning, false) => Color.FromArgb(251, 241, 226),
-            (PartStatusTone.Warning, true) => Color.FromArgb(65, 47, 24),
-            (PartStatusTone.Critical, false) => Color.FromArgb(251, 232, 234),
-            (PartStatusTone.Critical, true) => Color.FromArgb(68, 31, 37),
-            (PartStatusTone.Muted, false) => Color.FromArgb(237, 240, 243),
-            (PartStatusTone.Muted, true) => Color.FromArgb(38, 47, 57),
-            _ => AppTheme.AccentSoft
-        };
-        _inspectStatus.ForeColor = foreground;
-        _inspectStatus.PillColor = background;
-        _inspectStatus.Invalidate();
-        _inspectCategory.ForeColor = foreground;
-        if (_inspectPanel.Tint != foreground)
-        {
-            _inspectPanel.Tint = foreground;
-            _inspectPanel.Invalidate();
-        }
-    }
-
     private void StartTelemetry()
     {
         _telemetryCts?.Cancel();
@@ -2020,60 +1955,38 @@ public sealed class MainForm : Form
     private void ApplyTelemetry(SystemTelemetry telemetry)
     {
         _lastTelemetry = telemetry;
-        _boardMap.SetTelemetry(telemetry);
         var sensors = _telemetryService.SensorStatus;
-        var sensorHelp = sensors.MotherboardSensorsAvailable
-            ? null
-            : "CPU, VRM, and motherboard fan sensors need the PawnIO driver and administrator rights. " +
-              "Open the version button for details.";
 
-        if (telemetry.Thermals.Count > 0)
-        {
-            var parts = new List<string>();
-            foreach (var zone in new[] { "CPU", "GPU", "VRM" })
-            {
-                var reading = telemetry.Thermals.FirstOrDefault(t => t.Zone == zone);
-                if (reading is not null) parts.Add($"{zone} {reading.TemperatureCelsius:0}°");
-            }
-            if (parts.Count == 0) parts.Add($"{telemetry.Thermals[0].TemperatureCelsius:0}°C");
-            _tempTile.Value = string.Join(" · ", parts);
-            var hottest = telemetry.Thermals.Max(t => t.TemperatureCelsius);
-            _tempTile.ValueColor = hottest >= 90 ? AppTheme.Critical : hottest >= 75 ? AppTheme.Warning : null;
-        }
-        else
-        {
-            _tempTile.Value = sensors.Started ? "Unavailable" : "—";
-            _tempTile.ValueColor = sensors.Started ? AppTheme.Muted : null;
-        }
+        _cpuGauge.AddSample(telemetry.CpuUsagePercent);
+        _cpuGauge.Show("CPU load", $"{telemetry.CpuUsagePercent:0}%", tone: telemetry.CpuUsagePercent >= 90 ? AppTheme.Warning : null);
 
-        var activeFans = telemetry.Fans.Where(f => f.Rpm > 0).ToList();
-        if (activeFans.Count > 0)
-        {
-            _fanTile.Value = string.Join(" · ", activeFans.Select(f => $"{f.Name} {f.Rpm}"));
-            _fanTile.ValueColor = null;
-        }
-        else if (sensors.MotherboardSensorsAvailable && telemetry.Fans.Count > 0)
-        {
-            // Board fan headers are readable and every one reads 0 RPM: worth a warning.
-            _fanTile.Value = "Fans stopped";
-            _fanTile.ValueColor = AppTheme.Warning;
-        }
-        else
-        {
-            // Without PawnIO only the GPU fan is visible, and it idles at 0 RPM by design.
-            _fanTile.Value = !sensors.Started ? "—"
-                : !sensors.PawnIoInstalled ? "Needs PawnIO"
-                : !sensors.Elevated ? "Needs admin"
-                : "N/A";
-            _fanTile.ValueColor = sensors.Started ? AppTheme.Muted : null;
-        }
-        _toolTip.SetToolTip(_tempTile, sensorHelp);
-        _toolTip.SetToolTip(_fanTile, sensorHelp);
+        var totalGb = telemetry.MemoryTotalBytes / 1_073_741_824d;
+        var memory = totalGb > 0 ? telemetry.MemoryUsedGb / totalGb : 0;
+        _memoryGauge.Show("Memory", $"{telemetry.MemoryUsedGb:0.0}", $"/ {totalGb:0.#} GB", (float)memory,
+            memory >= 0.92 ? AppTheme.Critical : memory >= 0.8 ? AppTheme.Warning : null);
 
-        var netDown = telemetry.NetworkReceivedBytesPerSec;
-        _networkTile.Value = $"{FormatRate(netDown)}↓  {FormatRate(telemetry.NetworkSentBytesPerSec)}↑";
-        _networkTile.ValueColor = netDown > 100_000_000 ? AppTheme.Warning : null;
+        // The CPU's temperature when the sensors can read it, else the graphics card's.
+        var reading = telemetry.Thermals.FirstOrDefault(t => t.Zone == "CPU") ?? telemetry.Thermals.FirstOrDefault(t => t.Zone == "GPU") ??
+                      telemetry.Thermals.FirstOrDefault();
+        if (reading is not null)
+        {
+            var celsius = reading.TemperatureCelsius;
+            _tempGauge.Show($"{(reading.Zone is "CPU" or "GPU" or "VRM" ? reading.Zone : "Board")} temp", $"{celsius:0}°C", "",
+                (float)(celsius / 100), celsius >= 90 ? AppTheme.Critical : celsius >= 75 ? AppTheme.Warning : AppTheme.Good);
+        }
+        else _tempGauge.Show("Temperature", sensors.Started ? "Not reported" : "—", "", 0);
+        _toolTip.SetToolTip(_tempGauge, sensors.MotherboardSensorsAvailable ? null :
+            "CPU, VRM, and motherboard fan sensors need the PawnIO driver and administrator rights. Open the version button for details.");
+
+        var down = telemetry.NetworkReceivedBytesPerSec;
+        var up = telemetry.NetworkSentBytesPerSec;
+        _networkGauge.AddSample(down + up);
+        _networkGauge.Show("Network", $"↓ {FormatRate(down)}", $"↑ {FormatRate(up)}", tone: down > 100_000_000 ? AppTheme.Warning : null);
+
         PostConnectionFlow(telemetry);
+        if (OverviewVisible) PostOverviewTelemetry(telemetry);
+        // Board fan readings appear once PawnIO and administrator rights let the sensors read them.
+        if (_overviewFans >= 0 && BoardFans(telemetry) != _overviewFans) _ = PostOverviewAsync();
     }
 
     private static string FormatRate(double bytesPerSec)

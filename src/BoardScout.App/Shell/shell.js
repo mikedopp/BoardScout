@@ -1,6 +1,6 @@
 // BoardScout's browser dashboard shell: the Linux edition, and Windows PCs reached over SSH or served with
 // --serve. One event stream from the server feeds the shell and, through postMessage, the shared views in their
-// frames (Topology, Connections, System, Machines).
+// frames (Overview, Topology, Connections, System, Machines).
 'use strict';
 
 const $ = id => document.getElementById(id);
@@ -21,12 +21,17 @@ function sv(tag, attrs, parent) {
 const state = {
   client: '', settings: null, meta: null, overview: null, telemetry: null, flow: null,
   firmware: null, firmwareBusy: false, log: [], tab: 'overview', frames: {},
-  zoom: 1, panX: 0, panY: 0, selected: null, driverFilter: 'All', badge: null, reading: true,
-  platform: '', agent: false, driverCheck: null
+  driverFilter: 'All', badge: null, reading: true, platform: '', agent: false, driverCheck: null,
+  history: { cpu: [], net: [] }
 };
 const windows = () => state.platform === 'windows';
-// The views' bridge reads the client id from here, so the server knows which dashboard a request came from.
-window.BoardScoutShell = { get client() { return state.client; } };
+// The views' bridge reads the client id from here, so the server knows which dashboard a request came from;
+// the Overview frame opens other tabs and the Connections map through it.
+window.BoardScoutShell = {
+  get client() { return state.client; },
+  showOnMap: id => showOnMap(id),
+  setTab: name => setTab(name)
+};
 
 function post(view, message) {
   return fetch('/api/msg/' + view, {
@@ -143,7 +148,6 @@ function handle(message) {
       setStatus(`Read at ${message.data.gatheredAt} in ${message.data.gatheredMs} ms`);
       break;
     case 'telemetry': state.telemetry = message.data; renderTelemetry(); break;
-    case 'flow': state.flow = message.data; renderFlow(); break;
     case 'log': state.log = message.lines || []; renderLog(true); break;
     case 'logline':
       state.log.push(message.line);
@@ -240,262 +244,72 @@ function slider(id, toChange) {
   });
 }
 
-// ---- Telemetry tiles ----------------------------------------------------------------------------------
+// ---- Live gauges ---------------------------------------------------------------------------------------
 
-function tile(id, value, tone, key) {
+function gauge(id, value, tone, key, fraction) {
   const t = $(id);
-  t.querySelector('.v').textContent = value;
+  const v = t.querySelector('.v');
+  if (value instanceof Node) v.replaceChildren(value); else v.textContent = value;
   if (key) t.querySelector('.k').textContent = key;
   t.classList.remove('good', 'warn', 'bad');
   if (tone) t.classList.add(tone);
+  const meter = t.querySelector('.meter i');
+  if (meter && fraction != null) meter.style.width = Math.round(Math.max(0, Math.min(1, fraction)) * 100) + '%';
+}
+
+// A sparkline of the last minute or so, scaled to its own peak (with a floor so quiet links stay flat).
+function spark(id, values, floor) {
+  const svg = $(id).querySelector('.spark');
+  if (!svg || values.length < 2) return;
+  const max = Math.max(floor, ...values);
+  const step = 100 / (values.length - 1);
+  const points = values.map((v, i) => `${(i * step).toFixed(1)},${(25 - (v / max) * 23).toFixed(1)}`);
+  svg.querySelector('.stroke').setAttribute('d', 'M' + points.join(' L'));
+  svg.querySelector('.area').setAttribute('d', `M0,26 L${points.join(' L')} L100,26 Z`);
+}
+function remember(list, value) { list.push(value); if (list.length > 40) list.shift(); }
+function withUnit(value, unit) {
+  const span = el('span', null, value);
+  span.append(' ', el('small', null, unit));
+  return span;
 }
 
 function renderTelemetry() {
   const t = state.telemetry;
   if (!t) return;
-  tile('tMem', `${t.memoryUsedGb.toFixed(1)} / ${t.memoryTotalGb.toFixed(1)} GB`, t.memoryUsedGb / t.memoryTotalGb > .9 ? 'warn' : null);
-  tile('tCpu', `${Math.round(t.cpu)}%`, t.cpu > 90 ? 'warn' : null);
-  if (t.cpuTemp != null) tile('tTemp', `${Math.round(t.cpuTemp)}°C`, t.cpuTemp >= 95 ? 'bad' : t.cpuTemp >= 85 ? 'warn' : 'good', 'CPU temp');
-  else if (t.gpuTemp != null) tile('tTemp', `${Math.round(t.gpuTemp)}°C`, null, 'GPU temp');
-  else tile('tTemp', 'Not reported', null, 'Temperature');
-  if (t.fans?.length) {
-    const spinning = t.fans.filter(f => f.rpm > 0);
-    tile('tFans', spinning.length ? `${spinning[0].rpm} RPM${t.fans.length > 1 ? ` +${t.fans.length - 1}` : ''}` : 'Stopped', null, t.fans.length === 1 ? 'Fan' : 'Fans');
-  } else tile('tFans', 'Not reported', null, 'Fans');
-  tile('tNet', `${fmtBits(t.netIn)}↓ ${fmtBits(t.netOut)}↑`, null);
-  // The board's live labels.
-  const cpuLive = document.getElementById('liveCpu');
-  if (cpuLive) cpuLive.textContent = `${Math.round(t.cpu)}% load${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}`;
-  const memLive = document.getElementById('liveMem');
-  if (memLive) memLive.textContent = `MEMORY · ${t.memoryUsedGb.toFixed(1)} / ${t.memoryTotalGb.toFixed(1)} GB live`;
-  const chipLive = document.getElementById('liveChipset');
-  if (chipLive && t.chipsetTemp != null) chipLive.textContent = `${Math.round(t.chipsetTemp)}°C`;
-  for (const fan of t.fans || []) {
-    const node = document.querySelector(`[data-live="fan:${CSS.escape(fan.name)}"] .live`);
-    if (node) node.textContent = `${fan.rpm} RPM`;
-  }
+  remember(state.history.cpu, t.cpu);
+  remember(state.history.net, (t.netIn || 0) + (t.netOut || 0));
+  gauge('tCpu', `${Math.round(t.cpu)}%`, t.cpu > 90 ? 'warn' : null);
+  spark('tCpu', state.history.cpu, 25);
+  gauge('tMem', withUnit(t.memoryUsedGb.toFixed(1), `/ ${t.memoryTotalGb.toFixed(1)} GB`), t.memoryUsedGb / t.memoryTotalGb > .9 ? 'warn' : null, null,
+    t.memoryUsedGb / t.memoryTotalGb);
+  const temp = t.cpuTemp ?? t.gpuTemp;
+  if (temp != null) gauge('tTemp', `${Math.round(temp)}°C`, temp >= 95 ? 'bad' : temp >= 85 ? 'warn' : 'good', t.cpuTemp != null ? 'CPU temp' : 'GPU temp', temp / 100);
+  else gauge('tTemp', 'Not reported', null, 'Temperature', 0);
+  gauge('tNet', `↓ ${fmtBits(t.netIn)}  ↑ ${fmtBits(t.netOut)}`, null);
+  spark('tNet', state.history.net, 12500);
 }
 
-// ---- Overview --------------------------------------------------------------------------------------------
-
-const KIND_LABEL = {
-  cpu: 'Processor', dimm: 'Memory slot', memory: 'Memory', gpu: 'Graphics', nvme: 'NVMe SSD', disk: 'SATA drive',
-  sata: 'SATA controller', 'usb-controller': 'USB controller', ethernet: 'Ethernet', wifi: 'Wi-Fi', audio: 'Audio',
-  bluetooth: 'Bluetooth', chipset: 'Chipset', monitor: 'Display outputs', fan: 'Fan', slot: 'PCIe lanes', device: 'Device', optical: 'Optical drive'
-};
-const KIND_COLOR = {
-  cpu: '#3d9eff', dimm: '#a3e635', memory: '#a3e635', gpu: '#a78bfa', nvme: '#10b981', disk: '#fb923c', optical: '#fb923c',
-  sata: '#fb923c', 'usb-controller': '#2dd4bf', ethernet: '#10b981', wifi: '#34d399', audio: '#f472b6', bluetooth: '#818cf8',
-  chipset: '#a78bfa', monitor: '#f472b6', fan: '#2dd4bf', slot: '#4a6080', device: '#8a9bb2'
-};
+// ---- Overview (the board itself is the shared view in its frame) ---------------------------------------------
 
 function renderOverview() {
   const o = state.overview;
   $('title').textContent = o.title;
   document.title = `BoardScout · ${o.title}`;
   $('subtitle').textContent = o.subtitle;
-  const used = o.dataUsedTb >= 1 ? `${o.dataUsedTb.toFixed(1)} TB` : `${Math.round(o.dataUsedTb * 1000)} GB`;
-  tile('tData', used, null);
-  const fixes = o.suggestions.filter(s => s.severity !== 'info').length;
-  tile('tUpdates', fixes ? String(fixes) : 'None', fixes ? 'warn' : 'good', fixes === 1 ? 'Fix' : 'Fixes');
-  renderBoard();
-  renderDetails();
+  renderHealth();
   renderDrivers();
   renderStorage();
   renderSuggestions();
-  if (state.selected) {
-    const part = o.parts.find(p => p.id === state.selected);
-    if (part) inspect(part, true);
-  }
 }
 
-function renderDetails() {
-  const table = $('details');
-  table.replaceChildren();
-  for (const f of state.overview.details) {
-    const tr = el('tr');
-    tr.append(el('td', null, f.label), el('td', null, f.value));
-    table.append(tr);
-  }
-}
-
-// Lays the parts out like a board: rear I/O on the left, the CPU with its memory, PCIe lanes and M.2 below,
-// the chipset and SATA ports on the right. Positions are schematic; only what Linux reports is drawn.
-function renderBoard() {
+// One chip in the header for what the Efficiency tab found; the Overview's panel lists the items.
+function renderHealth() {
   const o = state.overview;
-  const svg = $('board');
-  svg.replaceChildren();
-  const parts = o.parts;
-  const zone = z => parts.filter(p => p.zone === z);
-  const pos = new Map();
-
-  let ioY = 96;
-  for (const p of zone('io')) { pos.set(p.id, { x: 44, y: ioY, w: 240, h: 58 }); ioY += 68; }
-  const cpu = parts.find(p => p.kind === 'cpu');
-  if (cpu) pos.set(cpu.id, { x: 330, y: 96, w: 300, h: 176 });
-  let cy = 284;
-  for (const p of zone('cpu').filter(p => p !== cpu)) { pos.set(p.id, { x: 330, y: cy, w: 300, h: 50 }); cy += 60; }
-  const dimms = zone('memory');
-  const dw = dimms.length > 6 ? 22 : dimms.length > 4 ? 28 : 36;
-  dimms.forEach((p, i) => pos.set(p.id, { x: 672 + i * (dw + 12), y: 104, w: dw, h: 214 }));
-  const memRight = 672 + Math.max(1, dimms.length) * (dw + 12);
-  let fy = 96;
-  const fanX = Math.max(memRight + 24, 900);
-  for (const p of zone('fans')) { pos.set(p.id, { x: fanX, y: fy, w: 1090 - fanX, h: 34 }); fy += 42; }
-  let sy = Math.max(cy, 344) + 18;
-  for (const p of [...zone('m2'), ...zone('slots')]) {
-    const lanes = p.width || 4;
-    const w = lanes >= 16 ? 500 : lanes >= 8 ? 420 : lanes >= 4 ? 340 : 250;
-    pos.set(p.id, { x: 330, y: sy, w, h: 48 });
-    sy += 58;
-  }
-  const chip = zone('chipset')[0];
-  const chipY = Math.max(352, fy + 10);
-  if (chip) pos.set(chip.id, { x: 880, y: chipY, w: 210, h: 112 });
-  let sataY = chip ? chipY + 136 : chipY;
-  for (const p of zone('sata')) { pos.set(p.id, { x: 880, y: sataY, w: 210, h: 48 }); sataY += 56; }
-  const height = Math.max(ioY, sy, sataY, fy, 420) + 40;
-  svg.setAttribute('viewBox', `0 0 1120 ${height}`);
-  $('boardWrap').style.aspectRatio = `1120 / ${height}`;
-
-  const defs = sv('defs', null, svg);
-  const pcb = sv('linearGradient', { id: 'pcb', x1: 0, y1: 0, x2: 1, y2: 1 }, defs);
-  sv('stop', { offset: 0, 'stop-color': '#0d1b28' }, pcb);
-  sv('stop', { offset: 1, 'stop-color': '#091219' }, pcb);
-  const glassFill = sv('linearGradient', { id: 'glassFill', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
-  sv('stop', { offset: 0, 'stop-color': '#fff', 'stop-opacity': .1 }, glassFill);
-  sv('stop', { offset: .55, 'stop-color': '#fff', 'stop-opacity': .02 }, glassFill);
-  sv('stop', { offset: 1, 'stop-color': '#000', 'stop-opacity': .16 }, glassFill);
-
-  const viewport = sv('g', { id: 'vp' }, svg);
-  sv('rect', { x: 20, y: 20, width: 1080, height: height - 40, rx: 24, fill: 'url(#pcb)', stroke: 'rgba(255,255,255,.08)' }, viewport);
-  sv('text', { x: 44, y: 58, fill: '#3d9eff', 'font-size': 12, 'font-weight': 700, 'letter-spacing': '.12em' }, viewport).textContent =
-    `BOARD LAYOUT · AS ${windows() ? 'WINDOWS' : 'LINUX'} REPORTS IT`;
-  sv('text', { x: 1076, y: 58, fill: '#c9d6e6', 'font-size': 14, 'font-weight': 600, 'text-anchor': 'end' }, viewport).textContent = `${o.title} · ${o.formFactor}`;
-  if (dimms.length) {
-    const mem = sv('text', { x: 672, y: 92, fill: '#bef264', 'font-size': 12, 'font-weight': 600, id: 'liveMem' }, viewport);
-    mem.textContent = 'MEMORY';
-  }
-  if (zone('io').length) sv('text', { x: 44, y: 86, fill: '#5a7090', 'font-size': 11, 'font-weight': 700, 'letter-spacing': '.12em' }, viewport).textContent = 'I/O AND ONBOARD';
-  if (zone('sata').length) sv('text', { x: 1090, y: sataY - zone('sata').length * 56 - 8, fill: '#fdba74', 'font-size': 11, 'font-weight': 700, 'letter-spacing': '.1em', 'text-anchor': 'end' }, viewport).textContent = 'SATA PORTS';
-
-  // Traces: the CPU's memory bus, its lanes, the chipset link, and the chipset's own connections.
-  const traces = sv('g', null, viewport);
-  const motion = state.settings?.motion !== false;
-  const trace = (d, color, flow) => {
-    sv('path', { d, class: 'trace', stroke: color }, traces);
-    if (flow && motion) sv('path', { d, class: 'trace flow', stroke: color }, traces);
-  };
-  const cpuBox = cpu && pos.get(cpu.id);
-  if (cpuBox && dimms.length) trace(`M${cpuBox.x + cpuBox.w},${cpuBox.y + 60} H${memRight - 6}`, '#a3e635', true);
-  const chipBox = chip && pos.get(chip.id);
-  if (cpuBox && chipBox) trace(`M${cpuBox.x + cpuBox.w},${cpuBox.y + cpuBox.h - 30} H${chipBox.x + chipBox.w / 2} V${chipBox.y}`, '#a78bfa', true);
-  for (const p of [...zone('m2'), ...zone('slots')]) {
-    const r = pos.get(p.id);
-    const cpuSide = /· CPU$/.test(p.detail || '');
-    if (cpuSide && cpuBox) trace(`M${cpuBox.x + 18},${cpuBox.y + cpuBox.h} V${r.y + r.h / 2} H${r.x + 6}`, p.empty ? '#4a6080' : '#3d9eff', !p.empty);
-    else if (chipBox) trace(`M${chipBox.x},${chipBox.y + chipBox.h - 20} H${r.x + r.w + 18} V${r.y + r.h / 2} H${r.x + r.w - 4}`, p.empty ? '#4a6080' : '#a78bfa', false);
-  }
-  if (chipBox) for (const p of zone('sata')) {
-    const r = pos.get(p.id);
-    trace(`M${chipBox.x + 14},${chipBox.y + chipBox.h} V${r.y + r.h / 2} H${r.x + 4}`, '#fb923c', false);
-  }
-  if (zone('io').length && (chipBox || cpuBox)) {
-    const bus = 300;
-    const io = zone('io').map(p => pos.get(p.id));
-    for (const r of io) trace(`M${r.x + r.w - 4},${r.y + r.h / 2} H${bus}`, '#2dd4bf', false);
-    const target = chipBox ? `V${height - 34} H${chipBox.x - 24} V${chipBox.y + 60} H${chipBox.x + 4}` : `V${cpuBox.y + 30} H${cpuBox.x + 4}`;
-    trace(`M${bus},${io[0].y + io[0].h / 2} V${io[io.length - 1].y + io[io.length - 1].h / 2} ${target}`, '#2dd4bf', true);
-  }
-
-  const layer = sv('g', null, viewport);
-  for (const p of parts) {
-    const r = pos.get(p.id);
-    if (r) drawPart(layer, p, r);
-  }
-  applyTransform();
-}
-
-function drawPart(layer, p, r) {
-  const color = p.tone === 'warn' ? '#f59e0b' : KIND_COLOR[p.kind] || '#3d9eff';
-  const g = sv('g', {
-    class: 'part' + (p.empty ? ' empty' : '') + (state.selected === p.id ? ' sel' : ''),
-    tabindex: 0, role: 'button', 'aria-label': `${KIND_LABEL[p.kind] || p.kind}: ${p.name}. ${p.detail || ''}`,
-    transform: `translate(${r.x},${r.y})`, 'data-live': p.live, 'data-id': p.id
-  }, layer);
-  const face = sv('g', { class: 'face' }, g);
-  const radius = p.kind === 'cpu' ? 18 : p.kind === 'dimm' ? 7 : 12;
-  sv('rect', { width: r.w, height: r.h, rx: radius, fill: '#0c1620', 'fill-opacity': p.empty ? .5 : 1 }, face);
-  sv('rect', { class: 'edge', width: r.w, height: r.h, rx: radius, fill: 'url(#glassFill)', stroke: p.empty ? '#4a6080' : color, 'stroke-width': p.kind === 'cpu' ? 2 : 1.5, 'stroke-opacity': .9 }, face);
-  if (p.kind === 'dimm') {
-    const label = sv('text', { x: r.w / 2, y: r.h / 2, fill: p.empty ? '#8a9bb2' : '#ecfccb', 'font-size': 12.5, 'font-weight': 600, 'text-anchor': 'middle', transform: `rotate(-90 ${r.w / 2} ${r.h / 2})` }, g);
-    label.textContent = p.name;
-    sv('text', { x: r.w / 2, y: r.h + 16, fill: '#8a9bb2', 'font-size': 10.5, 'text-anchor': 'middle' }, g).textContent = (p.detail || '').slice(0, 8);
-  } else {
-    const big = p.kind === 'cpu' || p.kind === 'chipset';
-    const name = sv('text', { x: big ? r.w / 2 : 14, y: big ? r.h / 2 - 10 : 22, fill: '#e8edf4', 'font-size': big ? 17 : 13, 'font-weight': 600, 'text-anchor': big ? 'middle' : 'start' }, g);
-    name.textContent = clip(p.name, big ? r.w - 30 : r.w - 24, big ? 9 : 7.4);
-    const detail = sv('text', { x: big ? r.w / 2 : 14, y: big ? r.h / 2 + 14 : 40, fill: '#8a9bb2', 'font-size': big ? 12.5 : 11, 'text-anchor': big ? 'middle' : 'start', class: 'detail' }, g);
-    detail.textContent = clip(p.detail || '', big ? r.w - 30 : r.w - 24, 6.3);
-    if (p.kind === 'cpu') {
-      const live = sv('text', { x: r.w / 2, y: r.h - 22, fill: '#7cc4ff', 'font-size': 12.5, 'text-anchor': 'middle', id: 'liveCpu' }, g);
-      live.textContent = '';
-      sv('rect', { x: 20, y: r.h - 12, width: r.w - 40, height: 4, rx: 2, fill: 'rgba(255,255,255,.08)' }, g);
-      sv('rect', { x: 20, y: r.h - 12, width: 0, height: 4, rx: 2, fill: '#3d9eff', id: 'cpuBar' }, g);
-    } else if (p.kind === 'chipset') {
-      sv('text', { x: r.w / 2, y: r.h - 14, fill: '#c4b5fd', 'font-size': 12, 'text-anchor': 'middle', id: 'liveChipset' }, g);
-    } else if (p.live && (p.live.startsWith('disk:') || p.live.startsWith('net:') || p.live.startsWith('fan:'))) {
-      sv('text', { x: r.w - 12, y: 22, fill: '#2dd4bf', 'font-size': 11, 'text-anchor': 'end', class: 'live' }, g);
-    }
-  }
-  g.addEventListener('mouseenter', () => inspect(p));
-  g.addEventListener('focus', () => inspect(p));
-  g.addEventListener('click', e => { e.stopPropagation(); select(p); });
-  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(p); } });
-}
-
-function clip(text, width, charWidth) {
-  const max = Math.max(4, Math.floor(width / charWidth));
-  return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
-}
-
-function select(p) {
-  state.selected = p.id;
-  for (const g of document.querySelectorAll('#board .part')) g.classList.toggle('sel', g.dataset.id === p.id);
-  inspect(p, true);
-}
-
-function inspect(p, pinned) {
-  if (state.selected && !pinned && state.selected !== p.id) return;
-  const box = $('inspect');
-  box.replaceChildren();
-  const kind = el('div', 'eyebrow', KIND_LABEL[p.kind] || 'Part');
-  kind.style.color = KIND_COLOR[p.kind] || '';
-  box.append(kind, el('h3', null, p.name));
-  const chipText = p.tone === 'warn' ? 'Needs attention' : p.empty ? 'Open' : p.tone === 'good' ? 'Working' : 'Reported';
-  box.append(el('span', 'status-chip ' + (p.tone === 'warn' ? 'warn' : p.empty ? 'open' : 'good'), chipText));
-  if (p.detail) box.append(el('p', 'muted', p.detail));
-  if (p.facts?.length) {
-    const table = el('table', 'facts');
-    for (const f of p.facts) {
-      const tr = el('tr');
-      tr.append(el('td', null, f.label), el('td', null, f.value));
-      table.append(tr);
-    }
-    box.append(table);
-  }
-  if (p.node) {
-    const show = el('button', 'btn small', 'Show on the Connections map');
-    show.style.marginTop = '12px';
-    show.onclick = () => showOnMap(p.node);
-    box.append(show);
-  }
-  if (state.selected) {
-    const clear = el('button', 'btn small', 'Unpin');
-    clear.style.margin = '12px 0 0 8px';
-    clear.onclick = () => { state.selected = null; for (const g of document.querySelectorAll('#board .part.sel')) g.classList.remove('sel'); };
-    box.append(clear);
-  }
+  const items = o.suggestions.filter(s => s.severity !== 'info').length + o.parts.filter(p => p.tone === 'warn' && !o.suggestions.some(s => s.title.includes(p.name))).length;
+  const chip = $('healthChip');
+  chip.className = items ? 'warn' : 'good';
+  chip.textContent = items ? (items === 1 ? 'One thing worth a look' : `${items} things worth a look`) : 'Healthy';
 }
 
 // Opens Connections and highlights the card, once the map has drawn it.
@@ -510,81 +324,6 @@ function showOnMap(id) {
     if (--tries > 0) setTimeout(attempt, 300);
   };
   attempt();
-}
-
-function renderFlow() {
-  const flow = state.flow;
-  if (!flow) return;
-  for (const g of document.querySelectorAll('#board .part[data-live]')) {
-    const live = g.dataset.live;
-    const label = g.querySelector('.live');
-    if (live.startsWith('disk:')) {
-      const d = flow.disk?.[live.slice(5)];
-      const rate = d ? d[0] + d[1] : 0;
-      g.classList.toggle('busy', rate > 1024);
-      if (label) label.textContent = rate > 1024 ? `R ${fmtRate(d[0])} · W ${fmtRate(d[1])}` : '';
-    } else if (live.startsWith('net:')) {
-      const n = flow.net?.[live.slice(4)];
-      const rate = n ? n[0] + n[1] : 0;
-      g.classList.toggle('busy', rate > 2048);
-      if (label) label.textContent = rate > 2048 ? `↓${fmtBits(n[0])} ↑${fmtBits(n[1])}` : '';
-    }
-  }
-  const bar = document.getElementById('cpuBar');
-  const cpuPart = state.overview?.parts.find(p => p.kind === 'cpu');
-  if (bar && cpuPart) bar.setAttribute('width', String(Math.max(0, Math.min(1, flow.cpu / 100)) * (300 - 40)));
-}
-
-// ---- Zoom and pan ----------------------------------------------------------------------------------------
-
-function applyTransform() {
-  const vp = document.getElementById('vp');
-  if (vp) vp.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
-  $('zoomReset').textContent = Math.round(state.zoom * 100) + '%';
-}
-function zoomBy(factor, cx = 560, cy = 300) {
-  const next = Math.max(.5, Math.min(3, state.zoom * factor));
-  state.panX = cx - (cx - state.panX) * (next / state.zoom);
-  state.panY = cy - (cy - state.panY) * (next / state.zoom);
-  state.zoom = next;
-  applyTransform();
-}
-function setupBoardControls() {
-  const wrap = $('boardWrap');
-  const svg = $('board');
-  const toBoard = (clientX, clientY) => {
-    const point = svg.createSVGPoint();
-    point.x = clientX;
-    point.y = clientY;
-    const matrix = svg.getScreenCTM();
-    return matrix ? point.matrixTransform(matrix.inverse()) : { x: 560, y: 300 };
-  };
-  wrap.addEventListener('wheel', e => {
-    e.preventDefault();
-    const p = toBoard(e.clientX, e.clientY);
-    zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, p.x, p.y);
-  }, { passive: false });
-  let drag = null;
-  wrap.addEventListener('pointerdown', e => {
-    if (e.button !== 0) return;
-    drag = { x: e.clientX, y: e.clientY, panX: state.panX, panY: state.panY, moved: false };
-  });
-  window.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const matrix = svg.getScreenCTM();
-    const scale = matrix ? matrix.a : 1;
-    const dx = (e.clientX - drag.x) / scale, dy = (e.clientY - drag.y) / scale;
-    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-    drag.moved = true;
-    wrap.classList.add('dragging');
-    state.panX = drag.panX + dx;
-    state.panY = drag.panY + dy;
-    applyTransform();
-  });
-  window.addEventListener('pointerup', () => { drag = null; wrap.classList.remove('dragging'); });
-  $('zoomIn').onclick = () => zoomBy(1.2);
-  $('zoomOut').onclick = () => zoomBy(1 / 1.2);
-  $('zoomReset').onclick = () => { state.zoom = 1; state.panX = 0; state.panY = 0; applyTransform(); };
 }
 
 // ---- Drivers, storage, efficiency ------------------------------------------------------------------------
@@ -908,13 +647,8 @@ function init() {
     closePop();
   };
   $('dataFolderBtn').onclick = () => state.meta && copy(state.meta.dataFolder, 'Data folder path');
+  $('healthChip').onclick = () => setTab('efficiency');
   $('driverSearch').addEventListener('input', renderDrivers);
-  setupBoardControls();
-  $('boardWrap').addEventListener('click', e => {
-    if (e.target.closest('.part')) return;
-    state.selected = null;
-    for (const g of document.querySelectorAll('#board .part.sel')) g.classList.remove('sel');
-  });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && $('popout').classList.contains('open')) { closePop(); return; }

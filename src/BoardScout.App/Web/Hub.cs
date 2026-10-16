@@ -32,7 +32,7 @@ internal sealed record AgentInfo(string Label);
 /// </summary>
 internal sealed partial class Hub
 {
-    private static readonly string[] SettingsViews = ["shell", "connections", "system", "topology", "machines"];
+    private static readonly string[] SettingsViews = ["shell", "overview", "connections", "system", "topology", "machines"];
 
     private readonly ConcurrentDictionary<string, Client> _clients = new();
     private readonly ConcurrentDictionary<string, string> _payloads = new();
@@ -108,6 +108,13 @@ internal sealed partial class Hub
     {
         _payloads[view] = json;
         Broadcast(view, json);
+    }
+
+    // The Overview's payload feeds the board view and the shell's own tabs (Drivers, Storage, Efficiency, header).
+    private void PublishOverview(string json)
+    {
+        Publish("shell", json);
+        Publish("overview", json);
     }
 
     // ---- Log ---------------------------------------------------------------------------------------
@@ -207,6 +214,7 @@ internal sealed partial class Hub
             }
             if (_payloads.TryGetValue(view, out var payload)) Send(client, view, payload);
             else if (view == "system" && HasReading) _ = LoadSystemAsync();
+            if (view == "overview" && _lastHeader is not null) Send(client, "overview", _lastHeader);
             return;
         }
 
@@ -303,9 +311,10 @@ internal sealed partial class Hub
                 if (header is null) continue;
                 _lastHeader = header;
                 Broadcast("shell", header, c => !c.Hidden);
+                Broadcast("overview", header, c => !c.Hidden && c.ActiveTab == "overview");
                 if (flowJson is null) continue;
                 Broadcast("connections", flowJson, c => !c.Hidden && c.ActiveTab == "connections");
-                Broadcast("shell", $"{{\"type\":\"flow\",\"data\":{flowJson}}}", c => !c.Hidden && c.ActiveTab == "overview");
+                Broadcast("overview", $"{{\"type\":\"flow\",\"data\":{flowJson}}}", c => !c.Hidden && c.ActiveTab == "overview");
             }
             catch (OperationCanceledException)
             {

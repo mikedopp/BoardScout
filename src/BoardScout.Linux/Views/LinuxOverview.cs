@@ -22,7 +22,11 @@ internal static class LinuxOverview
             $"{cpu.Cores}C/{cpu.Threads}T",
             distro.PrettyName
         });
-        var parts = BoardParts(capture, map, privacy);
+        // A board BoardScout knows slot by slot gets its real labels, empty slots, ports, and headers.
+        var profile = BoardProfiles.Apply($"{title} {capture.Identity.Board}", BoardParts(capture, map, privacy),
+            "No reading: Linux reports no fan speed for this header (the board's sensor chip needs a hwmon driver).",
+            capture.Memory.Firmware.MemorySlots.Sum(s => s.SizeMb) / 1024d);
+        var parts = profile.Parts;
         var (total, _, _, _) = Cpu.ReadMemory();
         var used = capture.Volumes.Sum(v => v.SizeBytes - v.FreeBytes);
         var details = new List<Fact>();
@@ -64,7 +68,9 @@ internal static class LinuxOverview
             Math.Round(used / 1e12, 2),
             null,
             capture.At.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
-            capture.CaptureMs);
+            capture.CaptureMs,
+            profile.Layout,
+            profile.Notes);
     }
 
     /// <summary>

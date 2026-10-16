@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.2.0 — 2026-10-15
+
+A new Overview, and a quieter header and rail.
+
+### Changed
+- **Overview, redrawn.** The board now looks like a board: solder mask, mounting holes, the socket and memory
+  slots, the M.2 and PCIe slots top to bottom, the chipset with its SATA ports, and the headers along the edge.
+  Parts are colored by whose lanes feed them (blue for the CPU, violet for the chipset), dashed when empty, with
+  an amber dot when something is worth a look. Lane widths sit on each slot; CPU load and temperature, memory in
+  use, the chipset and graphics temperatures, the graphics card's power, and drive and network traffic update live.
+  - The panel beside it opens on **At a glance**: healthy, or what is worth a look (click one to find it on the
+    board), notes about the board, the system's details, and how old the parts are. Hover a part for its status,
+    its details, and a plain sentence on what it suits; click to pin it; Esc or a click on the board goes back.
+  - **ASRock B550M Steel Legend**: every slot, port, and header carries the name printed on the board (M2_1,
+    PCIE3, SATA3_2, CHA_1…), empty ones included; a drive in M2_2 shows SATA3_5 and SATA3_6 as off; the Wi-Fi
+    card shows in M2_3 under its own name.
+  - The Windows app and the browser dashboard (Linux edition, `--serve`, Machines) now show the same Overview:
+    the shared view `Assets/overview.html`, fed the same payload. The Windows app's own GDI board map is gone.
+- **Header**: four live gauges (CPU load and network with a sparkline of the last 40 readings, memory and
+  temperature with a meter) instead of seven tiles, and a chip that says *Healthy* or how many things are worth a
+  look (it opens Efficiency). One primary button (Scan now); driver checks and downloads moved into a **Drivers**
+  menu, import and export into **More**. The browser dashboard's header matches.
+- **Navigation rail**: slimmer, an icon per screen, what each screen does as its tooltip, and a keyboard focus
+  ring. The permanent intro and Quick start text are gone; Quick start moved to Help in the browser dashboard.
+- **Efficiency** in the Windows app lists the same items as the Overview and the browser dashboard: the
+  optimization plan's fixes plus the inventory's suggestions.
+
+### Added
+- `BoardScout.exe --snapshot DIR` renders the window off-screen (glass on, a part pinned, glass off) to PNGs and
+  exits; nothing is read from the screen. Combine with `--data DIR` to keep test runs out of your own settings.
+
 ## 2.1.0 — 2026-10-12
 
 ### Added

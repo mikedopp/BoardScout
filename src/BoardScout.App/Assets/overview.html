@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoardScout · Overview</title>
+<style>
+:root{color-scheme:dark;--bg:#060b10;--s:#0c1620;--sr:#111e2c;--b:#1c2a3c;--t:#e8edf4;--ts:#8a9bb2;--tm:#5a7090;
+  --a:#3d9eff;--ok:#10b981;--w:#f59e0b;--cr:#ef4444;--p:#a78bfa;--tl:#2dd4bf;
+  --cpu:#3d9eff;--chip:#a78bfa;--other:#6b84a3;
+  --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Noto Sans",Ubuntu,sans-serif;
+  --mono:"Cascadia Mono",ui-monospace,"JetBrains Mono","DejaVu Sans Mono",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{color:var(--t);font:13.5px/1.45 var(--font);overflow:hidden;
+  background:
+    radial-gradient(rgba(255,255,255,.04) 1px,transparent 1.2px) 0 0/24px 24px,
+    radial-gradient(900px 520px at 30% -14%,rgba(61,158,255,.13),transparent 62%),
+    radial-gradient(700px 460px at 100% 100%,rgba(167,139,250,.09),transparent 62%),
+    var(--s)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #7cc4ff;outline-offset:2px}
+#app{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:12px;height:100%;padding:12px}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.012) 55%),rgba(17,30,44,var(--glass-a,.62));
+  border:1px solid rgba(255,255,255,.08);border-top-color:rgba(255,255,255,.16);border-radius:18px;
+  box-shadow:0 14px 36px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);min-height:0}
+body.solid .card{background:var(--sr);border-color:var(--b);box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+@media (prefers-reduced-transparency:reduce){.card{background:var(--sr)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
+
+/* ---- The board ---------------------------------------------------------------------------------- */
+#stage{position:relative;overflow:hidden}
+#board{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;user-select:none}
+#stage.dragging #board{cursor:grabbing}
+#board text{font-family:var(--font)}
+.silk{font-family:var(--mono)!important}
+.trace{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:2.4;opacity:.62}
+.trace.glow{stroke-width:9;opacity:.08}
+.trace.flow{stroke-width:2.4;stroke-dasharray:2 12;opacity:.95;animation:flow 1.4s linear infinite}
+.trace.idle-flow{display:none}
+.trace.live{opacity:1}
+@keyframes flow{to{stroke-dashoffset:-28}}
+body.no-motion .trace.flow{animation:none;display:none}
+@media (prefers-reduced-motion:reduce){.trace.flow{animation:none;display:none}}
+.part{cursor:pointer;outline:none}
+.part .edge{transition:stroke-width .12s,stroke-opacity .12s}
+.part .shade{transition:opacity .12s}
+.part:hover .edge,.part:focus-visible .edge{stroke-width:2.2;stroke-opacity:1}
+.part:hover .shade,.part:focus-visible .shade{opacity:.16}
+.part.sel .edge{stroke:#9fd2ff;stroke-width:2.4;stroke-opacity:1}
+.part.sel .halo{display:block}
+.part .halo{display:none;fill:none;stroke:#7cc4ff;stroke-width:7;stroke-opacity:.18}
+.part.busy .edge{stroke-width:2.2;stroke-opacity:1}
+.part.busy .act{display:block}
+.part .act{display:none;animation:blink 1s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+body.no-motion .part .act{animation:none}
+.part.dim{opacity:.38}
+
+#loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--ts);font-size:14px}
+#loading[hidden]{display:none}
+.overlay{position:absolute;display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:999px;
+  background:rgba(9,17,26,.82);border:1px solid rgba(255,255,255,.1);font-size:12px;color:var(--ts);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+body.solid .overlay{background:var(--sr);backdrop-filter:none;-webkit-backdrop-filter:none}
+#zoom{right:14px;bottom:14px;padding:3px}
+#zoom button{background:none;border:0;border-radius:999px;min-width:30px;height:28px;cursor:pointer;color:var(--t)}
+#zoom button:hover{background:rgba(255,255,255,.08)}
+#zoomReset{font-variant-numeric:tabular-nums;min-width:52px!important;color:var(--ts)!important}
+#legend{left:14px;bottom:14px;gap:12px;padding:6px 12px}
+#legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+#legend i{display:inline-block;width:14px;height:3px;border-radius:2px}
+#legend i.open{height:0;border-top:2px dashed #5f7a99;background:none}
+#legend i.dot{width:8px;height:8px;border-radius:50%;background:var(--w)}
+#coach{left:50%;bottom:14px;transform:translateX(-50%);gap:10px;padding:6px 6px 6px 14px;color:#cfe3fb;border-color:rgba(61,158,255,.35);white-space:nowrap}
+#coach button{background:rgba(255,255,255,.08);border:0;border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px}
+#coach[hidden]{display:none}
+
+/* ---- The inspector -------------------------------------------------------------------------------- */
+#inspect{overflow:auto;padding:18px 18px 16px;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.14) transparent}
+#inspect::-webkit-scrollbar{width:8px}
+#inspect::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+#inspect::-webkit-scrollbar-thumb:hover{background-color:rgba(255,255,255,.22)}
+#inspect::-webkit-scrollbar-track{background:transparent}
+.eyebrow{font-size:11px;font-weight:650;letter-spacing:.1em;text-transform:uppercase;color:var(--a)}
+#inspect h2{font-size:19px;line-height:1.25;margin:4px 0 8px;font-weight:650;letter-spacing:-.005em;overflow-wrap:anywhere}
+#inspect h4{font-size:11px;font-weight:650;letter-spacing:.1em;text-transform:uppercase;color:var(--ts);margin:18px 0 6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;
+  border:1px solid rgba(61,158,255,.45);background:rgba(61,158,255,.12);color:#cfe6ff}
+.chip.good{border-color:rgba(16,185,129,.45);background:rgba(16,185,129,.12);color:#a7f3d0}
+.chip.warn{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.12);color:#fde3b5}
+.chip.open,.chip.off{border-color:rgba(138,155,178,.4);background:rgba(138,155,178,.08);color:var(--ts)}
+.chip.side{font-weight:500;color:var(--ts);background:none;border-color:rgba(255,255,255,.12)}
+.chip.side i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.detail{color:var(--ts);margin:6px 0 0;overflow-wrap:anywhere}
+.live{color:#7cc4ff;font-variant-numeric:tabular-nums;margin-top:6px;min-height:0}
+.live:empty{display:none}
+.note{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);color:#d5e1ee;font-size:13px}
+.facts{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+.facts td{padding:6px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.05)}
+.facts tr:last-child td{border-bottom:0}
+.facts td:first-child{color:var(--ts);width:42%;padding-right:12px}
+.facts td:last-child{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.btn{cursor:pointer;border-radius:10px;padding:6px 12px;font-size:12.5px;font-weight:600;
+  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(17,30,44,.85);
+  border:1px solid rgba(255,255,255,.13);border-top-color:rgba(255,255,255,.22)}
+.btn:hover{filter:brightness(1.2)}
+.health{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;margin-top:4px;
+  background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);color:#c9f5e3}
+.health.warn{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.32);color:#fde7c2}
+.health b{display:block;font-size:13.5px}
+.health small{display:block;color:var(--ts);font-size:12px}
+.health .dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none;box-shadow:0 0 0 4px rgba(16,185,129,.16)}
+.health.warn .dot{background:var(--w);box-shadow:0 0 0 4px rgba(245,158,11,.16)}
+.looks{display:grid;gap:6px}
+.look{display:grid;grid-template-columns:8px 1fr;gap:2px 10px;text-align:left;width:100%;cursor:pointer;padding:9px 11px;border-radius:12px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)}
+.look:hover{background:rgba(255,255,255,.06)}
+.look i{grid-row:span 2;width:8px;height:8px;border-radius:50%;margin-top:6px;background:var(--w)}
+.look i.improve{background:var(--a)}
+.look b{font-size:13px;font-weight:600}
+.look small{color:var(--ts);font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.more{background:none;border:0;padding:4px 0;color:#8cc8ff;cursor:pointer;font-size:12.5px;text-align:left}
+ul.notes{margin:0;padding-left:18px;color:#d5e1ee;font-size:12.5px}
+ul.notes li{margin:3px 0}
+.ages td:last-child small{color:var(--ts)}
+.age-old{color:#fde3b5}
+.foot{margin-top:auto;padding-top:16px;color:var(--tm);font-size:11.5px}
+.hint{color:var(--tm);font-size:11.5px;margin-top:12px}
+
+@media (max-width:980px){
+  body{overflow:auto}
+  #app{grid-template-columns:minmax(0,1fr);height:auto}
+  #stage{height:62vh;min-height:340px}
+  #legend{display:none}
+}
+@media (forced-colors:active){
+  .card,.overlay{background:Canvas!important;border:1px solid CanvasText!important;backdrop-filter:none!important}
+  .part .edge{stroke:CanvasText!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <section id="stage" class="card" aria-label="Board">
+    <svg id="board" role="group" aria-label="Board layout" viewBox="0 0 1160 720" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="loading">Reading this computer…</div>
+    <div id="coach" class="overlay" hidden>Hover a part to see what it is · click to pin it · scroll to zoom · drag to pan<button id="coachOk">Got it</button></div>
+    <div id="legend" class="overlay" aria-hidden="true">
+      <span><i style="background:var(--cpu)"></i>CPU lanes</span>
+      <span><i style="background:var(--chip)"></i>Chipset lanes</span>
+      <span><i class="open"></i>Open</span>
+      <span><i class="dot"></i>Worth a look</span>
+    </div>
+    <div id="zoom" class="overlay">
+      <button id="zoomOut" aria-label="Zoom out">−</button>
+      <button id="zoomReset" aria-label="Fit the board">100%</button>
+      <button id="zoomIn" aria-label="Zoom in">+</button>
+    </div>
+  </section>
+  <aside id="inspect" class="card" aria-live="polite"></aside>
+</div>
+<script>
+'use strict';
+// The Overview: the board as this computer reports it, and an inspector that sums the PC up until a part is
+// hovered or pinned. Shared by the Windows app (a WebView2 tab) and the browser dashboard (a frame in the shell).
+const SVG = 'http://www.w3.org/2000/svg';
+const W = 1160;
+const $ = id => document.getElementById(id);
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function sv(tag, attrs, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) e.setAttribute(k, v);
+  if (parent) parent.append(e);
+  return e;
+}
+const state = { o: null, t: null, flow: null, selected: null, hovered: null, zoom: 1, panX: 0, panY: 0, motion: true, height: 720, platform: 'windows' };
+
+// ---- Talking to the host: the Windows app, or the dashboard shell around this frame --------------------
+const host = {
+  shell() { try { return window.parent !== window && window.parent.BoardScoutShell ? window.parent.BoardScoutShell : null; } catch { return null; } },
+  post(message) { try { window.chrome.webview.postMessage(message); } catch { /* no host yet */ } },
+  showNode(id) { const s = this.shell(); if (s && s.showOnMap) s.showOnMap(id); else this.post({ type: 'show', node: id }); },
+  tab(name) { const s = this.shell(); if (s && s.setTab) s.setTab(name); else this.post({ type: 'tab', name }); }
+};
+
+// ---- Words and colors ------------------------------------------------------------------------------------
+const KIND = {
+  cpu: 'Processor', dimm: 'Memory slot', memory: 'Memory', gpu: 'Graphics', nvme: 'NVMe SSD', disk: 'SATA drive', optical: 'Optical drive',
+  sata: 'SATA controller', port: 'SATA port', 'usb-controller': 'USB controller', ethernet: 'Ethernet', wifi: 'Wi-Fi', audio: 'Audio',
+  bluetooth: 'Bluetooth', chipset: 'Chipset', monitor: 'Display outputs', fan: 'Fan header', slot: 'Expansion slot', device: 'Device',
+  header: 'Header', 'rear-io': 'Rear I/O'
+};
+const SIDE_COLOR = { cpu: '#3d9eff', chipset: '#a78bfa' };
+function sideOf(p) { return p.side || (/· CPU$/.test(p.detail || '') ? 'cpu' : /· chipset$/.test(p.detail || '') ? 'chipset' : null); }
+function colorOf(p) {
+  if (p.kind === 'fan') return p.tone === 'good' ? '#2dd4bf' : '#6b84a3';
+  if (p.kind === 'header' || p.kind === 'rear-io') return '#6b84a3';
+  return SIDE_COLOR[sideOf(p)] || '#6b84a3';
+}
+function lanesOf(p) {
+  if (p.width) return p.width;
+  const m = /x(\d+)/.exec(p.detail || '');
+  return m ? +m[1] : null;
+}
+function statusOf(p) {
+  if (p.tone === 'warn') return ['warn', 'Worth a look'];
+  if (p.tone === 'off') return ['off', 'Turned off'];
+  if (p.empty || p.tone === 'open') return ['open', 'Open'];
+  if (p.tone === 'good') return ['good', 'Working'];
+  return ['', p.kind === 'header' ? 'On the board' : 'Reported'];
+}
+function fmtRate(b) {
+  if (!b || b < 1) return '0 B/s';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB/s';
+  if (b >= 1048576) return (b / 1048576).toFixed(b >= 104857600 ? 0 : 1) + ' MB/s';
+  if (b >= 1024) return Math.round(b / 1024) + ' KB/s';
+  return Math.round(b) + ' B/s';
+}
+function fmtBits(bytes) {
+  const b = (bytes || 0) * 8;
+  if (b >= 1e9) return (b / 1e9).toFixed(2) + ' Gbps';
+  if (b >= 1e6) return (b / 1e6).toFixed(b >= 1e8 ? 0 : 1) + ' Mbps';
+  if (b >= 1e3) return Math.round(b / 1e3) + ' Kbps';
+  return Math.round(b) + ' bps';
+}
+
+// Text that fits: measured when the page is laid out, estimated when it isn't yet (a hidden tab).
+function fit(node, max, size) {
+  const full = node.textContent;
+  let width = 0;
+  try { width = node.getComputedTextLength(); } catch { /* not laid out */ }
+  if (!width) width = full.length * size * 0.56;
+  if (width <= max) return;
+  let keep = Math.max(3, Math.floor(full.length * max / width) - 1);
+  node.textContent = full.slice(0, keep).trimEnd() + '…';
+  try { while (keep > 3 && node.getComputedTextLength() > max) node.textContent = full.slice(0, --keep).trimEnd() + '…'; } catch { /* estimated */ }
+}
+function text(parent, x, y, value, attrs, max) {
+  attrs = attrs || {};
+  // Silkscreen: small mono capitals, the way a board prints its labels.
+  if (attrs.class === 'silk') attrs = { fill: 'rgba(226,236,248,.5)', 'font-size': 10.5, 'letter-spacing': '.08em', ...attrs };
+  const size = +(attrs['font-size'] || 12);
+  const t = sv('text', { x, y, ...attrs }, parent);
+  t.textContent = value || '';
+  if (max) fit(t, max, size);
+  return t;
+}
+
+// ---- Layout -----------------------------------------------------------------------------------------
+// Rear I/O and onboard devices on the left, the CPU socket and memory across the top, slots stacked under the
+// CPU, the chipset and SATA ports on the right, headers along the bottom edge. Real positions when the board is
+// known (BoardProfiles); a schematic otherwise.
+function layout(parts) {
+  const zone = z => parts.filter(p => p.zone === z);
+  const pos = new Map();
+  const known = new Set(['io', 'cpu', 'memory', 'fans', 'm2', 'slots', 'chipset', 'sata', 'headers']);
+  const io = [...zone('io'), ...parts.filter(p => !known.has(p.zone))];
+  let ioY = 92;
+  for (const p of io) { const h = p.kind === 'rear-io' ? 70 : 54; pos.set(p.id, { x: 56, y: ioY, w: 232, h }); ioY += h + 10; }
+  const cpu = parts.find(p => p.kind === 'cpu');
+  const cpuBox = { x: 330, y: 92, w: 272, h: 196 };
+  if (cpu) pos.set(cpu.id, cpuBox);
+  let cy = cpuBox.y + cpuBox.h + 12;
+  for (const p of zone('cpu').filter(p => p !== cpu)) { pos.set(p.id, { x: 330, y: cy, w: 272, h: 48 }); cy += 58; }
+  const dimms = zone('memory');
+  const dw = dimms.length > 6 ? 18 : dimms.length > 4 ? 24 : 30;
+  dimms.forEach((p, i) => pos.set(p.id, { x: 642 + i * (dw + 16), y: 104, w: dw, h: 196 }));
+  const memRight = 642 + Math.max(1, dimms.length) * (dw + 16);
+  const fans = zone('fans');
+  const fanX = Math.max(memRight + 40, 912);
+  let fy = 104;
+  for (const p of fans) { pos.set(p.id, { x: fanX, y: fy, w: W - 56 - fanX, h: 30 }); fy += 38; }
+  let sy = Math.max(cy, 300) + 52;
+  const slots = parts.filter(p => p.zone === 'm2' || p.zone === 'slots');
+  for (const p of slots) {
+    const lanes = lanesOf(p) || 4;
+    const w = p.kind === 'wifi' ? 250 : lanes >= 16 ? 540 : lanes >= 8 ? 470 : lanes >= 4 ? 410 : lanes >= 2 ? 340 : 270;
+    pos.set(p.id, { x: 330, y: sy, w, h: 50 });
+    sy += 62;
+  }
+  const chip = zone('chipset')[0];
+  const chipBox = { x: 912, y: Math.max(fy + 34, 334), w: W - 56 - 912, h: 112 };
+  if (chip) pos.set(chip.id, chipBox);
+  let sataY = chipBox.y + (chip ? chipBox.h + 42 : 0);
+  const sataTop = sataY;
+  for (const p of zone('sata')) { pos.set(p.id, { x: 912, y: sataY, w: W - 56 - 912, h: 38 }); sataY += 46; }
+  const headers = zone('headers');
+  let hy = Math.max(ioY, sy, sataY, cy, 420) + 30;
+  const headerTop = hy;
+  let hx = 56;
+  for (const p of headers) {
+    if (hx + 120 > W - 56) { hx = 56; hy += 40; }
+    pos.set(p.id, { x: hx, y: hy, w: 120, h: 30 });
+    hx += 130;
+  }
+  const height = (headers.length ? hy + 30 : Math.max(ioY, sy, sataY, cy, 420)) + 64;
+  return { pos, cpu, cpuBox, dimms, memRight, fans, fanX, slots, chip, chipBox, sataTop, io, headers, headerTop, height };
+}
+
+// ---- Drawing -----------------------------------------------------------------------------------------
+function render() {
+  const o = state.o;
+  if (!o) return;
+  $('loading').hidden = true;
+  const svg = $('board');
+  svg.replaceChildren();
+  const L = layout(o.parts);
+  const H = L.height;
+  state.height = H;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const defs = sv('defs', null, svg);
+  const mask = sv('linearGradient', { id: 'mask', x1: 0, y1: 0, x2: .6, y2: 1 }, defs);
+  sv('stop', { offset: 0, 'stop-color': '#0f2331' }, mask);
+  sv('stop', { offset: 1, 'stop-color': '#091620' }, mask);
+  const face = sv('linearGradient', { id: 'face', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+  sv('stop', { offset: 0, 'stop-color': '#13222f' }, face);
+  sv('stop', { offset: 1, 'stop-color': '#0b1520' }, face);
+  const grid = sv('pattern', { id: 'grid', width: 22, height: 22, patternUnits: 'userSpaceOnUse' }, defs);
+  sv('circle', { cx: 1, cy: 1, r: .9, fill: 'rgba(255,255,255,.05)' }, grid);
+  const fins = sv('pattern', { id: 'fins', width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+  sv('rect', { width: 3, height: 8, fill: 'rgba(255,255,255,.035)' }, fins);
+
+  const vp = sv('g', { id: 'vp' }, svg);
+  // The board: solder mask, a fine grid, mounting holes, and its name in silkscreen.
+  sv('rect', { x: 14, y: 14, width: W - 28, height: H - 28, rx: 24, fill: 'url(#mask)', stroke: 'rgba(255,255,255,.1)' }, vp);
+  sv('rect', { x: 14, y: 14, width: W - 28, height: H - 28, rx: 24, fill: 'url(#grid)' }, vp);
+  for (const [x, y] of [[36, 36], [W - 36, 36], [36, H - 36], [W - 36, H - 36]]) {
+    sv('circle', { cx: x, cy: y, r: 9, fill: '#c9a227', 'fill-opacity': .14, stroke: 'rgba(214,180,90,.38)', 'stroke-width': 1.5 }, vp);
+    sv('circle', { cx: x, cy: y, r: 4.2, fill: '#060b10' }, vp);
+  }
+  text(vp, 56, 58, (o.layout || o.title || '').toUpperCase(), { class: 'silk', 'font-size': 13, 'font-weight': 600, fill: 'rgba(226,236,248,.62)', 'letter-spacing': '.16em' }, 640);
+  text(vp, W - 56, 58, (o.formFactor || '').toUpperCase(), { class: 'silk', 'font-size': 11, 'text-anchor': 'end' });
+
+  const traces = sv('g', null, vp);
+  drawTraces(traces, L);
+
+  const layer = sv('g', null, vp);
+  if (L.dimms.length) {
+    const label = text(layer, 642, 88, 'MEMORY', { class: 'silk', id: 'memLabel' });
+    label.dataset.base = 'MEMORY';
+  }
+  if (L.fans.length) text(layer, L.fanX, 90, 'FAN HEADERS', { class: 'silk' });
+  if (L.slots.length) text(layer, 330, L.pos.get(L.slots[0].id).y - 12, 'EXPANSION', { class: 'silk' });
+  if (o.parts.some(p => p.zone === 'sata')) text(layer, 912, L.sataTop - 12, 'SATA', { class: 'silk' });
+  if (L.headers.length) text(layer, 56, L.headerTop - 12, 'HEADERS', { class: 'silk' });
+  if (L.io.length) text(layer, 56, 80, 'I/O AND ONBOARD', { class: 'silk' });
+  for (const p of o.parts) {
+    const r = L.pos.get(p.id);
+    if (r) drawPart(layer, p, r);
+  }
+  applyTransform();
+  if (state.t) renderTelemetry();
+  if (state.flow) renderFlow();
+  const keep = state.selected && o.parts.find(p => p.id === state.selected);
+  if (keep) inspect(keep); else { state.selected = null; summary(); }
+}
+
+function drawTraces(g, L) {
+  const motion = state.motion;
+  const path = (d, color, forId, flow) => {
+    sv('path', { d, class: 'trace glow', stroke: color }, g);
+    sv('path', { d, class: 'trace', stroke: color, 'data-for': forId || null }, g);
+    if (flow) sv('path', { d, class: 'trace flow' + (forId ? ' idle-flow' : ''), stroke: color, 'data-flow': forId || null }, g);
+  };
+  const cpu = L.cpu && L.pos.get(L.cpu.id);
+  const chip = L.chip && L.pos.get(L.chip.id);
+  // Memory bus and the chipset's uplink.
+  if (cpu && L.dimms.length) {
+    for (let i = 0; i < 3; i++) path(`M${cpu.x + cpu.w},${cpu.y + 46 + i * 9} H${L.memRight - 8}`, SIDE_COLOR.cpu, null, i === 1 && motion);
+  }
+  if (cpu && chip) {
+    // The chipset's uplink leaves the bottom of the socket and runs under the memory slots.
+    const under = Math.max(cpu.y + cpu.h, 300) + 30;
+    const cx = chip.x + chip.w / 2;
+    path(`M${cpu.x + cpu.w - 40},${cpu.y + cpu.h} V${under - 12} Q${cpu.x + cpu.w - 40},${under} ${cpu.x + cpu.w - 28},${under} H${cx - 12} Q${cx},${under} ${cx},${under + 12} V${chip.y}`,
+      SIDE_COLOR.chipset, null, motion);
+    text(g, cx + 8, Math.min(chip.y - 10, under + 24), 'UPLINK', { class: 'silk', 'font-size': 9.5 });
+  }
+  // Slots: CPU lanes come down the left of the stack, chipset lanes up the right.
+  for (const p of L.slots) {
+    const r = L.pos.get(p.id);
+    const mid = r.y + r.h / 2;
+    const color = p.empty ? '#4a6080' : colorOf(p);
+    if (sideOf(p) === 'cpu' && cpu) path(`M${cpu.x},${cpu.y + cpu.h - 26} H${cpu.x - 18} V${mid} H${r.x}`, color, p.empty ? null : p.id, !p.empty);
+    else if (chip) path(`M${chip.x},${chip.y + chip.h - 22} H${chip.x - 22} V${mid} H${r.x + r.w}`, color, p.empty ? null : p.id, !p.empty);
+  }
+  // SATA ports hang off the chipset along the board's right edge.
+  if (chip) for (const p of L.chip ? state.o.parts.filter(p => p.zone === 'sata') : []) {
+    const r = L.pos.get(p.id);
+    const color = p.empty ? '#4a6080' : '#fb923c';
+    path(`M${chip.x + chip.w},${chip.y + 30} H${W - 36} V${r.y + r.h / 2} H${r.x + r.w}`, color, p.empty ? null : p.id, !p.empty && !!p.live);
+  }
+  // Onboard devices: a bus beside the I/O column, to the CPU or along the bottom to the chipset.
+  const bus = 306;
+  const io = L.io.filter(p => p.kind !== 'rear-io');
+  for (const p of io) {
+    const r = L.pos.get(p.id);
+    const side = sideOf(p);
+    const color = colorOf(p);
+    const mid = r.y + r.h / 2;
+    if (side === 'cpu' && cpu) path(`M${r.x + r.w},${mid} H${bus} V${cpu.y + 40} H${cpu.x}`, color, p.id, false);
+    else if (chip) {
+      const floor = L.headers.length ? L.headerTop - 30 : state.height - 44;
+      path(`M${r.x + r.w},${mid} H${bus - 10} V${floor} H${chip.x - 34} V${chip.y + chip.h - 40} H${chip.x}`, color, p.id, false);
+    }
+  }
+}
+
+function drawPart(layer, p, r) {
+  const color = colorOf(p);
+  const [tone] = statusOf(p);
+  const g = sv('g', {
+    class: 'part' + (state.selected === p.id ? ' sel' : ''), tabindex: 0, role: 'button',
+    'aria-label': `${KIND[p.kind] || 'Part'}${p.silk ? ' ' + p.silk : ''}: ${p.name}. ${p.detail || ''}`,
+    transform: `translate(${r.x},${r.y})`, 'data-id': p.id, 'data-live': p.live || null
+  }, layer);
+  const radius = p.kind === 'cpu' ? 16 : p.kind === 'dimm' ? 5 : p.kind === 'header' || p.kind === 'fan' ? 8 : 11;
+  sv('rect', { class: 'halo', x: -4, y: -4, width: r.w + 8, height: r.h + 8, rx: radius + 4 }, g);
+  const empty = p.empty || p.tone === 'off';
+  sv('rect', { width: r.w, height: r.h, rx: radius, fill: empty ? 'rgba(9,18,27,.55)' : 'url(#face)' }, g);
+  sv('rect', { class: 'shade', width: r.w, height: r.h, rx: radius, fill: color, opacity: empty ? 0 : .07 }, g);
+  sv('rect', {
+    class: 'edge', width: r.w, height: r.h, rx: radius, fill: 'none', stroke: empty ? '#56708f' : color,
+    'stroke-width': p.kind === 'cpu' ? 1.8 : 1.3, 'stroke-opacity': empty ? .9 : .78,
+    'stroke-dasharray': p.tone === 'off' ? '2 4' : empty ? '6 5' : null
+  }, g);
+
+  if (p.kind === 'cpu') drawCpu(g, p, r);
+  else if (p.kind === 'chipset') drawChipset(g, p, r);
+  else if (p.kind === 'dimm' || (p.zone === 'memory' && r.h > 120)) drawDimm(g, p, r, color, empty);
+  else if (p.kind === 'header') {
+    text(g, r.w / 2, r.h / 2 + 4, p.name, { class: 'silk', 'text-anchor': 'middle', 'font-size': 11, fill: 'rgba(226,236,248,.72)' }, r.w - 12);
+  } else if (p.kind === 'fan') {
+    text(g, 12, r.h / 2 + 4, p.silk || p.name, { class: 'silk', 'font-size': 10.5, fill: 'rgba(226,236,248,.8)' }, r.w * .5);
+    text(g, r.w - 12, r.h / 2 + 4, p.detail || '', { 'font-size': 11, fill: p.tone === 'good' ? '#5eead4' : '#7f93ad', 'text-anchor': 'end', class: 'live' }, r.w * .45);
+  } else drawCard(g, p, r, color, empty);
+
+  if (tone === 'warn') {
+    sv('circle', { cx: r.w - 9, cy: 9, r: 7, fill: 'rgba(245,158,11,.22)' }, g);
+    sv('circle', { cx: r.w - 9, cy: 9, r: 3.6, fill: '#f59e0b' }, g);
+  }
+  sv('circle', { class: 'act', cx: 8, cy: r.h - 8, r: 2.6, fill: '#5eead4' }, g);
+  g.addEventListener('mouseenter', () => hover(p));
+  g.addEventListener('mouseleave', () => unhover(p));
+  g.addEventListener('focus', () => hover(p));
+  g.addEventListener('blur', () => unhover(p));
+  g.addEventListener('click', e => { e.stopPropagation(); if (!state.dragMoved) select(p); });
+  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(p); } });
+}
+
+function drawCard(g, p, r, color, empty) {
+  let x = 14;
+  if (p.silk && p.zone !== 'io') {
+    // The slot's printed name in a small tag, then what is in it.
+    const tag = sv('rect', { x, y: r.h / 2 - 9, height: 18, rx: 5, fill: 'rgba(255,255,255,.05)', stroke: 'rgba(255,255,255,.12)' }, g);
+    const label = text(g, x + 7, r.h / 2 + 4, p.silk, { class: 'silk', fill: empty ? 'rgba(226,236,248,.55)' : 'rgba(226,236,248,.88)' });
+    let w = 0;
+    try { w = label.getComputedTextLength(); } catch { /* not laid out */ }
+    if (!w) w = p.silk.length * 6.9;
+    tag.setAttribute('width', w + 14);
+    x += w + 24;
+  }
+  const lanes = (p.zone === 'm2' || p.zone === 'slots') ? lanesOf(p) : null;
+  const right = lanes ? 46 : 14;
+  const twoLines = r.h >= 44;
+  text(g, x, twoLines ? r.h / 2 - 3 : r.h / 2 + 4, p.name, { 'font-size': 13, 'font-weight': 600, fill: empty ? '#9db0c8' : '#e8edf4' }, r.w - x - right);
+  if (twoLines) {
+    const detail = (p.detail || '').replace(/ · (CPU|chipset)$/, '');
+    text(g, x, r.h / 2 + 13, detail, { 'font-size': 11, fill: '#8a9bb2', class: 'detail' }, r.w - x - right - 70);
+    text(g, r.w - right, r.h / 2 + 13, '', { 'font-size': 11, fill: '#5eead4', 'text-anchor': 'end', class: 'live' });
+  }
+  if (lanes) {
+    sv('rect', { x: r.w - 40, y: r.h / 2 - 10, width: 28, height: 20, rx: 6, fill: 'rgba(255,255,255,.05)', stroke: p.tone === 'warn' ? 'rgba(245,158,11,.6)' : 'rgba(255,255,255,.12)' }, g);
+    text(g, r.w - 26, r.h / 2 + 4, 'x' + lanes, { 'font-size': 11, 'font-weight': 600, 'text-anchor': 'middle', fill: p.tone === 'warn' ? '#fcd38d' : '#b8c7d9', class: 'silk' });
+  }
+}
+
+function drawCpu(g, p, r) {
+  // The heat spreader, a pin-1 mark, and the socket's name.
+  sv('rect', { x: 16, y: 16, width: r.w - 32, height: r.h - 32, rx: 10, fill: 'rgba(255,255,255,.035)', stroke: 'rgba(255,255,255,.12)' }, g);
+  sv('path', { d: `M16,${r.h - 30} L30,${r.h - 16} L16,${r.h - 16} Z`, fill: '#c9a227', 'fill-opacity': .55 }, g);
+  if (p.silk) text(g, r.w - 22, 34, p.silk, { class: 'silk', 'text-anchor': 'end', 'font-size': 10 });
+  text(g, r.w / 2, r.h / 2 - 18, p.name, { 'font-size': 18, 'font-weight': 650, fill: '#f1f5fa', 'text-anchor': 'middle' }, r.w - 52);
+  text(g, r.w / 2, r.h / 2 + 4, p.detail || '', { 'font-size': 12.5, fill: '#8a9bb2', 'text-anchor': 'middle' }, r.w - 52);
+  text(g, r.w / 2, r.h / 2 + 30, '', { 'font-size': 12.5, fill: '#8fcbff', 'text-anchor': 'middle', id: 'cpuLive' });
+  sv('rect', { x: 34, y: r.h - 42, width: r.w - 68, height: 5, rx: 2.5, fill: 'rgba(255,255,255,.08)' }, g);
+  sv('rect', { x: 34, y: r.h - 42, width: 0, height: 5, rx: 2.5, fill: '#3d9eff', id: 'cpuBar', 'data-w': r.w - 68 }, g);
+}
+
+function drawChipset(g, p, r) {
+  sv('rect', { x: 10, y: 10, width: r.w - 20, height: r.h - 20, rx: 8, fill: 'url(#fins)' }, g);
+  const short = (p.silk || p.name || '').replace(/^(AMD|Intel)\s+/i, '').replace(/\s+chipset$/i, '');
+  text(g, r.w / 2, r.h / 2 - 4, short, { 'font-size': 18, 'font-weight': 650, fill: '#ede9fe', 'text-anchor': 'middle' }, r.w - 30);
+  text(g, r.w / 2, r.h / 2 + 16, 'Chipset', { 'font-size': 11.5, fill: '#a8a0c8', 'text-anchor': 'middle' });
+  text(g, r.w / 2, r.h - 12, '', { 'font-size': 11.5, fill: '#c4b5fd', 'text-anchor': 'middle', id: 'chipLive' });
+}
+
+function drawDimm(g, p, r, color, empty) {
+  for (const y of [-5, r.h - 1]) sv('rect', { x: -2, y, width: r.w + 4, height: 6, rx: 2, fill: empty ? 'rgba(86,112,143,.35)' : 'rgba(226,236,248,.35)' }, g);
+  if (!empty) sv('rect', { x: 5, y: 14, width: r.w - 10, height: r.h - 28, rx: 2, fill: color, 'fill-opacity': .16 }, g);
+  const label = text(g, r.w / 2, r.h / 2 + 4, empty ? 'Open' : p.name, { 'font-size': 12, 'font-weight': 600, fill: empty ? '#8a9bb2' : '#e8f1ff', 'text-anchor': 'middle' });
+  label.setAttribute('transform', `rotate(-90 ${r.w / 2} ${r.h / 2})`);
+  text(g, r.w / 2, r.h + 18, (p.silk || p.detail || '').replace(/^DDR\d_/, ''), { class: 'silk', 'text-anchor': 'middle', 'font-size': 10 });
+}
+
+// ---- Inspector ------------------------------------------------------------------------------------------
+function hover(p) { state.hovered = p.id; if (!state.selected) inspect(p); }
+function unhover(p) {
+  if (state.hovered !== p.id) return;
+  state.hovered = null;
+  clearTimeout(state.leaveTimer);
+  state.leaveTimer = setTimeout(() => { if (!state.selected && !state.hovered) summary(); }, 140);
+}
+function select(p) {
+  state.selected = state.selected === p.id ? null : p.id;
+  for (const g of document.querySelectorAll('#board .part')) g.classList.toggle('sel', g.dataset.id === state.selected);
+  if (state.selected) inspect(p); else summary();
+}
+function unpin() {
+  state.selected = null;
+  for (const g of document.querySelectorAll('#board .part.sel')) g.classList.remove('sel');
+  summary();
+}
+
+function factsTable(rows) {
+  const table = el('table', 'facts');
+  for (const [k, v] of rows) {
+    const tr = el('tr');
+    tr.append(el('td', null, k), el('td', null, v));
+    table.append(tr);
+  }
+  return table;
+}
+
+function inspect(p) {
+  const box = $('inspect');
+  box.replaceChildren();
+  state.inspected = p.id;
+  const eyebrow = el('div', 'eyebrow', `${KIND[p.kind] || 'Part'}${p.silk && p.silk !== p.name ? ' · ' + p.silk : ''}`);
+  eyebrow.style.color = colorOf(p);
+  box.append(eyebrow, el('h2', null, p.name));
+  const chips = el('div', 'chips');
+  const [tone, label] = statusOf(p);
+  chips.append(el('span', 'chip ' + tone, label));
+  const side = sideOf(p);
+  if (side && p.kind !== 'cpu') {
+    const c = el('span', 'chip side');
+    const dot = el('i');
+    dot.style.background = SIDE_COLOR[side];
+    c.append(dot, side === 'cpu' ? 'CPU lanes' : 'Chipset lanes');
+    chips.append(c);
+  }
+  box.append(chips);
+  if (p.detail && p.kind !== 'header') box.append(el('p', 'detail', p.detail));
+  box.append(Object.assign(el('div', 'live'), { id: 'inspLive' }));
+  if (p.note) box.append(el('p', 'note', p.note));
+  if (p.facts?.length) {
+    box.append(el('h4', null, 'Details'));
+    box.append(factsTable(p.facts.map(f => [f.label, f.value])));
+  }
+  const actions = el('div', 'actions');
+  if (p.node) {
+    const show = el('button', 'btn', 'Show on the Connections map');
+    show.onclick = () => host.showNode(p.node);
+    actions.append(show);
+  }
+  if (state.selected === p.id) {
+    const back = el('button', 'btn', 'Unpin');
+    back.onclick = unpin;
+    actions.append(back);
+  }
+  if (actions.childElementCount) box.append(actions);
+  box.append(el('div', 'hint', state.selected === p.id ? 'Pinned. Esc or a click on the board goes back to the summary.' : 'Click to pin this part.'));
+  updateInspectorLive();
+}
+
+// What the inspector shows when nothing is hovered: how the PC is doing, what deserves a look, and the facts.
+function summary() {
+  const o = state.o;
+  const box = $('inspect');
+  box.replaceChildren();
+  state.inspected = null;
+  if (!o) { box.append(el('div', 'eyebrow', 'This PC'), el('h2', null, 'Reading this computer…')); return; }
+  box.append(el('div', 'eyebrow', 'This PC'), el('h2', null, 'At a glance'));
+
+  const warnParts = o.parts.filter(p => p.tone === 'warn');
+  const items = [];
+  for (const s of o.suggestions.filter(s => s.severity === 'warning' || s.severity === 'improvement')) {
+    const part = warnParts.find(p => s.title.includes(p.name));
+    items.push({ title: s.title, sub: s.detail, tone: s.severity === 'warning' ? 'warn' : 'improve', part });
+  }
+  for (const p of warnParts) if (!items.some(i => i.part === p)) items.push({ title: `${p.silk ? p.silk + ' · ' : ''}${p.name}`, sub: p.detail, tone: 'warn', part: p });
+
+  const health = el('div', 'health' + (items.length ? ' warn' : ''));
+  const words = el('div');
+  words.append(el('b', null, items.length ? (items.length === 1 ? 'One thing worth a look' : `${items.length} things worth a look`) : 'Healthy'),
+    el('small', null, items.length ? 'Nothing is broken; these could run better.' : 'Every check passed. Nothing needs you.'));
+  if (o.parts.some(p => p.tone === 'warn' && /problem|error/i.test(p.detail || ''))) words.lastChild.textContent = 'A device reports a problem.';
+  health.append(el('span', 'dot'), words);
+  box.append(health);
+
+  if (items.length) {
+    box.append(el('h4', null, 'Worth a look'));
+    const list = el('div', 'looks');
+    for (const item of items.slice(0, 4)) {
+      const b = el('button', 'look');
+      b.title = item.sub || item.title;
+      b.append(el('i', item.tone === 'improve' ? 'improve' : null), el('b', null, item.title));
+      if (item.sub) b.append(el('small', null, item.sub));
+      b.onclick = () => { if (item.part) select(item.part); else host.tab('efficiency'); };
+      list.append(b);
+    }
+    box.append(list);
+    if (items.length > 4) {
+      const more = el('button', 'more', `${items.length - 4} more on the Efficiency tab`);
+      more.onclick = () => host.tab('efficiency');
+      box.append(more);
+    }
+  }
+
+  if (o.boardNotes?.length) {
+    box.append(el('h4', null, 'About this board'));
+    const ul = el('ul', 'notes');
+    for (const n of o.boardNotes) ul.append(el('li', null, n));
+    box.append(ul);
+  }
+
+  box.append(el('h4', null, 'System'));
+  const used = o.dataUsedTb >= 1 ? `${o.dataUsedTb.toFixed(1)} TB` : `${Math.round(o.dataUsedTb * 1000)} GB`;
+  box.append(factsTable([...o.details.filter(f => f.label !== 'Last read').map(f => [f.label, f.value]), ['Data stored', used]]));
+
+  if (o.ages?.length) {
+    box.append(el('h4', null, 'How old the parts are'));
+    const table = el('table', 'facts ages');
+    for (const a of o.ages) {
+      const tr = el('tr');
+      const value = el('td');
+      const years = el('span', a.years >= 5 ? 'age-old' : null, `${a.years} yr`);
+      value.append(years, ` · ${a.generation}`, el('br'), el('small', null, `${a.name}, ${a.released}`));
+      tr.append(el('td', null, a.part), value);
+      table.append(tr);
+    }
+    box.append(table);
+  }
+
+  const how = o.layout ? `Laid out like the ${o.layout}` : `Drawn from what ${state.platform === 'linux' ? 'Linux' : 'Windows'} reports`;
+  box.append(el('div', 'foot', `${how} · read at ${o.gatheredAt} in ${o.gatheredMs} ms`));
+}
+
+// ---- Live numbers ----------------------------------------------------------------------------------------
+function renderTelemetry() {
+  const t = state.t;
+  if (!t || !state.o) return;
+  const cpuLive = $('cpuLive');
+  if (cpuLive) cpuLive.textContent = `${Math.round(t.cpu)}% load${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}`;
+  setCpuBar(t.cpu);
+  const mem = $('memLabel');
+  if (mem) mem.textContent = `MEMORY · ${t.memoryUsedGb.toFixed(1)} / ${t.memoryTotalGb.toFixed(1)} GB IN USE`;
+  const chip = $('chipLive');
+  if (chip) chip.textContent = t.chipsetTemp != null ? `${Math.round(t.chipsetTemp)}°C` : '';
+  for (const g of document.querySelectorAll('#board .part[data-live]')) {
+    const live = g.dataset.live;
+    const label = g.querySelector('.live');
+    if (live.startsWith('fan:') && label) {
+      const fan = (t.fans || []).find(f => 'fan:' + f.name === live);
+      if (fan) label.textContent = fan.rpm > 0 ? `${fan.rpm} RPM` : 'Stopped';
+    }
+  }
+  const gpu = state.o.parts.find(p => p.kind === 'gpu' && p.zone === 'slots');
+  if (gpu && (t.gpuTemp != null || t.gpuWatts != null)) {
+    const label = document.querySelector(`#board .part[data-id="${CSS.escape(gpu.id)}"] .live`);
+    if (label) label.textContent = [t.gpuTemp != null ? `${Math.round(t.gpuTemp)}°C` : null, t.gpuWatts != null ? `${Math.round(t.gpuWatts)} W` : null].filter(Boolean).join(' · ');
+  }
+  updateInspectorLive();
+}
+
+function setCpuBar(percent) {
+  const bar = $('cpuBar');
+  if (bar) bar.setAttribute('width', String(Math.max(0, Math.min(1, (percent || 0) / 100)) * +bar.dataset.w));
+}
+
+function renderFlow() {
+  const f = state.flow;
+  if (!f) return;
+  for (const g of document.querySelectorAll('#board .part[data-live]')) {
+    const live = g.dataset.live;
+    const label = g.querySelector('.live');
+    let busy = false, words = null;
+    if (live.startsWith('disk:')) {
+      const d = f.disk?.[live.slice(5)];
+      const rate = d ? d[0] + d[1] : 0;
+      busy = rate > 1024;
+      words = busy ? `R ${fmtRate(d[0])} · W ${fmtRate(d[1])}` : '';
+    } else if (live.startsWith('net:')) {
+      const n = f.net?.[live.slice(4)];
+      const rate = n ? n[0] + n[1] : 0;
+      busy = rate > 2048;
+      words = busy ? `↓${fmtBits(n[0])} ↑${fmtBits(n[1])}` : '';
+    } else continue;
+    g.classList.toggle('busy', busy);
+    if (label && words != null) label.textContent = words;
+    const id = g.dataset.id;
+    for (const t of document.querySelectorAll(`#board [data-for="${CSS.escape(id)}"]`)) t.classList.toggle('live', busy);
+    for (const t of document.querySelectorAll(`#board [data-flow="${CSS.escape(id)}"]`)) t.classList.toggle('idle-flow', !busy);
+  }
+  if (f.cpu != null && !state.t) setCpuBar(f.cpu);
+  updateInspectorLive();
+}
+
+function updateInspectorLive() {
+  const box = $('inspLive');
+  if (!box || !state.inspected || !state.o) return;
+  const p = state.o.parts.find(x => x.id === state.inspected);
+  if (!p) return;
+  const t = state.t, f = state.flow;
+  let words = '';
+  if (p.kind === 'cpu' && t) words = `${Math.round(t.cpu)}% load right now${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}`;
+  else if ((p.kind === 'dimm' || p.kind === 'memory') && t) words = `${t.memoryUsedGb.toFixed(1)} of ${t.memoryTotalGb.toFixed(1)} GB in use right now`;
+  else if (p.kind === 'chipset' && t?.chipsetTemp != null) words = `${Math.round(t.chipsetTemp)}°C right now`;
+  else if (p.live?.startsWith('disk:') && f?.disk?.[p.live.slice(5)]) { const d = f.disk[p.live.slice(5)]; words = `Reading ${fmtRate(d[0])} · writing ${fmtRate(d[1])}`; }
+  else if (p.live?.startsWith('net:') && f?.net?.[p.live.slice(4)]) { const n = f.net[p.live.slice(4)]; words = `Down ${fmtBits(n[0])} · up ${fmtBits(n[1])}`; }
+  else if (p.kind === 'gpu' && p.zone === 'slots' && t && (t.gpuTemp != null || t.gpuWatts != null))
+    words = [t.gpuTemp != null ? `${Math.round(t.gpuTemp)}°C` : null, t.gpuWatts != null ? `${Math.round(t.gpuWatts)} W` : null].filter(Boolean).join(' · ') + ' right now';
+  box.textContent = words;
+}
+
+// ---- Zoom and pan ----------------------------------------------------------------------------------------
+function applyTransform() {
+  const vp = $('vp');
+  if (vp) vp.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+  $('zoomReset').textContent = Math.round(state.zoom * 100) + '%';
+}
+function zoomBy(factor, cx = W / 2, cy = state.height / 2) {
+  const next = Math.max(.6, Math.min(3.5, state.zoom * factor));
+  state.panX = cx - (cx - state.panX) * (next / state.zoom);
+  state.panY = cy - (cy - state.panY) * (next / state.zoom);
+  state.zoom = next;
+  applyTransform();
+}
+function resetView() { state.zoom = 1; state.panX = 0; state.panY = 0; applyTransform(); }
+function setupControls() {
+  const svg = $('board');
+  const stage = $('stage');
+  const toBoard = (x, y) => {
+    const point = svg.createSVGPoint();
+    point.x = x; point.y = y;
+    const m = svg.getScreenCTM();
+    return m ? point.matrixTransform(m.inverse()) : { x: W / 2, y: state.height / 2 };
+  };
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = toBoard(e.clientX, e.clientY);
+    zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, p.x, p.y);
+  }, { passive: false });
+  let drag = null;
+  svg.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, panX: state.panX, panY: state.panY };
+    state.dragMoved = false;
+  });
+  window.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const m = svg.getScreenCTM();
+    const scale = m ? m.a : 1;
+    const dx = (e.clientX - drag.x) / scale, dy = (e.clientY - drag.y) / scale;
+    if (!state.dragMoved && Math.hypot(dx, dy) < 4) return;
+    state.dragMoved = true;
+    stage.classList.add('dragging');
+    state.panX = drag.panX + dx;
+    state.panY = drag.panY + dy;
+    applyTransform();
+  });
+  window.addEventListener('pointerup', () => { drag = null; stage.classList.remove('dragging'); setTimeout(() => { state.dragMoved = false; }, 0); });
+  svg.addEventListener('click', e => { if (!e.target.closest('.part') && !state.dragMoved && state.selected) unpin(); });
+  svg.addEventListener('dblclick', e => { if (!e.target.closest('.part')) resetView(); });
+  $('zoomIn').onclick = () => zoomBy(1.2);
+  $('zoomOut').onclick = () => zoomBy(1 / 1.2);
+  $('zoomReset').onclick = resetView;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.selected) unpin(); });
+}
+
+// ---- First-run hint --------------------------------------------------------------------------------------
+function coach() {
+  let seen = null;
+  try { seen = localStorage.getItem('boardscout.overviewHint'); } catch { /* storage off */ }
+  if (seen) return;
+  $('coach').hidden = false;
+  $('coachOk').onclick = () => {
+    $('coach').hidden = true;
+    try { localStorage.setItem('boardscout.overviewHint', '1'); } catch { /* storage off */ }
+  };
+}
+
+// ---- Messages ----------------------------------------------------------------------------------------------
+function applySettings(s) {
+  if (s.platform) state.platform = s.platform;
+  state.motion = s.motion !== false;
+  document.body.classList.toggle('no-motion', !state.motion);
+  document.body.classList.toggle('solid', s.glass === false);
+  if (typeof s.glassOpacity === 'number') document.documentElement.style.setProperty('--glass-a', String(s.glassOpacity));
+}
+
+window.chrome.webview.addEventListener('message', e => {
+  const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+  if (!msg) return;
+  if (msg.type === 'settings') { const before = state.motion; applySettings(msg); if (before !== state.motion && state.o) render(); }
+  else if (msg.type === 'overview' && msg.data) { state.o = msg.data; render(); }
+  else if (msg.type === 'telemetry' && msg.data) { state.t = msg.data; renderTelemetry(); }
+  else if (msg.type === 'flow' && msg.data) { state.flow = msg.data; renderFlow(); }
+});
+
+// Text measured while the page was hidden was only estimated; draw again once it has a size.
+let sized = document.body.clientWidth > 0;
+window.addEventListener('resize', () => { if (!sized && document.body.clientWidth > 0) { sized = true; if (state.o) render(); } });
+
+setupControls();
+coach();
+summary();
+</script>
+</body>
+</html>

@@ -50,7 +50,8 @@ internal static class Program
         };
         AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrashLog(e.ExceptionObject as Exception);
 
-        Application.Run(new MainForm());
+        // --snapshot DIR: QA renders of the window, drawn off-screen (never a capture of the desktop), then exit.
+        Application.Run(new MainForm(Value(args, "--snapshot") is { } shots ? Path.GetFullPath(shots) : null));
         return 0;
     }
 

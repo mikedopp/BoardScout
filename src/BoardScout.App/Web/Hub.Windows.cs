@@ -190,7 +190,7 @@ internal sealed partial class Hub
         Publish("connections", $"{{\"type\":\"connections\",\"data\":{ConnectionsService.ToJson(map)}}}");
         var plan = _plan = PlanService.Build(capture, map, [], _profile, privacy, _lastTelemetry?.Power);
         var overview = WindowsOverview.Build(capture, map, _scan, _report, plan, _lastTelemetry, privacy);
-        Publish("shell", $"{{\"type\":\"overview\",\"data\":{JsonSerializer.Serialize(overview, Json.Options)}}}");
+        PublishOverview($"{{\"type\":\"overview\",\"data\":{JsonSerializer.Serialize(overview, Json.Options)}}}");
         if (!_payloads.ContainsKey("system")) _ = LoadSystemAsync();
     }
 

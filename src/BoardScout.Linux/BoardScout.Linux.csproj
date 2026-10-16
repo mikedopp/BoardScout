@@ -53,6 +53,7 @@
     <Compile Include="..\BoardScout.App\Services\SpeedTest.cs" Link="Shared\Services\SpeedTest.cs" />
     <Compile Include="..\BoardScout.App\Services\UsbIds.cs" Link="Shared\Services\UsbIds.cs" />
     <Compile Include="..\BoardScout.App\Models\OverviewModels.cs" Link="Shared\Models\OverviewModels.cs" />
+    <Compile Include="..\BoardScout.App\Web\BoardProfiles.cs" Link="Shared\Web\BoardProfiles.cs" />
   </ItemGroup>
 
   <!-- The browser dashboard's server and engine (Live\Hub.Linux.cs is this edition's half), and the Machines

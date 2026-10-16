@@ -9,7 +9,7 @@ machine you reach with SSH ([Machines](docs/remote.md)).
 **Status:** v2.0.0 (2026-10-11) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
 .NET 10 · MIT license · [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
-![BoardScout overview: interactive board map, live header tiles, and part inspector](docs/screenshots/overview.png)
+![BoardScout Overview: the board with its printed slot names, live gauges, and the At a glance panel](docs/screenshots/overview.png)
 
 ## Download and run
 
@@ -33,10 +33,19 @@ under `%TEMP%\.net` on first run.
 
 ## What you get
 
-**Overview** — an interactive motherboard map. Hover the CPU, memory, graphics, drives, ports, or
-open slots for status, live usage, and a plain-language capability estimate. Mouse wheel zooms
-(it eases rather than jumps), drag pans. The ASRock B550M Steel Legend has a verified layout
-(lane sharing, the M.2 Key-E Wi-Fi slot); other boards get the parts their scan reports.
+**Overview** — the motherboard, drawn like the board itself: the CPU socket and memory slots, the
+M.2 sockets and PCIe slots top to bottom, the chipset and its SATA ports, colored by whose lanes feed
+them (blue for the CPU, violet for the chipset) and showing live load, temperatures, and drive and
+network traffic. The panel beside it starts with **At a glance**: whether anything is worth a look
+(and what), notes about the board, the system's details, and how old the parts are. Hover a part for
+its status, its details, and a plain sentence on what it suits; click to pin it, Esc to go back.
+Mouse wheel zooms, drag pans. The ASRock B550M Steel Legend has a verified layout: every slot, port,
+and header under the name printed on the board, empty ones included, with its lane sharing (a drive in
+M2_2 turns SATA3_5 and SATA3_6 off; M2_3 is Key E for Wi-Fi only). Other boards get the parts
+Windows or Linux reports. The Windows app and the browser dashboard show the same Overview.
+
+Four live gauges sit in the header (CPU load, memory, temperature, network), beside one chip that
+says whether the PC is healthy or how many things are worth a look.
 
 **Topology** — CPU-direct lanes versus devices behind the chipset uplink, with flowing links that
 move faster on wider buses. Board-specific slot names and lane sharing appear only for the verified
@@ -162,8 +171,8 @@ measurement.
 BoardScout reads live sensors through LibreHardwareMonitorLib 0.9.6. That library reads CPU, VRM,
 and motherboard fan sensors through the **PawnIO** driver (by namazso, https://pawnio.eu/), which
 it does not ship, and those reads need **administrator rights**. Without both, only GPU
-temperature and GPU fans are readable, and the header says what is missing ("Needs PawnIO" /
-"Needs admin"). The version pop-out shows the current state, links to PawnIO, and can restart
+temperature and GPU fans are readable; the temperature gauge's tooltip and the Overview's fan
+headers ("No reading") say what is missing. The version pop-out shows the current state, links to PawnIO, and can restart
 BoardScout as administrator. Everything else in BoardScout works without either. The graphics card's
 power draw is readable without them; the CPU's needs both.
 
@@ -249,7 +258,7 @@ MAC addresses.
 3. **Check drivers** is a separate, cancellable online step.
 4. Live telemetry (CPU, memory, sensors, network) runs on a background thread at the refresh rate
    you choose (0.5, 1, 2, or 5 s), so the window never waits on hardware. Per-disk and per-adapter
-   rates are sampled only while the Connections map is on screen.
+   rates are sampled only while the Connections map or the Overview is on screen.
 5. The Connections map isn't polled: Windows announces device and network changes, and the map is
    read about 0.4 s after the first one (a read takes about 0.1–0.3 s) and once more after changes
    stop for 2 s. USB devices are asked for their power needs once per session. The optimization plan
@@ -325,14 +334,15 @@ builds the Linux edition for linux-x64, linux-arm64, linux-arm, linux-musl-x64, 
 Source layout:
 
 - `src\BoardScout.App` — the .NET 10 Windows Forms application
-- `src\BoardScout.App\UI` — board map, liquid sidebar, glass controls, version pop-out
+- `src\BoardScout.App\UI` — the window: header gauges, navigation rail, glass controls, version pop-out
 - `src\BoardScout.App\Services` — scanning, driver checks, telemetry, System tab data, the device
   tree, network probe, Connections map, firmware (SMBIOS) memory reader, interrupt sampling and
   tracing, and the optimization plan
-- `src\BoardScout.App\Assets` — Topology, Connections, System, and Machines web views, plus `vendor\` (QuickLiquid, D3)
+- `src\BoardScout.App\Assets` — Overview, Topology, Connections, System, and Machines web views, plus `vendor\` (QuickLiquid, D3)
 - `src\BoardScout.App\Shell` — the browser dashboard (both editions serve it)
 - `src\BoardScout.App\Web` — its server and engine: `Hub.cs` is shared, `Hub.Windows.cs` and
-  `WindowsOverview.cs` are the Windows half (agent and `--serve` modes)
+  `WindowsOverview.cs` are the Windows half (the app's Overview, agent and `--serve` modes), and
+  `BoardProfiles.cs` holds the boards known slot by slot (shared)
 - `src\BoardScout.App\Remote` — the Machines page: SSH, probing, copying, tunnels, summaries (shared)
 - `src\BoardScout.App\DriverScout` — the bundled PowerShell scan engine and its notices
 - `src\BoardScout.Linux` — the Linux edition: `Platform` reads `/sys` and `/proc`, `Views` builds the

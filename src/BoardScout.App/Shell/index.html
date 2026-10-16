@@ -17,6 +17,7 @@
         aria-haspopup="dialog" aria-controls="popout" title="Settings, dependencies, help, and diagnostics">
         <span class="glimmer-dot" aria-hidden="true"></span><span id="versionText">v…</span>
       </button>
+      <button id="healthChip" type="button" title="What the Efficiency tab found">Checking…</button>
       <button id="privacyChip" type="button" title="Privacy mode is on: names, addresses, and serial-like values are masked. Click to turn it off.">Privacy on</button>
       <span id="remoteChip" title="This dashboard runs on another machine and reaches you through an SSH tunnel. It stops when you disconnect.">Over SSH</span>
     </div>
@@ -35,19 +36,14 @@
 </header>
 
 <section id="tiles" aria-label="Right now">
-  <div class="tile glass" id="tMem"><div class="v">—</div><div class="k">Memory</div></div>
-  <div class="tile glass" id="tCpu"><div class="v">—</div><div class="k">CPU load</div></div>
-  <div class="tile glass" id="tTemp"><div class="v">—</div><div class="k">CPU temp</div></div>
-  <div class="tile glass" id="tFans"><div class="v">—</div><div class="k">Fans</div></div>
-  <div class="tile glass" id="tNet"><div class="v">—</div><div class="k">Network</div></div>
-  <div class="tile glass" id="tData"><div class="v">—</div><div class="k">Data used</div></div>
-  <div class="tile glass" id="tUpdates"><div class="v">—</div><div class="k">Fixes</div></div>
+  <div class="tile glass" id="tCpu"><div class="k">CPU load</div><div class="line"><div class="v">—</div><svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><path class="area"/><path class="stroke"/></svg></div></div>
+  <div class="tile glass" id="tMem"><div class="k">Memory</div><div class="v">—</div><div class="meter"><i></i></div></div>
+  <div class="tile glass" id="tTemp"><div class="k">CPU temp</div><div class="v">—</div><div class="meter"><i></i></div></div>
+  <div class="tile glass" id="tNet"><div class="k">Network</div><div class="line"><div class="v">—</div><svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><path class="area"/><path class="stroke"/></svg></div></div>
 </section>
 
 <div id="layout">
   <nav id="side" class="glass" aria-label="Views">
-    <div class="eyebrow">Explore your PC</div>
-    <p>Start with Overview. Each screen keeps a different kind of work out of your way.</p>
     <button class="navbtn" data-tab="overview"><b>Overview</b><small>Hover parts · zoom and pan</small></button>
     <button class="navbtn" data-tab="topology"><b>Topology</b><small>Follow lanes and shared bandwidth</small></button>
     <button class="navbtn" data-tab="connections"><b>Connections</b><small>Every device, link, and live traffic</small></button>
@@ -57,45 +53,10 @@
     <button class="navbtn" data-tab="system"><b>System</b><small id="navSystem">Distribution, packages, timers</small></button>
     <button class="navbtn" data-tab="machines" data-mode="local"><b>Machines</b><small>Other PCs and servers, over SSH</small></button>
     <button class="navbtn" data-tab="log"><b>Scan Log</b><small>What was read, and when</small></button>
-    <div class="quick">
-      <div class="eyebrow" style="margin:0">Quick start</div>
-      <ol>
-        <li>Scan after hardware changes</li>
-        <li>Hover parts for status</li>
-        <li>Open the optimization plan on Connections</li>
-      </ol>
-    </div>
   </nav>
 
   <main id="main">
-    <section class="tab" data-tab="overview" aria-label="Overview">
-      <div class="ov">
-        <div class="board-card glass">
-          <div class="cardhead">
-            <h2>Interactive board</h2>
-            <span class="hint">Hover or tab to a part · mouse wheel to zoom · drag to pan</span>
-            <div class="zoom">
-              <button class="btn small" id="zoomOut" aria-label="Zoom out">−</button>
-              <button class="btn small" id="zoomReset" aria-label="Reset zoom">100%</button>
-              <button class="btn small" id="zoomIn" aria-label="Zoom in">+</button>
-            </div>
-          </div>
-          <div class="board-wrap" id="boardWrap">
-            <svg id="board" role="group" aria-label="Board layout" viewBox="0 0 1120 660"></svg>
-          </div>
-        </div>
-        <aside class="inspect glass" aria-live="polite">
-          <div id="inspect">
-            <div class="eyebrow">Interactive map</div>
-            <h3>Hover over a part</h3>
-            <span class="status-chip">Live telemetry ready</span>
-            <p class="muted">Move over the CPU, memory, drives, slots, ports, or the chipset for its status, live use, and what this computer reports about it.</p>
-          </div>
-          <h4>System details</h4>
-          <table class="facts" id="details"></table>
-        </aside>
-      </div>
-    </section>
+    <section class="tab" data-tab="overview" aria-label="Overview"><div class="frame-card bare"><iframe title="Overview" data-src="/views/overview.html"></iframe></div></section>
 
     <section class="tab" data-tab="topology" aria-label="Topology"><div class="frame-card glass"><iframe title="Topology" data-src="/views/topology.html"></iframe></div></section>
     <section class="tab" data-tab="connections" aria-label="Connections"><div class="frame-card glass"><iframe title="Connections" data-src="/views/connections.html"></iframe></div></section>
@@ -198,6 +159,12 @@
     </div>
     <div class="pop-pane" data-pane="deps" role="tabpanel"><table class="deps" id="depsTable"></table></div>
     <div class="pop-pane" data-pane="help" role="tabpanel">
+      <h3>Quick start</h3>
+      <ol>
+        <li>Hover a part on the Overview to see what it is; click it to keep it in the panel.</li>
+        <li>Scan again after you change hardware.</li>
+        <li>Open the optimization plan on Connections for what to fix, worst first.</li>
+      </ol>
       <h3>What each screen does</h3>
       <ul>
         <li data-only="linux"><b>Overview</b>: the board as Linux reports it: CPU, memory slots, PCIe lanes and M.2, SATA ports, USB, and the chipset. Hover anything.</li>

@@ -20,9 +20,11 @@ internal static partial class WindowsOverview
         var cpuName = scan?.Cpu.Name is { Length: > 0 } scanned ? scanned : map.Root.Name;
         var cores = scan?.Cpu.Cores ?? 0;
         var threads = scan?.Cpu.Threads is > 0 and var t ? t : Environment.ProcessorCount;
+        // The board's size from the inventory ("micro-atx"), else the case type firmware reports ("Desktop").
+        var formFactor = BoardSize(scan?.FormFactor) ?? capture.Firmware.FormFactor;
         var subtitle = string.Join("  •  ", new[]
         {
-            capture.Firmware.FormFactor.ToUpperInvariant(),
+            formFactor.ToUpperInvariant(),
             ShortCpuName(cpuName),
             cores > 0 ? $"{cores}C/{threads}T" : $"{threads} threads",
             SystemInfoService.WindowsDescription()
@@ -46,23 +48,32 @@ internal static partial class WindowsOverview
         details.Add(new("Windows", SystemInfoService.WindowsDescription()));
         details.Add(new("Last read", capture.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)));
 
+        // A board BoardScout knows slot by slot gets its real labels, empty slots, ports, and headers.
+        var profile = BoardProfiles.Apply($"{title} {scan?.SystemInfo.Baseboard.Product}", Parts(capture, map, nodes, scan, telemetry, privacy),
+            "No reading: fan speeds need the PawnIO driver and administrator rights. The version button has the details.", memoryGb);
+        var ages = scan is null ? [] : UpgradePlannerService.GetComponentAges(scan).Where(a => a.AgeYears > 0)
+            .Select(a => new PartAge(a.Category, privacy ? Privacy.Scrub(a.Name) : a.Name, a.AgeYears, a.Generation, a.Released)).ToList();
+
         return new OverviewPayload(
             privacy ? Privacy.Scrub(title) : title,
             subtitle,
-            capture.Firmware.FormFactor,
+            formFactor,
             privacy ? Privacy.HostPlaceholder : Environment.MachineName,
-            Parts(capture, map, nodes, telemetry, privacy),
+            profile.Parts,
             details,
             Drivers(scan, report, privacy),
             volumes,
             Disks(capture, nodes, privacy),
-            Suggestions(scan, report, plan),
+            Suggestions(scan, report, plan, privacy),
             Math.Round(memoryGb, 1),
             nodes.Count(n => n.Kind is not ("router" or "internet" or "dns" or "lan-group" or "virtual-group" or "integrated" or "memory" or "dimm-empty") && !n.Id.StartsWith("lan-", StringComparison.Ordinal)),
             Math.Round(volumes.Sum(v => v.SizeBytes - v.FreeBytes) / 1e12, 2),
             report?.Results.Count(r => r.Status == "update-available"),
             capture.At.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture),
-            capture.CaptureMs);
+            capture.CaptureMs,
+            profile.Layout,
+            profile.Notes,
+            ages);
     }
 
     /// <summary>
@@ -81,6 +92,16 @@ internal static partial class WindowsOverview
         if (boardName.Length > 0) return $"{Company(boardMaker)} {boardName}".Trim();
         return Environment.MachineName;
     }
+
+    private static string? BoardSize(string? size) => size?.ToLowerInvariant() switch
+    {
+        null or "" or "unknown" => null,
+        "micro-atx" => "Micro-ATX",
+        "mini-itx" => "Mini-ITX",
+        "atx" => "ATX",
+        "e-atx" => "E-ATX",
+        _ => size
+    };
 
     private static bool Filler(string text) => Regex.IsMatch(text, "System Product Name|To be filled|Default string|^System$", RegexOptions.IgnoreCase);
 
@@ -108,7 +129,8 @@ internal static partial class WindowsOverview
 
     // ---- The board ---------------------------------------------------------------------------------
 
-    private static List<BoardPart> Parts(ConnectionsService.Capture capture, ConnectionsSnapshot map, List<ConnectionNode> nodes, SystemTelemetry? telemetry, bool privacy)
+    private static List<BoardPart> Parts(ConnectionsService.Capture capture, ConnectionsSnapshot map, List<ConnectionNode> nodes, ScanManifest? scan,
+        SystemTelemetry? telemetry, bool privacy)
     {
         var parts = new List<BoardPart>();
         string Scrub(string text) => privacy ? Privacy.Scrub(text) : text;
@@ -118,7 +140,8 @@ internal static partial class WindowsOverview
         string Tone(ConnectionNode node) => node.Warning is not null || node.Problem || node.Link?.Degraded == true ? "warn" : "good";
 
         var cpu = map.Root;
-        parts.Add(new BoardPart("cpu", "cpu", "cpu", ShortCpuName(cpu.Name), cpu.Detail ?? $"{Environment.ProcessorCount} threads", "good", Facts(cpu, 7), Live: "cpu", Node: "cpu"));
+        var cpuDetail = scan?.Cpu is { Cores: > 0 } inventory ? $"{inventory.Cores} cores · {inventory.Threads} threads" : cpu.Detail ?? $"{Environment.ProcessorCount} threads";
+        parts.Add(new BoardPart("cpu", "cpu", "cpu", ShortCpuName(cpu.Name), cpuDetail, "good", Facts(cpu, 7), Live: "cpu", Node: "cpu", Side: "cpu"));
 
         // Memory slots: the map's (named by channel and position, A1 · B2, as the board prints them), else the
         // firmware's own list.
@@ -131,7 +154,7 @@ internal static partial class WindowsOverview
                 var halves = dimm.Name.Split(" · ", 2); // "A1 · 8 GB", "A2 · empty"
                 var populated = dimm.Kind == "dimm";
                 parts.Add(new BoardPart(dimm.Id, "memory", "dimm", populated && halves.Length == 2 ? halves[1] : "Open", halves[0],
-                    populated ? "good" : "open", Facts(dimm), Live: "mem", Empty: !populated, Node: "memory"));
+                    populated ? "good" : "open", Facts(dimm), Live: "mem", Empty: !populated, Node: "memory", Side: "cpu"));
             }
         }
         else if (slots.Count > 0)
@@ -147,7 +170,7 @@ internal static partial class WindowsOverview
                 }
                 parts.Add(new BoardPart("dimm-" + ConnectionsService.ShortHash(slot.DeviceLocator + slot.BankLocator), "memory", "dimm",
                     slot.Populated ? $"{slot.SizeMb / 1024d:0.#} GB" : "Open", slot.DeviceLocator, slot.Populated ? "good" : "open", facts, Live: "mem",
-                    Empty: !slot.Populated, Node: "memory"));
+                    Empty: !slot.Populated, Node: "memory", Side: "cpu"));
             }
         }
         else if (nodes.FirstOrDefault(n => n.Kind == "memory") is { } memory)
@@ -157,33 +180,34 @@ internal static partial class WindowsOverview
 
         void Attach(ConnectionNode node, string side)
         {
+            var lanes = side == "integrated" ? "cpu" : side;
             switch (node.Kind)
             {
                 case "gpu":
                     parts.Add(new BoardPart("n-" + node.Id, side == "integrated" ? "cpu" : "slots", "gpu", Scrub(node.Name),
                         side == "integrated" ? node.Detail ?? "Integrated graphics" : $"{node.Link?.Label ?? "PCIe"} · {(side == "cpu" ? "CPU" : "chipset")}",
-                        Tone(node), Facts(node), Width: Width(node), Node: node.Id));
+                        Tone(node), Facts(node), Width: Width(node), Node: node.Id, Side: lanes));
                     break;
                 case "nvme":
                     parts.Add(new BoardPart("n-" + node.Id, "m2", "nvme", Scrub(node.Name), $"{node.Link?.Label ?? "NVMe"} · {(side == "cpu" ? "CPU" : "chipset")}",
-                        Tone(node), Facts(node), Live: Live(node), Width: Width(node), Node: node.Id));
+                        Tone(node), Facts(node), Live: Live(node), Width: Width(node), Node: node.Id, Side: lanes));
                     break;
                 case "sata":
-                    parts.Add(new BoardPart("n-" + node.Id, "sata", "sata", node.Name, node.Detail ?? node.Link?.Label, Tone(node), Facts(node), Node: node.Id));
+                    parts.Add(new BoardPart("n-" + node.Id, "sata", "sata", node.Name, node.Detail ?? node.Link?.Label, Tone(node), Facts(node), Node: node.Id, Side: lanes));
                     foreach (var drive in node.Children)
                         parts.Add(new BoardPart("d-" + drive.Id, "sata", drive.Kind is "optical" ? "optical" : "disk", Scrub(drive.Name), drive.Link?.Label ?? drive.Detail,
-                            Tone(drive), Facts(drive), Live: Live(drive), Node: drive.Id));
+                            Tone(drive), Facts(drive), Live: Live(drive), Node: drive.Id, Side: lanes));
                     break;
                 case "usb-controller" or "ethernet" or "wifi" or "audio" or "bluetooth":
                     parts.Add(new BoardPart("n-" + node.Id, "io", node.Kind, Scrub(node.Name), node.Link?.Bus == "pcie" ? $"{node.Link.Label} · {(side == "cpu" ? "CPU" : side)}" : node.Detail ?? node.Link?.Label,
-                        Tone(node), Facts(node), Live: Live(node), Node: node.Id));
+                        Tone(node), Facts(node), Live: Live(node), Node: node.Id, Side: lanes));
                     break;
                 case "integrated" or "memory" or "virtual-group" or "chipset" or "router" or "internet" or "dns" or "lan-group":
                     break;
                 default:
                     if (node.Link?.Bus == "pcie")
                         parts.Add(new BoardPart("n-" + node.Id, "slots", "device", Scrub(node.Name), $"{node.Link.Label} · {(side == "cpu" ? "CPU" : "chipset")}",
-                            Tone(node), Facts(node), Live: Live(node), Width: Width(node), Node: node.Id));
+                            Tone(node), Facts(node), Live: Live(node), Width: Width(node), Node: node.Id, Side: lanes));
                     break;
             }
         }
@@ -195,7 +219,7 @@ internal static partial class WindowsOverview
             else if (node.Kind == "chipset")
             {
                 parts.Add(new BoardPart("chipset", "chipset", "chipset", node.Name, node.Link?.Label ?? node.Detail, Tone(node), Facts(node),
-                    Live: node.Sensor is not null ? "chipset" : null, Node: node.Id));
+                    Live: node.Sensor is not null ? "chipset" : null, Node: node.Id, Side: "chipset"));
                 foreach (var behind in node.Children) Attach(behind, "chipset");
             }
             else Attach(node, "cpu");
@@ -211,7 +235,8 @@ internal static partial class WindowsOverview
                 monitors.Select(m => new Fact(Scrub(m.Name), m.Link?.Label ?? "Connected")).ToList()));
         }
 
-        foreach (var fan in telemetry?.Fans ?? [])
+        // Board fan headers only: the graphics card's own fan isn't on the board.
+        foreach (var fan in (telemetry?.Fans ?? []).Where(f => !f.Name.StartsWith("GPU", StringComparison.OrdinalIgnoreCase)))
             parts.Add(new BoardPart("fan-" + ConnectionsService.ShortHash(fan.Name), "fans", "fan", fan.Name, fan.Rpm > 0 ? $"{fan.Rpm} RPM" : "stopped",
                 fan.Rpm > 0 ? "good" : "open", [new("Fan", fan.Name), new("Speed", $"{fan.Rpm} RPM")], Live: "fan:" + fan.Name));
         return parts;
@@ -285,8 +310,17 @@ internal static partial class WindowsOverview
         return rows;
     }
 
-    private static List<Suggestion> Suggestions(ScanManifest? scan, DriverReport? report, OptimizationPlan? plan)
+    private static List<Suggestion> Suggestions(ScanManifest? scan, DriverReport? report, OptimizationPlan? plan, bool privacy)
     {
+        // Volume labels are names people pick; privacy mode says "Volume E:" instead.
+        string Mask(string text)
+        {
+            if (!privacy || scan is null) return text;
+            foreach (var volume in scan.Volumes.Where(v => !string.IsNullOrWhiteSpace(v.Label)))
+                text = text.Replace(volume.Label!, $"Volume {volume.Letter}", StringComparison.Ordinal);
+            return Privacy.Scrub(text);
+        }
+
         var list = new List<Suggestion>();
         foreach (var section in plan?.Sections ?? [])
             foreach (var item in section.Items.Where(i => i.Tone is "warn" or "improve"))
@@ -296,7 +330,8 @@ internal static partial class WindowsOverview
                 list.Add(new Suggestion(s.Severity switch { SuggestionSeverity.Critical or SuggestionSeverity.Warning => "warning", SuggestionSeverity.Improvement => "improvement", _ => "info" },
                     s.Title, s.Detail, s.Action, s.Category));
         if (list.Count == 0) list.Add(new Suggestion("info", "Nothing to fix", "Every check in the optimization plan passed.", null, "Overview"));
-        return list.DistinctBy(s => s.Title).OrderBy(s => s.Severity switch { "warning" => 0, "improvement" => 1, _ => 2 }).ToList();
+        return list.DistinctBy(s => s.Title).OrderBy(s => s.Severity switch { "warning" => 0, "improvement" => 1, _ => 2 })
+            .Select(s => s with { Title = Mask(s.Title), Detail = Mask(s.Detail), Action = s.Action is null ? null : Mask(s.Action) }).ToList();
     }
 
     // ---- The live tiles ----------------------------------------------------------------------------------
