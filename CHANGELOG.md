@@ -20,6 +20,11 @@ The version button is a Glimmer orb in the Windows app too.
   enlarged 3x.
 - Tests check that the window's aurora colours match the browser dashboard's `glimmer-badge.css` in every state.
 
+### Fixed
+- Release builds are deterministic (`ContinuousIntegrationBuild`): the exe, its embedded debug info, and the
+  source link map record `/_/` instead of the folder the build ran in.
+- The bundled FlashStream copy is 1.1.1, whose header no longer names a folder on the PC it was built on.
+
 ## 2.2.0 — 2026-10-15
 
 A new Overview, and a quieter header and rail.

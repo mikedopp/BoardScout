@@ -23,6 +23,9 @@
     <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
     <!-- LibraryImport's generated marshalling for libc's realpath. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Release builds record /_/ instead of the folder they were built in (exe, embedded pdb, source link),
+         so a published binary never names the build PC's folders or account. -->
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <!-- -p:Standalone=true packs the web views and data files into the binary; .NET unpacks them to

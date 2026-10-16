@@ -1,5 +1,5 @@
-// FlashStream v1.1.0 — SSD/NVMe activity as light streaks through a NAND die grid. No dependencies.
-// Built from FlashStream/src/flashStream.ts (F:/mikedopp/Drop/FlashStream); do not edit copies.
+// FlashStream v1.1.1 — SSD/NVMe activity as light streaks through a NAND die grid. No dependencies.
+// Built from FlashStream src/flashStream.ts; do not edit copies.
 (function () {
 'use strict';
 /**
@@ -15,10 +15,10 @@
  * drive's controller remaps addresses internally. Kept free of imports so the
  * node tests can load it directly.
  *
- * FlashStream 1.1 · source of truth: F:\mikedopp\Drop\FlashStream\src\flashStream.ts
+ * FlashStream 1.1 · source of truth: FlashStream src/flashStream.ts
  * (copies: DedupApp src/lib/flashStream.ts, BoardScout Assets/vendor/flashstream/flashstream.js).
  */
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 /** Logical channel count: NVMe controllers usually run 8, SATA SSDs 4, USB/SD flash 2. */
 function lanesFor(mediaType) {
     if (/nvme/i.test(mediaType))

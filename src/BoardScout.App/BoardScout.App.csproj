@@ -25,6 +25,9 @@
     <!-- Ship English resources only, and leave the SDKs' IntelliSense XML out of the portable folder. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
+    <!-- Release builds record /_/ instead of the folder they were built in (exe, embedded pdb, source link),
+         so a published binary never names the build PC's folders or account. -->
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <!-- -p:Standalone=true packs Assets, DriverScout, and the notices into the exe itself; .NET unpacks
