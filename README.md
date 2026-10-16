@@ -140,7 +140,9 @@ and SDK, and searchable tables of patches, installed software, and scheduled tas
 update pages; every volume with its usage; and suggestions such as enabling XMP/DOCP/EXPO,
 freeing space, or reviewing BIOS updates.
 
-**Version button** — the chasing-colors version pill opens runtime details, sensor
+**Version button** — the version on a Glimmer orb badge (aurora, the same orb as the browser
+dashboard's). The orb thinks while a scan, driver check, or download runs, turns mint for a moment when it
+finishes, and stays red after a failure until the next run or a click. It opens runtime details, sensor
 troubleshooting, settings (privacy mode, glass effects, motion, live refresh, minimize to tray),
 dependencies, requirements, and legal notices. *Copy diagnostics* gathers what an issue report needs.
 

@@ -6,6 +6,7 @@ using BoardScout.Models;
 using BoardScout.Remote;
 using BoardScout.Services;
 using BoardScout.Views;
+using Glimmer.WinForms;
 using Microsoft.Web.WebView2.WinForms;
 
 namespace BoardScout.UI;
@@ -1250,6 +1251,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        _versionButton.State = GlimmerState.Thinking;
         try
         {
             _scanPath = latest;
@@ -1263,9 +1265,11 @@ public sealed class MainForm : Form
             }
             BindSnapshot();
             _status.Text = $"Loaded cached scan from {_scan.Scan.TimestampUtc?.ToLocalTime():g}. No rescan needed unless hardware changed.";
+            _versionButton.Flash(GlimmerState.Success);
         }
         catch (Exception ex)
         {
+            _versionButton.State = GlimmerState.Error;
             AppendLog("CACHE ERROR: " + ex.Message);
             SetEmptyState();
         }
@@ -1424,18 +1428,24 @@ public sealed class MainForm : Form
         _operationCts = new CancellationTokenSource();
         SetBusy(true, message);
         AppendLog($"[{DateTime.Now:T}] {message}");
+        // The version orb says what is happening: thinking now, mint for a moment when done, red after a failure
+        // until the next run or a click on it.
+        _versionButton.State = GlimmerState.Thinking;
 
         try
         {
             await operation(_operationCts.Token);
+            _versionButton.Flash(GlimmerState.Success);
         }
         catch (OperationCanceledException)
         {
+            _versionButton.State = GlimmerState.Idle;
             _status.Text = "Operation cancelled. Existing cached results were preserved.";
             AppendLog("Cancelled.");
         }
         catch (Exception ex)
         {
+            _versionButton.State = GlimmerState.Error;
             _status.Text = "Operation failed — see Scan Log.";
             AppendLog("FAILED: " + ex);
             MessageBox.Show(this, ex.Message, "BoardScout", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1642,6 +1652,7 @@ public sealed class MainForm : Form
 
     private void ToggleVersionPopout()
     {
+        if (_versionButton.State == GlimmerState.Error) _versionButton.State = GlimmerState.Idle; // seen
         if (_versionPopout is not null)
         {
             _versionPopout.Close();
@@ -1733,6 +1744,7 @@ public sealed class MainForm : Form
             AppSettings.Update(s => s.GlassEffects = true);
             await Task.Delay(7000);
             await SaveSnapshotAsync(Path.Combine(directory, "overview-glass.png"));
+            SaveVersionStates(Path.Combine(directory, "version-states.png"));
             if (_overviewReady)
             {
                 await _overviewWebView.CoreWebView2.ExecuteScriptAsync(
@@ -1756,6 +1768,34 @@ public sealed class MainForm : Form
             _trayIcon.Visible = false;
             Close();
         }
+    }
+
+    // The version badge in each state (idle, thinking, success, error), cropped from the window and enlarged 3x
+    // with no smoothing, so the orb can be judged pixel by pixel.
+    private void SaveVersionStates(string path)
+    {
+        GlimmerState[] states = [GlimmerState.Idle, GlimmerState.Thinking, GlimmerState.Success, GlimmerState.Error];
+        const int zoom = 3;
+        var before = _versionButton.State;
+        var crop = Rectangle.Inflate(RectangleToClient(_versionButton.RectangleToScreen(_versionButton.ClientRectangle)), 10, 8);
+        var client = PointToScreen(Point.Empty);
+        crop.Offset(client.X - Left, client.Y - Top);
+        using var strip = new Bitmap(crop.Width * zoom, crop.Height * zoom * states.Length);
+        using (var g = Graphics.FromImage(strip))
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+            for (var i = 0; i < states.Length; i++)
+            {
+                _versionButton.State = states[i];
+                _versionButton.AdvanceAnimation(1f); // past the colour change and the success pop
+                using var window = new Bitmap(Width, Height);
+                DrawToBitmap(window, new Rectangle(Point.Empty, Size));
+                g.DrawImage(window, new Rectangle(0, i * crop.Height * zoom, crop.Width * zoom, crop.Height * zoom), crop, GraphicsUnit.Pixel);
+            }
+        }
+        _versionButton.State = before;
+        strip.Save(path, System.Drawing.Imaging.ImageFormat.Png);
     }
 
     private async Task SaveSnapshotAsync(string path)

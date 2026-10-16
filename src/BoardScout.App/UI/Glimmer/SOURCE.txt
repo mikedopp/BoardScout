@@ -1,0 +1,5 @@
+GlimmerBadge.cs: Glimmer 0.5.0, hosts/winforms/Glimmer.WinForms/GlimmerBadge.cs, commit 5c7a53f.
+Copied unchanged (BoardScout is public and Glimmer is a separate repository, so it is copied rather than referenced).
+To update: copy the newer file over this one, change this line, and run the tests (VersionBadgeTests compares
+the native aurora colours with Shell/glimmer/glimmer-badge.css).
+MIT, Copyright (c) 2026 mikedopp. The orb look follows "orb" by LerSent001 (MIT); see Shell/glimmer/NOTICE.md.

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.3.0 — 2026-10-15
+
+The version button is a Glimmer orb in the Windows app too.
+
+### Changed
+- **Version button**: the four-colour chasing border is gone. The version now sits on the Glimmer orb badge
+  (aurora), the same badge the browser dashboard shows, drawn natively with GDI+ (Glimmer 0.5.0's
+  `GlimmerBadge`, copied to `UI/Glimmer/`). The orb says what BoardScout is doing:
+  - **thinking** (fast swirl, pulsing glow) while a scan, driver check, or driver download runs, and while the
+    cached scan loads at startup;
+  - **success** (a mint pop for 1.6 s) when it finishes;
+  - **error** (red, with a wobbling edge) after a failure, until the next run or a click on the badge.
+  Motion off (in Settings or in Windows) holds the orb still; glass off draws the pill flat and opaque; high
+  contrast draws it in system colours. Click, Enter, Space, and screen readers still open the version pop-out.
+
+### Added
+- `--snapshot` also writes `version-states.png`: the version badge in each state, cropped from the window and
+  enlarged 3x.
+- Tests check that the window's aurora colours match the browser dashboard's `glimmer-badge.css` in every state.
+
 ## 2.2.0 — 2026-10-15
 
 A new Overview, and a quieter header and rail.

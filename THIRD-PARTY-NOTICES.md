@@ -32,11 +32,15 @@ the Windows browser dashboard.
 The Linux edition doesn't include LibreHardwareMonitorLib, WebView2, or System.Management: it reads the
 kernel's own files instead, and its views run in the browser you already have.
 
-### Glimmer badge 0.4.0
+### Glimmer badge 0.4.0 (web) and 0.5.0 (native)
 
 `Shell/glimmer/` (the browser dashboard, in both editions): the orb on the version button. MIT, Copyright (c) 2026 mikedopp; its look
 follows "orb" by LerSent001 (MIT). The license texts and credits travel in that folder (`LICENSE`,
 `LICENSE-orb-LerSent001`, `NOTICE.md`).
+
+`src/BoardScout.App/UI/Glimmer/GlimmerBadge.cs` (the Windows app's header): Glimmer 0.5.0's GDI+ rendition of
+the same badge, compiled into BoardScout.exe. MIT, Copyright (c) 2026 mikedopp; its orb look follows "orb" by
+LerSent001 (MIT), and the file's header carries that credit. The MIT texts are the ones in `Shell/glimmer/`.
 
 **MPL-2.0 components.** The Source Code Form of each MPL-2.0 component is available at the
 repository linked above, under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/).
