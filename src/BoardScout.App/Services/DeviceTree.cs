@@ -85,9 +85,16 @@ internal readonly record struct DiskCounterSample(long BytesRead, long BytesWrit
     long IdleTime = 0, long QueryTime = 0, long ReadTime = 0, long WriteTime = 0);
 
 /// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe);
-/// Spinning is true for hard drives (the disk reports a seek penalty).</summary>
+/// Spinning is true for hard drives (the disk reports a seek penalty). PowerTable is an NVMe drive's own power states.</summary>
 internal sealed record DiskFacts(int Number, string? Vendor, string? Product, string? Firmware, int Bus, long? SizeBytes,
-    double? TemperatureC, bool? Spinning = null, bool SpinningFromModel = false);
+    double? TemperatureC, bool? Spinning = null, bool SpinningFromModel = false, DrivePowerTable? PowerTable = null);
+
+/// <summary>
+/// An NVMe drive's power states, in watts, from its Identify data: the most it may draw (state 0, MaxW), what it says it
+/// draws idle and busy in state 0 (IdleW, ActiveW; null when it doesn't say), and its deepest sleep state (SleepW; null
+/// when it has no sleep states).
+/// </summary>
+internal sealed record DrivePowerTable(double MaxW, double? IdleW, double? ActiveW, double? SleepW, int States);
 
 /// <summary>What Windows said to an eject request. Veto is the PNP_VETO_TYPE when it refused (5 a file is open,
 /// 3 a program, 4 a service, 12 needs administrator rights, 13 already gone); VetoName says who, when Windows says.</summary>
@@ -564,7 +571,52 @@ internal static partial class DeviceTree
             spinning = guess;
             fromModel = true;
         }
-        return new DiskFacts(number, vendor, product, firmware, bus, size, temperature, spinning, fromModel);
+        return new DiskFacts(number, vendor, product, firmware, bus, size, temperature, spinning, fromModel,
+            bus == 17 ? ReadNvmePowerTable(handle) : null);
+    }
+
+    // IOCTL_STORAGE_QUERY_PROPERTY with StorageAdapterProtocolSpecificProperty: NVMe Identify Controller, which Windows
+    // answers on a handle with no access rights. Read-only: Identify changes nothing on the drive.
+    private static DrivePowerTable? ReadNvmePowerTable(SafeFileHandle handle)
+    {
+        const int dataLength = 4096;
+        var buffer = new byte[8 + 40 + dataLength];
+        BitConverter.GetBytes(49).CopyTo(buffer, 0);          // StorageAdapterProtocolSpecificProperty, standard query
+        BitConverter.GetBytes(3).CopyTo(buffer, 8);           // STORAGE_PROTOCOL_SPECIFIC_DATA: ProtocolTypeNvme
+        BitConverter.GetBytes(1).CopyTo(buffer, 12);          // NVMeDataTypeIdentify
+        BitConverter.GetBytes(1).CopyTo(buffer, 16);          // CNS 1: the controller
+        BitConverter.GetBytes(40).CopyTo(buffer, 24);         // data right after the 40-byte header
+        BitConverter.GetBytes(dataLength).CopyTo(buffer, 28);
+        if (!DeviceIoControl(handle, IoctlStorageQueryProperty, buffer, buffer.Length, buffer, buffer.Length, out var returned, IntPtr.Zero))
+            return null;
+        // STORAGE_PROTOCOL_DATA_DESCRIPTOR: Version, Size, then the same header; its offset counts from the header.
+        var start = 8 + BitConverter.ToInt32(buffer, 24);
+        return start > 8 && returned >= start + dataLength ? ParsePowerTable(buffer.AsSpan(start, dataLength)) : null;
+    }
+
+    /// <summary>The power states in NVMe Identify Controller data (NPSS at byte 263, 32-byte descriptors from 2048).</summary>
+    internal static DrivePowerTable? ParsePowerTable(ReadOnlySpan<byte> identify)
+    {
+        if (identify.Length < 4096) return null;
+        var states = identify[263] + 1;
+        static double? Scaled(int value, int scale) => value > 0 && scale is 1 or 2 ? value * (scale == 1 ? 0.0001 : 0.01) : null;
+        double max = 0;
+        double? idle = null, active = null, sleep = null;
+        for (var i = 0; i < Math.Min(states, 32); i++)
+        {
+            var d = identify.Slice(2048 + i * 32, 32);
+            // MP in centiwatts (or 100 µW units when MXPS is set); bit 1 of byte 3 marks a non-operational (sleep) state.
+            var watts = BitConverter.ToUInt16(d) * ((d[3] & 1) != 0 ? 0.0001 : 0.01);
+            var asleep = (d[3] & 2) != 0;
+            if (i == 0)
+            {
+                max = watts;
+                idle = Scaled(BitConverter.ToUInt16(d[16..]), d[18] >> 6);
+                active = Scaled(BitConverter.ToUInt16(d[20..]), d[22] >> 6);
+            }
+            if (asleep && watts > 0) sleep = Math.Min(sleep ?? double.MaxValue, watts);
+        }
+        return max > 0 ? new DrivePowerTable(Math.Round(max, 4), idle, active, sleep, states) : null;
     }
 
 

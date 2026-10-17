@@ -188,7 +188,7 @@ internal sealed partial class Hub
         var map = ConnectionsService.Build(capture, privacy, discovery);
         _map = map;
         Publish("connections", $"{{\"type\":\"connections\",\"data\":{ConnectionsService.ToJson(map)}}}");
-        var plan = _plan = PlanService.Build(capture, map, [], _profile, privacy, _lastTelemetry?.Power);
+        var plan = _plan = PlanService.Build(capture, map, [], _profile, privacy, _lastTelemetry);
         var overview = WindowsOverview.Build(capture, map, _scan, _report, plan, _lastTelemetry, privacy);
         PublishOverview($"{{\"type\":\"overview\",\"data\":{JsonSerializer.Serialize(overview, Json.Options)}}}");
         if (!_payloads.ContainsKey("system")) _ = LoadSystemAsync();
@@ -340,7 +340,7 @@ internal sealed partial class Hub
             var loads = await cores;
             var privacy = AppSettings.Current.PrivacyMode;
             var json = await Task.Run(() => PlanService.ToJson(
-                PlanService.Build(capture, ConnectionsService.Build(capture, privacy, _discovery), loads, _profile, privacy, _lastTelemetry?.Power)), cts.Token);
+                PlanService.Build(capture, ConnectionsService.Build(capture, privacy, _discovery), loads, _profile, privacy, _lastTelemetry)), cts.Token);
             if (!cts.IsCancellationRequested) Broadcast("connections", json);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
@@ -379,7 +379,7 @@ internal sealed partial class Hub
     {
         Telemetry.DetailedRates = detailed;
         var sample = _lastTelemetry = Telemetry.Sample();
-        var header = $"{{\"type\":\"telemetry\",\"data\":{JsonSerializer.Serialize(WindowsOverview.Header(sample), Json.Options)}}}";
+        var header = $"{{\"type\":\"telemetry\",\"data\":{JsonSerializer.Serialize(WindowsOverview.Header(sample, _capture), Json.Options)}}}";
         return (header, detailed ? JsonSerializer.Serialize(WindowsOverview.Flow(sample, _netKeys), Json.Options) : null);
     }
 

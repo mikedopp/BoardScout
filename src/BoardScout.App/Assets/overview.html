@@ -102,6 +102,19 @@ body.solid .overlay{background:var(--sr);backdrop-filter:none;-webkit-backdrop-f
 .facts tr:last-child td{border-bottom:0}
 .facts td:first-child{color:var(--ts);width:42%;padding-right:12px}
 .facts td:last-child{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.facts.power td:first-child{width:auto}
+.facts.power td:last-child{text-align:right;white-space:nowrap}
+.facts.power tr.part td{padding-top:2px;font-size:11.5px}
+.facts.power tr.part td:first-child{padding-left:12px}
+.facts.power tr.total td{font-weight:650;color:var(--t);border-top:1px solid rgba(255,255,255,.14)}
+.facts.power tr[title]{cursor:help}
+.facts.power .watts{margin-right:8px}
+.ktag{display:inline-block;min-width:62px;text-align:center;font-size:10px;line-height:1.5;padding:0 6px;border-radius:999px;border:1px solid rgba(255,255,255,.14);color:var(--ts)}
+.ktag.measured{color:#6ee7b7;border-color:rgba(16,185,129,.4)}
+.ktag.derived{color:#93c5fd;border-color:rgba(61,158,255,.4)}
+.ktag.estimate{color:#fcd34d;border-color:rgba(245,158,11,.45)}
+.ktag.unmeasured{color:var(--tm);border-style:dashed}
+.power-note{color:var(--ts);font-size:11.5px;line-height:1.45;margin:6px 0 0}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .btn{cursor:pointer;border-radius:10px;padding:6px 12px;font-size:12.5px;font-weight:600;
   background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),rgba(17,30,44,.85);
@@ -622,6 +635,13 @@ function summary() {
     }
   }
 
+  // Filled from the live numbers each second (renderPower); hidden until a breakdown arrives.
+  const power = el('div');
+  power.id = 'powerBox';
+  power.hidden = true;
+  box.append(power);
+  renderPower();
+
   if (o.boardNotes?.length) {
     box.append(el('h4', null, 'About this board'));
     const ul = el('ul', 'notes');
@@ -652,11 +672,47 @@ function summary() {
 }
 
 // ---- Live numbers ----------------------------------------------------------------------------------------
+// Where the power goes, in the summary. Every number carries how it was found, so an estimate never reads as a
+// measurement; the processor's and power supply's splits show, drive and USB detail stays on the plan's Power table.
+const POWER_KIND = { measured: 'measured', derived: 'worked out', estimate: 'estimate', ceiling: 'at most', unmeasured: 'no reading' };
+function fmtWatts(w, kind) {
+  if (w == null) return '—';
+  const n = w >= 10 ? String(Math.round(w)) : w >= 1 ? w.toFixed(1) : w.toFixed(2);
+  return (kind === 'ceiling' ? '≤ ' : kind === 'estimate' ? '≈ ' : '') + n + ' W';
+}
+function renderPower() {
+  const box = $('powerBox');
+  const pw = state.t?.power;
+  if (!box) return;
+  if (!pw?.rows?.length) { box.hidden = true; return; }
+  box.hidden = false;
+  box.replaceChildren(el('h4', null, 'Power right now'));
+  const table = el('table', 'facts power');
+  let parent = null;
+  for (const r of pw.rows) {
+    if (!r.sub) parent = r.name;
+    else if (parent !== 'Processor' && parent !== 'Power supply output') continue;
+    const tr = el('tr', r.sub ? 'part' : null);
+    if (r.detail) tr.title = r.detail;
+    const value = el('td');
+    value.append(el('span', 'watts', fmtWatts(r.watts, r.kind)), el('span', 'ktag ' + r.kind, POWER_KIND[r.kind] || r.kind));
+    tr.append(el('td', null, r.name), value);
+    table.append(tr);
+  }
+  if (pw.total != null) {
+    const tr = el('tr', 'total');
+    tr.append(el('td', null, pw.totalLabel), el('td', null, fmtWatts(pw.total)));
+    table.append(tr);
+  }
+  box.append(table);
+  if (pw.note) box.append(el('p', 'power-note', pw.note + ' Hover a row for how it was found.'));
+}
+
 function renderTelemetry() {
   const t = state.t;
   if (!t || !state.o) return;
   const cpuLive = $('cpuLive');
-  if (cpuLive) cpuLive.textContent = `${Math.round(t.cpu)}% load${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}`;
+  if (cpuLive) cpuLive.textContent = `${Math.round(t.cpu)}% load${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}${t.cpuWatts != null ? ` · ${Math.round(t.cpuWatts)} W` : ''}`;
   setCpuBar(t.cpu);
   const mem = $('memLabel');
   if (mem) mem.textContent = `MEMORY · ${t.memoryUsedGb.toFixed(1)} / ${t.memoryTotalGb.toFixed(1)} GB IN USE`;
@@ -675,6 +731,7 @@ function renderTelemetry() {
     const label = document.querySelector(`#board .part[data-id="${CSS.escape(gpu.id)}"] .live`);
     if (label) label.textContent = [t.gpuTemp != null ? `${Math.round(t.gpuTemp)}°C` : null, t.gpuWatts != null ? `${Math.round(t.gpuWatts)} W` : null].filter(Boolean).join(' · ');
   }
+  renderPower();
   updateInspectorLive();
 }
 
@@ -718,7 +775,7 @@ function updateInspectorLive() {
   if (!p) return;
   const t = state.t, f = state.flow;
   let words = '';
-  if (p.kind === 'cpu' && t) words = `${Math.round(t.cpu)}% load right now${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}`;
+  if (p.kind === 'cpu' && t) words = `${Math.round(t.cpu)}% load right now${t.cpuTemp != null ? ` · ${Math.round(t.cpuTemp)}°C` : ''}${t.cpuWatts != null ? ` · ${Math.round(t.cpuWatts)} W` : ''}`;
   else if ((p.kind === 'dimm' || p.kind === 'memory') && t) words = `${t.memoryUsedGb.toFixed(1)} of ${t.memoryTotalGb.toFixed(1)} GB in use right now`;
   else if (p.kind === 'chipset' && t?.chipsetTemp != null) words = `${Math.round(t.chipsetTemp)}°C right now`;
   else if (p.live?.startsWith('disk:') && f?.disk?.[p.live.slice(5)]) { const d = f.disk[p.live.slice(5)]; words = `Reading ${fmtRate(d[0])} · writing ${fmtRate(d[1])}`; }

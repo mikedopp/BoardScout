@@ -18,6 +18,41 @@ public sealed class OptimizationPlan
     [JsonPropertyName("eventsLost")] public long EventsLost { get; set; }
     [JsonPropertyName("elevated")] public bool Elevated { get; set; }
     [JsonPropertyName("gatheredMs")] public long GatheredMs { get; set; }
+
+    /// <summary>Where the power goes, for the Power section's table (Windows; Linux leaves it out).</summary>
+    [JsonPropertyName("power")] public PowerBreakdown? Power { get; set; }
+}
+
+/// <summary>
+/// Where the PC's power goes right now, as far as BoardScout can tell. Each row says how its number was found:
+/// measured (a sensor reads it), derived (worked out from measured numbers), estimate (from the part's own power
+/// table or typical figures, and how busy it is), ceiling (the most devices ask for), or unmeasured (no number).
+/// Sub rows split the row above them and aren't counted again.
+/// </summary>
+public sealed class PowerBreakdown
+{
+    [JsonPropertyName("rows")] public List<PowerRow> Rows { get; set; } = [];
+
+    /// <summary>What the power supply delivers when it reports that, else the measured and estimated rows added up.</summary>
+    [JsonPropertyName("total")] public double? Total { get; set; }
+    [JsonPropertyName("totalLabel")] public string TotalLabel { get; set; } = "";
+
+    /// <summary>What the total leaves out, in one sentence.</summary>
+    [JsonPropertyName("note")] public string Note { get; set; } = "";
+}
+
+public sealed class PowerRow
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("watts")] public double? Watts { get; set; }
+
+    /// <summary>measured, derived, estimate, ceiling, or unmeasured.</summary>
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "measured";
+    [JsonPropertyName("detail")] public string? Detail { get; set; }
+
+    /// <summary>The Connections map card this row is about.</summary>
+    [JsonPropertyName("node")] public string? Node { get; set; }
+    [JsonPropertyName("sub")] public bool Sub { get; set; }
 }
 
 public sealed class PlanSection

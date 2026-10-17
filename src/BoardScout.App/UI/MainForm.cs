@@ -684,7 +684,7 @@ public sealed class MainForm : Form
         var overview = await Task.Run(() =>
         {
             var map = ConnectionsService.Build(capture, privacy, discovery);
-            var plan = PlanService.Build(capture, map, [], measured, privacy, telemetry?.Power);
+            var plan = PlanService.Build(capture, map, [], measured, privacy, telemetry);
             return WindowsOverview.Build(capture, map, scan, report, plan, telemetry, privacy);
         });
         if (IsDisposed || version != _overviewVersion) return;
@@ -703,7 +703,7 @@ public sealed class MainForm : Form
     {
         if (!_overviewReady || IsDisposed) return;
         var core = _overviewWebView.CoreWebView2;
-        core.PostWebMessageAsJson(Json.Message("telemetry", System.Text.Json.JsonSerializer.Serialize(WindowsOverview.Header(telemetry), Json.Options)));
+        core.PostWebMessageAsJson(Json.Message("telemetry", System.Text.Json.JsonSerializer.Serialize(WindowsOverview.Header(telemetry, _connectionsCapture), Json.Options)));
         if (telemetry.InterfaceRates is not null)
             core.PostWebMessageAsJson(Json.Message("flow", System.Text.Json.JsonSerializer.Serialize(WindowsOverview.Flow(telemetry, _netKeys), Json.Options)));
     }
@@ -978,9 +978,9 @@ public sealed class MainForm : Form
             var privacy = Privacy.Enabled;
             var discovery = _discovery;
             var measured = _interruptProfile;
-            var power = _lastTelemetry?.Power;
+            var telemetry = _lastTelemetry;
             var json = await Task.Run(() => PlanService.ToJson(
-                PlanService.Build(capture, ConnectionsService.Build(capture, privacy, discovery), loads, measured, privacy, power)), cts.Token);
+                PlanService.Build(capture, ConnectionsService.Build(capture, privacy, discovery), loads, measured, privacy, telemetry)), cts.Token);
             if (!IsDisposed && !cts.IsCancellationRequested) PostToConnections(json);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { }

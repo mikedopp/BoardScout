@@ -4,8 +4,13 @@ public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 
 public sealed record FanReading(string Name, int Rpm, bool Active);
 
-/// <summary>Power draw a sensor reports right now: "CPU" (package) or "GPU" (the whole card or chip).</summary>
-public sealed record PowerReading(string Device, double Watts);
+/// <summary>
+/// Power draw a sensor reports right now. Device is "CPU" (package), "CPU cores", "CPU SoC", "CPU graphics", "GPU"
+/// (the whole card or chip), "PSU output", "PSU input", or a PSU rail ("PSU +12V"). Source names the hardware
+/// (the power supply's model). Derived is true for a number worked out from other readings (a rail's volts times amps,
+/// input from output and efficiency).
+/// </summary>
+public sealed record PowerReading(string Device, double Watts, string? Source = null, bool Derived = false);
 
 /// <summary>
 /// Bytes per second toward the CPU (received or read) and away from it (sent or written). OpsIn/OpsOut
@@ -51,7 +56,7 @@ public sealed record SystemTelemetry(
     /// <summary>Time per request and totals since boot for each physical disk, when detailed rates are on.</summary>
     public IReadOnlyDictionary<int, DiskIoDetail>? DiskDetail { get; init; }
 
-    /// <summary>CPU and GPU power draw, when the sensors report it.</summary>
+    /// <summary>CPU, GPU, and power supply readings, when the sensors report them.</summary>
     public IReadOnlyList<PowerReading> Power { get; init; } = [];
 
     public ulong MemoryUsedBytes => MemoryTotalBytes > MemoryAvailableBytes

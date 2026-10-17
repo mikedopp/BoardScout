@@ -55,7 +55,10 @@ internal sealed record OverviewPayload(
     IReadOnlyList<string>? BoardNotes = null,
     IReadOnlyList<PartAge>? Ages = null);
 
-/// <summary>The header tiles' numbers: processor, memory, temperatures, fans, and network, right now.</summary>
+/// <summary>
+/// The header tiles' numbers: processor, memory, temperatures, fans, and network, right now. CpuWatts is the processor
+/// package's power; Power is the whole breakdown (Windows only, for the Overview's summary).
+/// </summary>
 internal sealed record HeaderTelemetry(
     double Cpu,
     double MemoryUsedGb,
@@ -67,6 +70,8 @@ internal sealed record HeaderTelemetry(
     double NetIn,
     double NetOut,
     double? GpuWatts,
-    string SampledAt);
+    string SampledAt,
+    double? CpuWatts = null,
+    BoardScout.Models.PowerBreakdown? Power = null);
 
 internal sealed record HeaderFan(string Name, int Rpm);

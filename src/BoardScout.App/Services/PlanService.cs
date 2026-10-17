@@ -12,7 +12,7 @@ namespace BoardScout.Services;
 internal static class PlanService
 {
     public static OptimizationPlan Build(ConnectionsService.Capture capture, ConnectionsSnapshot map,
-        IReadOnlyList<CoreInterruptLoad> cores, InterruptProfile? profile, bool privacy, IReadOnlyList<PowerReading>? power = null)
+        IReadOnlyList<CoreInterruptLoad> cores, InterruptProfile? profile, bool privacy, SystemTelemetry? telemetry = null)
     {
         var watch = Stopwatch.StartNew();
         var context = new Context(capture, map, privacy);
@@ -37,23 +37,27 @@ internal static class PlanService
         var memory = MemoryAdvice.Analyze(capture.Firmware, Board());
         plan.Sections.Add(Memory(memory, plan));
         plan.Sections.Add(Interrupts(context, cores, profile, plan));
-        plan.Sections.Add(Power(context, power ?? []));
+        plan.Sections.Add(Power(context, telemetry, plan));
         plan.Sections.Add(Compatibility(context, memory));
         plan.GatheredMs = watch.ElapsedMilliseconds;
         return plan;
     }
 
-    /// <summary>The whole plan, for the command line: capture, a one-second interrupt sample, and (when
-    /// elevated and asked) a ten-second driver profile.</summary>
+    /// <summary>The whole plan, for the command line: capture, a one-second interrupt sample (sensors and drive
+    /// activity are read across the same second, for the power table), and (when elevated and asked) a ten-second
+    /// driver profile.</summary>
     public static async Task<string> GatherJsonAsync(bool privacy, bool profile)
     {
+        using var telemetry = new SystemTelemetryService { DetailedRates = true };
+        telemetry.Sample();
         var capture = await Task.Run(ConnectionsService.Read);
         var map = ConnectionsService.Build(capture, privacy, null);
         var cores = await InterruptStats.SampleAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+        var sample = telemetry.Sample();
         InterruptProfile? drivers = profile && SystemTelemetryService.IsElevated
             ? await InterruptProfiler.MeasureAsync(TimeSpan.FromSeconds(10), capture.Tree, CancellationToken.None)
             : null;
-        return ToJson(Build(capture, map, cores, drivers, privacy));
+        return ToJson(Build(capture, map, cores, drivers, privacy, sample));
     }
 
     public static string ToJson(OptimizationPlan plan) =>
@@ -766,15 +770,27 @@ internal static class PlanService
 
     // ---- Power -----------------------------------------------------------------------------------
 
-    private static PlanSection Power(Context context, IReadOnlyList<PowerReading> power)
+    private static PlanSection Power(Context context, SystemTelemetry? telemetry, OptimizationPlan plan)
     {
         var section = new PlanSection { Id = "power", Title = "Power" };
         var usb = context.All.Where(d => d.Usb?.PowerMa is > 0 && d.IdStarts(@"USB\VID_")).ToList();
         var busPowered = usb.Where(d => d.Usb!.SelfPowered != true).OrderByDescending(d => d.Usb!.PowerMa).ToList();
-        section.Summary = usb.Count == 0
-            ? "No USB power information."
-            : $"USB devices ask for up to {busPowered.Sum(d => d.Usb!.PowerMa ?? 0):N0} mA from their ports (about {busPowered.Sum(d => d.Usb!.PowerMa ?? 0) * 5 / 1000.0:0} W at 5 V); " +
-              $"{usb.Count - busPowered.Count} have their own power supply.";
+
+        // Where the power goes: measured, estimated, and the most USB devices ask for, row by row (the table above the items).
+        var (drives, devices) = PowerBudget.Inputs(context.Capture, context.NameOf, number => context.Nodes.Values.FirstOrDefault(n => n.Disk == number)?.Id);
+        var card = context.Nodes.Values.FirstOrDefault(n => n.Kind == "gpu" && context.Parents.GetValueOrDefault(n.Id)?.Kind != "integrated");
+        plan.Power = PowerBudget.Build(telemetry?.Power ?? [], drives, devices, telemetry?.DiskBusy, card?.Name, SystemTelemetryService.IsElevated);
+        foreach (var row in plan.Power.Rows)
+        {
+            if (row.Node is not null && !context.Nodes.ContainsKey(row.Node)) row.Node = null;
+            if (context.Privacy) row.Name = Privacy.Scrub(row.Name);
+        }
+
+        section.Summary = (plan.Power.Total is > 0 ? $"{plan.Power.TotalLabel}: about {plan.Power.Total:0} W right now. The table says how each number was found. " : "") +
+                          (usb.Count == 0
+                              ? "No USB power information."
+                              : $"Everything on USB, drives included, asks for up to {busPowered.Sum(d => d.Usb!.PowerMa ?? 0):N0} mA from its ports (about {busPowered.Sum(d => d.Usb!.PowerMa ?? 0) * 5 / 1000.0:0} W at 5 V); " +
+                                $"{usb.Count - busPowered.Count} {(usb.Count - busPowered.Count == 1 ? "device has its" : "devices have their")} own power supply.");
 
         var busyDrives = context.Storage.Where(s => s.Device.PowerNotAsked?.StartsWith("drive", StringComparison.Ordinal) == true).ToList();
         if (busyDrives.Count > 0)
@@ -845,30 +861,6 @@ internal static class PlanService
                 Title = $"Windows is saving power on {string.Join(", ", asleep.Select(context.NameOf))}",
                 Detail = "USB selective suspend has put idle devices to sleep; they wake as soon as they're used.",
                 Nodes = asleep.Select(ConnectionsService.DeviceNodeId).ToList()
-            });
-        }
-
-        // The biggest consumers in the box, when the sensors report them.
-        var cpuWatts = power.FirstOrDefault(p => p.Device == "CPU");
-        var gpuWatts = power.FirstOrDefault(p => p.Device == "GPU");
-        if (cpuWatts is not null || gpuWatts is not null)
-        {
-            var gpuName = context.Nodes.Values.FirstOrDefault(n => n.Kind == "gpu")?.Name ?? "The graphics card";
-            var parts = new List<string>();
-            if (gpuWatts is not null) parts.Add($"{gpuName} draws {gpuWatts.Watts:0} W");
-            if (cpuWatts is not null) parts.Add($"the processor package {cpuWatts.Watts:0} W");
-            var text = string.Join(" and ", parts);
-            var usbWatts = usb.Where(d => d.Usb!.SelfPowered != true).Sum(d => d.Usb!.PowerMa ?? 0) * 5 / 1000.0;
-            section.Items.Insert(0, new PlanItem
-            {
-                Tone = "info",
-                Title = "Biggest power users right now",
-                Detail = char.ToUpperInvariant(text[0]) + text[1..] + $" right now, and {(parts.Count == 1 ? "it climbs" : "both climb")} under load " +
-                         $"(games, video exports). Everything on USB together asks for at most {usbWatts:0} W." +
-                         (cpuWatts is null && !SystemTelemetryService.IsElevated
-                             ? " The processor's own power reading needs administrator rights on this PC."
-                             : ""),
-                Nodes = context.Nodes.Values.Where(n => n.Kind == "gpu").Select(n => n.Id).Append("cpu").ToList()
             });
         }
 

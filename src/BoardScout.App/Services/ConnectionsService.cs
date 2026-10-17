@@ -520,6 +520,8 @@ internal static partial class ConnectionsService
                     (facts.SpinningFromModel ? ", from its model number (the USB bridge doesn't pass the drive's own answer through)" : "")));
             else
                 node.Facts.Add(new("Drive type", "Not reported: the drive or its USB bridge doesn't say whether it spins"));
+            if (facts is not null && facts.Bus is not (12 or 13 or 14 or 15 or 16))
+                node.Facts.Add(new("Power (estimate)", PowerBudget.DriveFact(facts, facts.Bus == 7)));
             if (disk.RemovalPolicy is 2 or 3)
                 node.Facts.Add(new("Write caching", disk.RemovalPolicy == 2
                     ? "On (Better performance): use Safely Remove before unplugging"

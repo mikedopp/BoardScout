@@ -168,6 +168,15 @@ body.plan-open #stage,body.drives-open #stage{padding-left:510px}
 .ptable .sm{display:block;color:var(--ts);font-size:11px}
 .ptable .lnk{color:var(--t);cursor:pointer}
 .ptable .lnk:hover{text-decoration:underline}
+.ptable.power tr.part td:first-child{padding-left:14px}
+.ptable.power tr.part td{color:var(--ts)}
+.ptable.power tr.part .lnk{color:var(--ts)}
+.ptable.power tr.total td{font-weight:600;border-top:1px solid rgba(255,255,255,.14);border-bottom:0}
+.ktag{display:inline-block;font-size:10px;line-height:1.5;padding:0 7px;border-radius:999px;border:1px solid rgba(255,255,255,.14);color:var(--ts);white-space:nowrap}
+.ktag.measured{color:#6ee7b7;border-color:rgba(16,185,129,.4)}
+.ktag.derived{color:#93c5fd;border-color:rgba(61,158,255,.4)}
+.ktag.estimate{color:#fcd34d;border-color:rgba(245,158,11,.45)}
+.ktag.unmeasured{color:var(--tm);border-style:dashed}
 .slots{display:flex;gap:8px;margin:4px 0 10px}
 .slot{flex:1;border-radius:12px;padding:9px 6px 8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);
   font-size:11px;color:var(--ts);text-align:center}
@@ -1512,6 +1521,7 @@ function renderPlan(){
     if(sec.id==='usb-ports'&&p.usbControllers?.length)box.append(usbTable(p));
     if(sec.id==='memory'&&p.memorySlots?.length)box.append(slotGrid(p));
     if(sec.id==='interrupts'&&p.cores?.length)box.append(coreChart(p));
+    if(sec.id==='power'&&p.power?.rows?.length)box.append(powerTable(p.power));
     for(const item of sec.items)box.append(planItem(item));
     if(sec.id==='interrupts'){box.append(measureBlock(p,busy));if(p.drivers?.length)box.append(driverTable(p))}
     body.append(box);
@@ -1558,6 +1568,35 @@ function usbTable(p){
     t.append(tr);
     const sub=el('tr','sub');const cell=el('td',null,c.devices.length?c.devices.join(' · '):'Nothing plugged in');cell.colSpan=3;sub.append(cell);t.append(sub);
   }
+  return t;
+}
+
+// Where the power goes. Every number says how it was found, so an estimate never reads as a measurement.
+const POWER_KIND={measured:'measured',derived:'worked out',estimate:'estimate',ceiling:'at most',unmeasured:'no reading'};
+function fmtWatts(w,kind){
+  if(w==null)return '—';
+  const n=w>=10?String(Math.round(w)):w>=1?w.toFixed(1):w.toFixed(2);
+  return (kind==='ceiling'?'≤ ':kind==='estimate'?'≈ ':'')+n+' W';
+}
+function powerTable(pw){
+  const t=el('table','ptable power');
+  const hr=el('tr');['Where it goes','Power','How it was found'].forEach(h=>hr.append(el('th',null,h)));t.append(hr);
+  for(const r of pw.rows){
+    const tr=el('tr',r.sub?'part':null);
+    const name=el('td');
+    if(r.node&&state.nodes.has(r.node)){const a=el('span','lnk',r.name);a.onclick=()=>showNodes([r.node]);name.append(a)}
+    else name.append(el('span',null,r.name));
+    if(r.detail)name.append(el('span','sm',r.detail));
+    const how=el('td');how.append(el('span','ktag '+r.kind,POWER_KIND[r.kind]||r.kind));
+    tr.append(name,el('td','num',fmtWatts(r.watts,r.kind)),how);
+    t.append(tr);
+  }
+  if(pw.total!=null){
+    const tr=el('tr','total');
+    tr.append(el('td',null,pw.totalLabel),el('td','num',fmtWatts(pw.total)),el('td'));
+    t.append(tr);
+  }
+  if(pw.note){const sub=el('tr','sub');const cell=el('td',null,pw.note);cell.colSpan=3;sub.append(cell);t.append(sub)}
   return t;
 }
 

@@ -11,7 +11,7 @@ namespace BoardScout.Services;
 /// opens the sensor driver, later calls read hardware registers), so it belongs on a background
 /// thread. Calls are serialized: the sensor library is never used from two threads at once.
 /// </summary>
-internal sealed class SystemTelemetryService : IDisposable
+internal sealed partial class SystemTelemetryService : IDisposable
 {
     // Hardware that has not reported a temperature or fan after this many passes is skipped from
     // then on; updating it cost ~80 ms every second for nothing on machines without PawnIO.
@@ -141,11 +141,13 @@ internal sealed class SystemTelemetryService : IDisposable
         {
             if (_computer is null)
             {
+                // Power supplies with a USB link (Corsair HXi/RMi/AXi, MSI) report their output and rails.
                 _computer = new Computer
                 {
                     IsCpuEnabled = true,
                     IsMotherboardEnabled = true,
-                    IsGpuEnabled = true
+                    IsGpuEnabled = true,
+                    IsPsuEnabled = true
                 };
                 _computer.Open();
             }
@@ -153,7 +155,7 @@ internal sealed class SystemTelemetryService : IDisposable
             IEnumerable<IHardware> hardware = _lockedSensorHardware ?? (IEnumerable<IHardware>)_computer.Hardware;
             foreach (var hw in hardware)
             {
-                var before = thermals.Count + fans.Count;
+                var before = thermals.Count + fans.Count + power.Count;
                 hw.Update();
                 CollectSensors(hw, thermals, fans, power);
                 foreach (var sub in hw.SubHardware)
@@ -161,7 +163,7 @@ internal sealed class SystemTelemetryService : IDisposable
                     sub.Update();
                     CollectSensors(sub, thermals, fans, power);
                 }
-                if (_lockedSensorHardware is null && thermals.Count + fans.Count > before)
+                if (_lockedSensorHardware is null && thermals.Count + fans.Count + power.Count > before)
                     _sensorHardware.Add(hw);
             }
 
@@ -186,9 +188,23 @@ internal sealed class SystemTelemetryService : IDisposable
 
     private static void CollectSensors(IHardware hw, List<ThermalReading> thermals, List<FanReading> fans, List<PowerReading> power)
     {
+        // Per-core energy counters ("Core #1 (SMU)") add up to the cores' power when nothing reports it whole.
+        double coreSum = 0;
+        // A power supply's rails by name, for the ones that report volts and amps but not watts (MSI).
+        var volts = new Dictionary<string, double>();
+        var amps = new Dictionary<string, double>();
+        double? efficiency = null;
+
         foreach (var sensor in hw.Sensors)
         {
             if (sensor.Value is null) continue;
+
+            if (hw.HardwareType is HardwareType.Psu)
+            {
+                if (sensor.SensorType is SensorType.Voltage) volts[sensor.Name] = sensor.Value.Value;
+                else if (sensor.SensorType is SensorType.Current) amps[sensor.Name] = sensor.Value.Value;
+                else if (sensor.SensorType is SensorType.Level && sensor.Name.Contains("Efficiency", StringComparison.OrdinalIgnoreCase)) efficiency = sensor.Value.Value;
+            }
 
             switch (sensor.SensorType)
             {
@@ -209,22 +225,66 @@ internal sealed class SystemTelemetryService : IDisposable
                 }
                 case SensorType.Power:
                 {
-                    // The CPU's package power, and the graphics card's whole-card (or chip) power.
                     var watts = sensor.Value.Value;
                     if (watts is <= 0 or > 1500) break;
-                    var device = hw.HardwareType is HardwareType.Cpu && sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) ? "CPU"
-                        : hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel &&
-                          (sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) || sensor.Name.Contains("Board", StringComparison.OrdinalIgnoreCase) ||
-                           sensor.Name.Contains("PPT", StringComparison.OrdinalIgnoreCase))
-                            ? "GPU"
-                            : null;
-                    if (device is not null && !power.Exists(p => p.Device == device))
-                        power.Add(new PowerReading(device, Math.Round(watts, 1)));
+                    var device = PowerDevice(hw.HardwareType, sensor.Name);
+                    if (device == "CPU core") coreSum += watts;
+                    else if (device is not null && !power.Exists(p => p.Device == device))
+                        power.Add(new PowerReading(device, Math.Round(watts, 1), hw.HardwareType is HardwareType.Psu ? hw.Name : null));
                     break;
                 }
             }
         }
+
+        if (coreSum > 0 && !power.Exists(p => p.Device == "CPU cores"))
+            power.Add(new PowerReading("CPU cores", Math.Round(coreSum, 1)));
+
+        if (hw.HardwareType is HardwareType.Psu)
+        {
+            // Rails that report volts and amps but not watts.
+            foreach (var rail in new[] { "+12V", "+5V", "+3.3V" })
+                if (!power.Exists(p => p.Device == "PSU " + rail) && volts.TryGetValue(rail, out var v) && amps.TryGetValue(rail, out var a) && v * a is > 0 and < 1500)
+                    power.Add(new PowerReading("PSU " + rail, Math.Round(v * a, 1), hw.Name, Derived: true));
+            // What it draws from the wall, from its output and the efficiency it reports.
+            if (power.FirstOrDefault(p => p.Device == "PSU output") is { } output && efficiency is > 50 and <= 100 && !power.Exists(p => p.Device == "PSU input"))
+                power.Add(new PowerReading("PSU input", Math.Round(output.Watts * 100 / efficiency.Value, 1), hw.Name, Derived: true));
+        }
     }
+
+    /// <summary>
+    /// What a power sensor measures, from the hardware it's on and its name: "CPU" (package), "CPU cores", "CPU core"
+    /// (one core's share, added up), "CPU SoC", "CPU graphics", "GPU", "PSU output", or a rail ("PSU +12V"). Null for
+    /// readings the breakdown doesn't use (limits, other rails).
+    /// </summary>
+    internal static string? PowerDevice(HardwareType hardware, string name)
+    {
+        bool Has(string text) => name.Contains(text, StringComparison.OrdinalIgnoreCase);
+        switch (hardware)
+        {
+            case HardwareType.Cpu:
+                if (Has("Limit")) return null;
+                if (Has("Package")) return "CPU";
+                // Intel's RAPL domain, or a Ryzen power table's cores-only total.
+                if (name is "CPU Cores" or "Core Power") return "CPU cores";
+                if (CoreCounter().IsMatch(name)) return "CPU core";
+                // Ryzen power tables call the memory controller, graphics, and I/O rail "SoC", "SOC Power", or "SoC Power".
+                if (name.Equals("SoC", StringComparison.OrdinalIgnoreCase) || name.Equals("SoC Power", StringComparison.OrdinalIgnoreCase)) return "CPU SoC";
+                if (name is "CPU Graphics") return "CPU graphics";
+                return null;
+            case HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel:
+                return Has("Package") || Has("Board") || Has("PPT") ? "GPU" : null;
+            case HardwareType.Psu:
+                // Corsair's own total, or MSI's output. (Corsair's "Total Output" adds up the rails read below.)
+                if (name is "Total watts" or "PSU Out") return "PSU output";
+                if (name is "+12V" or "+5V" or "+3.3V") return "PSU " + name;
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^Core #\d+ \(SMU\)$")]
+    private static partial System.Text.RegularExpressions.Regex CoreCounter();
 
     private static string ClassifyThermalZone(IHardware hw, ISensor sensor)
     {

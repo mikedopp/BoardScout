@@ -124,8 +124,13 @@ in, with a *Show on the map* link on every item:
 - **Conflicts and interrupts:** problem devices, shared interrupt lines, interrupts and DPCs per
   processor, and — as administrator — a 10-second trace of interrupt time per driver with each
   driver's longest run, the thing that makes audio crackle.
-- **Power:** what each USB device draws, unpowered hubs, sleeping devices, and live graphics-card
-  power.
+- **Power:** a table of where the power goes, with every number marked as **measured** (processor
+  package and cores, graphics card, a power supply with a USB link), **worked out** (the processor's
+  share outside its cores), an **estimate** (each drive, from an NVMe drive's own power table or
+  typical figures for its kind, scaled by how busy it is), or **at most** (what USB devices ask for).
+  The motherboard, memory, and fans have no sensor, so they stay "no reading" unless the power
+  supply reports its output. Also: what each USB device asks for, unpowered hubs, and sleeping
+  devices. The Overview's summary shows the same breakdown live.
 
 ![Optimization plan beside the Connections map: memory slots with the recommended pair, USB and drive advice](docs/screenshots/plan.png)
 
@@ -176,7 +181,9 @@ it does not ship, and those reads need **administrator rights**. Without both, o
 temperature and GPU fans are readable; the temperature gauge's tooltip and the Overview's fan
 headers ("No reading") say what is missing. The version pop-out shows the current state, links to PawnIO, and can restart
 BoardScout as administrator. Everything else in BoardScout works without either. The graphics card's
-power draw is readable without them; the CPU's needs both.
+power draw is readable without them; the CPU's needs both. Power supplies with a USB link (Corsair
+HXi/RMi/AXi, MSI) report their output and rails through the same library. NVMe drives' power tables
+are read without administrator rights.
 
 ## What goes online
 

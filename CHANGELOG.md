@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.4.0 — 2026-10-16
+
+Where the power goes: measured, worked out, estimated, and "at most", kept apart.
+
+### Added
+- **Power table** at the top of the optimization plan's Power section. Every row says how its number was found:
+  - **measured**: the processor package; its cores (Ryzen's per-core energy counters added up, or Intel's and
+    Ryzen 7000's own cores reading); a Ryzen 3000/7000 SoC rail or Intel's built-in graphics where the processor
+    reports them; the graphics card; and a power supply with a USB link (Corsair HXi/RMi/AXi, MSI), with its
+    +12 V, +5 V, and +3.3 V rails;
+  - **worked out**: everything in the package but the cores (memory controller, fabric, I/O, built-in graphics)
+    when the processor doesn't report a SoC rail (Ryzen 5000G and most others), a rail's volts times amps, wall
+    power from the power supply's reported efficiency, and, with a reporting power supply, "everything else"
+    (motherboard, memory, fans, USB, regulator losses) as its output minus the rows above;
+  - **estimate**: each drive the PC powers, from an NVMe drive's own power table (idle, busy, and sleep watts from
+    its Identify data, read without administrator rights) or typical figures for SATA SSDs, 2.5- and 3.5-inch hard
+    drives, and portable drives with their USB bridges, scaled by how busy the drive was over the last second.
+    Drives with their own power supply aren't counted and are named;
+  - **at most**: what bus-powered USB devices (other than drives) ask their ports for;
+  - **no reading**: the motherboard, memory, and fans (no sensor on the board measures them), and the processor
+    when BoardScout isn't running as administrator, each with the reason.
+  The total is what the power supply delivers when it reports that, otherwise the measured and estimated rows
+  added up, with one sentence on what it leaves out. USB's "at most" never joins it.
+- **Power right now** on the Overview's At a glance: the same breakdown, live every second (the processor's and
+  power supply's splits shown, drive and USB detail on the plan's table; hover a row for how it was found). The
+  processor's live label and inspector also show its package power.
+- Drive cards on the Connections map carry a **Power (estimate)** line with the range BoardScout estimates from.
+- `--plan-json` now reads the sensors and drive activity across its one-second sample, so the printed plan has
+  the power table too.
+
+### Changed
+- Sensor hardware that reports only power (a power supply) stays in the sampling list after discovery.
+- The Power section's summary leads with the total; its USB sentence says drives are included.
+- "Biggest power users right now" is gone from the Power section: the table replaces it.
+
 ## 2.3.0 — 2026-10-15
 
 The version button is a Glimmer orb in the Windows app too.

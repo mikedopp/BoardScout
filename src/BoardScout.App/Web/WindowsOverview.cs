@@ -336,9 +336,18 @@ internal static partial class WindowsOverview
 
     // ---- The live tiles ----------------------------------------------------------------------------------
 
-    public static HeaderTelemetry Header(SystemTelemetry telemetry)
+    /// <summary>The live numbers, plus the power breakdown when the map's capture is at hand (drives and USB devices come from it).</summary>
+    public static HeaderTelemetry Header(SystemTelemetry telemetry, ConnectionsService.Capture? capture = null)
     {
         double? Zone(string zone) => telemetry.Thermals.FirstOrDefault(t => t.Zone == zone) is { } reading ? Math.Round(reading.TemperatureCelsius, 1) : null;
+        PowerBreakdown? power = null;
+        if (capture is not null)
+        {
+            var (drives, usb) = PowerBudget.Inputs(capture);
+            power = PowerBudget.Build(telemetry.Power, drives, usb, telemetry.DiskBusy, null, SystemTelemetryService.IsElevated);
+            if (Privacy.Enabled)
+                foreach (var row in power.Rows) row.Name = Privacy.Scrub(row.Name);
+        }
         return new HeaderTelemetry(
             Math.Round(telemetry.CpuUsagePercent, 1),
             Math.Round(telemetry.MemoryUsedGb, 2),
@@ -348,7 +357,9 @@ internal static partial class WindowsOverview
             Math.Round(telemetry.NetworkReceivedBytesPerSec),
             Math.Round(telemetry.NetworkSentBytesPerSec),
             telemetry.Power.FirstOrDefault(p => p.Device == "GPU") is { } gpu ? Math.Round(gpu.Watts, 1) : null,
-            telemetry.SampledAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
+            telemetry.SampledAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+            telemetry.Power.FirstOrDefault(p => p.Device == "CPU") is { } cpu ? Math.Round(cpu.Watts, 1) : null,
+            power);
     }
 
     /// <summary>
@@ -402,7 +413,7 @@ internal static partial class WindowsOverview
         var map = ConnectionsService.Build(capture, privacy, null);
         var cores = await InterruptStats.SampleAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
         var sample = telemetry.Sample();
-        var plan = PlanService.Build(capture, map, cores, null, privacy, sample.Power);
+        var plan = PlanService.Build(capture, map, cores, null, privacy, sample);
         var system = System.Text.Json.JsonSerializer.Deserialize(await SystemInfoService.GatherJsonAsync(scan), BoardScoutJson.Default.SystemInfoSnapshot) ?? new SystemInfoSnapshot();
         return MachineSummaries.Build("windows", Title(capture, scan), system, map, plan,
             Volumes(privacy).Select(v => (v.MountPoint, v.SizeBytes, v.FreeBytes)),
