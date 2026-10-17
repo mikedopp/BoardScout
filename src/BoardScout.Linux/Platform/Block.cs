@@ -34,6 +34,9 @@ internal sealed class BlockDisk
     /// <summary>A SATA drive's own fastest link and spin speed, from its IDENTIFY data.</summary>
     public double? SataMaxGbps { get; init; }
     public int? Rpm { get; init; }
+
+    /// <summary>An NVMe drive's own power states (root only: Power.NvmePowerTable).</summary>
+    public BoardScout.Services.DrivePowerTable? PowerTable { get; init; }
     public long DiscardMaxBytes { get; init; }
     public string? Scheduler { get; init; }
     public List<BlockPartition> Partitions { get; } = [];
@@ -124,6 +127,7 @@ internal static partial class Block
                 Firmware = identity?.Firmware ?? Sys.Text(Path.Combine(device, "firmware_rev")) ?? Sys.Text(Path.Combine(device, "rev")) ?? Sys.Text(Path.Combine(device, "fwrev")),
                 SataMaxGbps = identity?.MaxGbps,
                 Rpm = identity?.Rpm,
+                PowerTable = transport == "nvme" ? Power.NvmePowerTable(Path.GetFileName(device)) : null,
                 Transport = transport,
                 PciAddress = Pci.AddressIn(path),
                 UsbPath = usbPath,

@@ -5,14 +5,6 @@ public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 public sealed record FanReading(string Name, int Rpm, bool Active);
 
 /// <summary>
-/// Power draw a sensor reports right now. Device is "CPU" (package), "CPU cores", "CPU SoC", "CPU graphics", "GPU"
-/// (the whole card or chip), "PSU output", "PSU input", or a PSU rail ("PSU +12V"). Source names the hardware
-/// (the power supply's model). Derived is true for a number worked out from other readings (a rail's volts times amps,
-/// input from output and efficiency).
-/// </summary>
-public sealed record PowerReading(string Device, double Watts, string? Source = null, bool Derived = false);
-
-/// <summary>
 /// Bytes per second toward the CPU (received or read) and away from it (sent or written). OpsIn/OpsOut
 /// are packets per second for a network adapter and reads/writes per second (IOPS) for a disk.
 /// </summary>

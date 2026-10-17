@@ -6,9 +6,10 @@ namespace BoardScout.Services;
 /// Where the PC's power goes right now: what the sensors measure (processor, graphics card, a power supply with a USB
 /// link), what each drive probably draws (its own NVMe power table, or typical figures for its kind, scaled by how busy
 /// it is), and the most USB devices ask for. Every row says which of those it is; the motherboard, memory, and fans
-/// have no sensor, so without a reporting power supply they stay unmeasured.
+/// have no sensor, so without a reporting power supply they stay unmeasured (memory gets an estimate where the
+/// processor counts it). Shared by both editions; each builds its own drives and USB devices (Inputs).
 /// </summary>
-internal static class PowerBudget
+internal static partial class PowerBudget
 {
     /// <summary>A drive to estimate. FromPc: true when the PC powers it, false when it has its own power supply, null
     /// when BoardScout couldn't ask (then it's assumed to take the PC's power).</summary>
@@ -17,54 +18,21 @@ internal static class PowerBudget
     /// <summary>A bus-powered USB device (not a drive) and the most it asks its port for.</summary>
     internal sealed record UsbDevice(string Name, int PowerMa, string? Node);
 
-    /// <summary>
-    /// The drives and USB devices in a capture. nameOf names a drive by its USB device (for USB drives) or its disk;
-    /// nodeOf finds a drive's map card by disk number. Without them, drives are named by what they report.
-    /// </summary>
-    public static (List<Drive> Drives, List<UsbDevice> Usb) Inputs(ConnectionsService.Capture capture,
-        Func<DeviceNode, string?>? nameOf = null, Func<int, string?>? nodeOf = null)
+    /// <summary>Two drives of the same model (two "WD Game Drive"s) are told apart by capacity.</summary>
+    internal static void TellApart(List<Drive> drives, Func<long, string> formatBytes)
     {
-        var all = capture.Tree?.Descendants().ToList() ?? [];
-        var byHandle = new Dictionary<uint, DeviceNode>();
-        foreach (var device in all) byHandle.TryAdd(device.Handle, device);
-        var drives = new List<Drive>();
-        foreach (var (handle, number) in capture.Disks)
-        {
-            if (!capture.DiskFacts.TryGetValue(number, out var facts) || !byHandle.TryGetValue(handle, out var disk)) continue;
-            // SD cards, virtual disks, and Storage Spaces draw nothing of their own worth counting.
-            if (facts.Bus is 12 or 13 or 14 or 15 or 16) continue;
-            var usb = facts.Bus == 7 ? UsbDeviceOf(disk) : null;
-            if (facts.Bus == 7 && usb is null) continue;
-            var reported = $"{facts.Vendor} {facts.Product}".Trim();
-            var name = nameOf?.Invoke(usb ?? disk) ?? (reported.Length > 0 ? reported : disk.Name);
-            bool? fromPc = usb is null ? true : usb.Usb?.SelfPowered is { } own ? !own : null;
-            drives.Add(new Drive(facts, name, nodeOf?.Invoke(number), fromPc, usb is not null));
-        }
-        // Two drives of the same model (two "WD Game Drive"s) are told apart by capacity.
         var repeated = drives.GroupBy(d => d.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
         for (var i = 0; i < drives.Count; i++)
             if (repeated.Contains(drives[i].Name) && drives[i].Facts.SizeBytes is > 0 and var size)
-                drives[i] = drives[i] with { Name = $"{drives[i].Name} ({ConnectionsService.FormatBytes(size)})" };
-
-        var devices = new List<UsbDevice>();
-        foreach (var device in all.Where(d => d.IdStarts(@"USB\VID_") && !d.InstanceId.Contains("&MI_", StringComparison.OrdinalIgnoreCase)))
-        {
-            if (device.Usb is not { PowerMa: > 0 } port || port.SelfPowered == true) continue;
-            if (device.Descendants().Any(d => d.IsClass("DiskDrive"))) continue; // counted with the drives
-            devices.Add(new UsbDevice(nameOf?.Invoke(device) ?? device.BusReportedName ?? device.Name, port.PowerMa.Value, ConnectionsService.DeviceNodeId(device)));
-        }
-        return (drives.OrderBy(d => d.Facts.Number).ToList(), devices);
+                drives[i] = drives[i] with { Name = $"{drives[i].Name} ({formatBytes(size)})" };
     }
 
-    private static DeviceNode? UsbDeviceOf(DeviceNode disk)
-    {
-        for (var node = disk.Parent; node is not null; node = node.Parent)
-            if (node.IdStarts(@"USB\VID_") && !node.InstanceId.Contains("&MI_", StringComparison.OrdinalIgnoreCase)) return node;
-        return null;
-    }
-
+    /// <summary>
+    /// The rows and total. noCpuReading says why the processor has no reading, and wholePc what would measure the whole
+    /// PC, where an edition words them differently from Windows.
+    /// </summary>
     public static PowerBreakdown Build(IReadOnlyList<PowerReading> sensors, IReadOnlyList<Drive> drives, IReadOnlyList<UsbDevice> usb,
-        IReadOnlyDictionary<int, double>? busy, string? gpuName = null, bool elevated = false)
+        IReadOnlyDictionary<int, double>? busy, string? gpuName = null, bool elevated = false, string? noCpuReading = null, string? wholePc = null)
     {
         double? Read(string device) => sensors.FirstOrDefault(p => p.Device == device)?.Watts;
         var breakdown = new PowerBreakdown();
@@ -112,7 +80,9 @@ internal static class PowerBudget
                 rows.Add(new PowerRow
                 {
                     Name = "Everything but the cores", Watts = Math.Round(Math.Max(0, cpu - split - (graphics ?? 0)), 1), Kind = "derived", Sub = true,
-                    Detail = "Memory controller, fabric, I/O, and built-in graphics where there is one: the package minus the cores."
+                    Detail = graphics is null
+                        ? "Memory controller, fabric, I/O, and built-in graphics where there is one: the package minus the cores."
+                        : "Memory controller, fabric, and I/O: the package minus the cores and the built-in graphics."
                 });
         }
         else
@@ -120,15 +90,25 @@ internal static class PowerBudget
             rows.Add(new PowerRow
             {
                 Name = "Processor", Kind = "unmeasured", Node = "cpu",
-                Detail = elevated
+                Detail = noCpuReading ?? (elevated
                     ? "The processor doesn't report its power to the sensor library on this PC."
-                    : "Reading it needs administrator rights and the PawnIO driver (the version button has the details)."
+                    : "Reading it needs administrator rights and the PawnIO driver (the version button has the details).")
             });
         }
 
         var gpu = Read("GPU");
         if (gpu is { } card)
             rows.Add(new PowerRow { Name = gpuName ?? "Graphics card", Watts = card, Kind = "measured", Detail = "The whole card, as its driver reports it." });
+
+        // The memory, where the processor keeps an energy counter for it (RAPL's DRAM domain): most work it out from
+        // the memory traffic instead of measuring the sticks, so it never counts as a measurement.
+        var memory = Read("Memory");
+        if (memory is { } sticks)
+            rows.Add(new PowerRow
+            {
+                Name = "Memory", Watts = sticks, Kind = "estimate",
+                Detail = "The processor's own energy counter for the memory. Most processors work it out from the memory traffic they see rather than measuring the sticks."
+            });
 
         // Drives: estimates, never measurements.
         var powered = drives.Where(d => d.FromPc != false).ToList();
@@ -167,11 +147,11 @@ internal static class PowerBudget
 
         if (psu is not null)
         {
-            var rest = psu.Watts - (package ?? 0) - (gpu ?? 0) - drivesTotal;
+            var rest = psu.Watts - (package ?? 0) - (gpu ?? 0) - (memory ?? 0) - drivesTotal;
             rows.Add(new PowerRow
             {
                 Name = "Everything else", Watts = Math.Round(Math.Max(0, rest), 1), Kind = "derived",
-                Detail = $"The motherboard, memory, fans, USB devices{(package is null ? ", the processor" : "")}, and voltage-regulator losses: " +
+                Detail = $"The motherboard, {(memory is null ? "memory, " : "")}fans, USB devices{(package is null ? ", the processor" : "")}, and voltage-regulator losses: " +
                          "the power supply's output minus the rows above." + (rest < 0 ? " The drive estimates run high right now." : "")
             });
             breakdown.Total = psu.Watts;
@@ -184,16 +164,16 @@ internal static class PowerBudget
         {
             rows.Add(new PowerRow
             {
-                Name = "Motherboard, memory, and fans", Kind = "unmeasured",
-                Detail = "No sensor on the board measures them. A power supply with a USB link (Corsair HXi, RMi, or AXi; MSI with a USB port) " +
-                         "or a plug-in power meter would show the whole PC."
+                Name = memory is null ? "Motherboard, memory, and fans" : "Motherboard and fans", Kind = "unmeasured",
+                Detail = "No sensor on the board measures them. " + (wholePc ??
+                         "A power supply with a USB link (Corsair HXi, RMi, or AXi; MSI with a USB port) or a plug-in power meter would show the whole PC.")
             });
-            breakdown.Total = Math.Round((package ?? 0) + (gpu ?? 0) + drivesTotal, 1);
+            breakdown.Total = Math.Round((package ?? 0) + (gpu ?? 0) + (memory ?? 0) + drivesTotal, 1);
             breakdown.TotalLabel = "Measured and estimated";
             breakdown.Note = "Not counted: " + Join(new[]
             {
                 package is null ? "the processor (no reading)" : null,
-                "the motherboard, memory, and fans",
+                memory is null ? "the motherboard, memory, and fans" : "the motherboard and fans",
                 usb.Count > 0 ? $"USB devices (up to {usbWatts:0.#} W)" : null,
                 "the power supply's own losses"
             }.OfType<string>().ToList()) + ".";
@@ -253,11 +233,12 @@ internal static class PowerBudget
         _ => $"{watts:0.###}"
     };
 
+    // "the motherboard and fans, and the power supply's own losses": a comma where an item has its own "and".
     private static string Join(IReadOnlyList<string> items) => items.Count switch
     {
         0 => "",
         1 => items[0],
-        2 => $"{items[0]} and {items[1]}",
+        2 => items[0].Contains(" and ", StringComparison.Ordinal) ? $"{items[0]}, and {items[1]}" : $"{items[0]} and {items[1]}",
         _ => string.Join(", ", items.Take(items.Count - 1)) + ", and " + items[^1]
     };
 }

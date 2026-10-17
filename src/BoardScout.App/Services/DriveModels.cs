@@ -2,6 +2,45 @@ using System.Text.RegularExpressions;
 
 namespace BoardScout.Services;
 
+/// <summary>What a disk reports about itself. Bus is the STORAGE_BUS_TYPE (7 USB, 11 SATA, 17 NVMe; the Linux edition
+/// maps its transports onto the same numbers). Spinning is true for hard drives (the disk reports a seek penalty).
+/// PowerTable is an NVMe drive's own power states.</summary>
+internal sealed record DiskFacts(int Number, string? Vendor, string? Product, string? Firmware, int Bus, long? SizeBytes,
+    double? TemperatureC, bool? Spinning = null, bool SpinningFromModel = false, DrivePowerTable? PowerTable = null);
+
+/// <summary>
+/// An NVMe drive's power states, in watts, from its Identify data: the most it may draw (state 0, MaxW), what it says it
+/// draws idle and busy in state 0 (IdleW, ActiveW; null when it doesn't say), and its deepest sleep state (SleepW; null
+/// when it has no sleep states).
+/// </summary>
+internal sealed record DrivePowerTable(double MaxW, double? IdleW, double? ActiveW, double? SleepW, int States)
+{
+    /// <summary>The power states in NVMe Identify Controller data (NPSS at byte 263, 32-byte descriptors from 2048).</summary>
+    internal static DrivePowerTable? FromIdentify(ReadOnlySpan<byte> identify)
+    {
+        if (identify.Length < 4096) return null;
+        var states = identify[263] + 1;
+        static double? Scaled(int value, int scale) => value > 0 && scale is 1 or 2 ? value * (scale == 1 ? 0.0001 : 0.01) : null;
+        double max = 0;
+        double? idle = null, active = null, sleep = null;
+        for (var i = 0; i < Math.Min(states, 32); i++)
+        {
+            var d = identify.Slice(2048 + i * 32, 32);
+            // MP in centiwatts (or 100 µW units when MXPS is set); bit 1 of byte 3 marks a non-operational (sleep) state.
+            var watts = BitConverter.ToUInt16(d) * ((d[3] & 1) != 0 ? 0.0001 : 0.01);
+            var asleep = (d[3] & 2) != 0;
+            if (i == 0)
+            {
+                max = watts;
+                idle = Scaled(BitConverter.ToUInt16(d[16..]), d[18] >> 6);
+                active = Scaled(BitConverter.ToUInt16(d[20..]), d[22] >> 6);
+            }
+            if (asleep && watts > 0) sleep = Math.Min(sleep ?? double.MaxValue, watts);
+        }
+        return max > 0 ? new DrivePowerTable(Math.Round(max, 4), idle, active, sleep, states) : null;
+    }
+}
+
 /// <summary>What a drive's model number says about it. Shared by the Windows and Linux editions.</summary>
 internal static partial class DriveModels
 {

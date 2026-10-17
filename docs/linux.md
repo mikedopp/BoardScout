@@ -4,7 +4,8 @@ The Linux edition shows the same views as the Windows app: the board, Topology, 
 device and the link it negotiated, live traffic, Live drives, search, and the Optimization plan), Drivers,
 Storage, Efficiency, System, and the Scan Log. It reads everything from the kernel's own files under
 `/sys` and `/proc`, and serves the dashboard to your browser from a single program. Nothing needs root,
-nothing is installed system-wide, and nothing is changed on the machine.
+nothing is installed system-wide, and nothing is changed on the machine. Started with sudo, it also reads
+the processor's power and NVMe drives' power tables.
 
 ![The Linux edition's Overview on a Dell OptiPlex 3050 running Ubuntu 26.04](screenshots/linux-overview.png)
 
@@ -100,7 +101,11 @@ Always (every user may read these):
 - **Network** (`/sys/class/net`, `/proc/net`): adapters, bridges, VPNs, routes, the router and the devices
   on your network (named the same ways as on Windows), and live traffic.
 - **Sensors** (`/sys/class/hwmon`): CPU, GPU, chipset, and drive temperatures, fans, and GPU power,
-  whatever the kernel's drivers expose.
+  whatever the kernel's drivers expose. A Corsair HXi or RMi power supply on the kernel's corsair-psu
+  driver reports its output and rails.
+- **Power**: the plan's Power table and the Overview's "Power right now" mark every number as measured,
+  worked out, an estimate (drives, from typical figures for their kind and how busy they are), at most
+  (what USB devices ask for), or no reading (the motherboard and fans have no sensor).
 - **Memory slots**: udev's copy of the firmware tables (`/run/udev/data/+dmi:id`), so channels, speed,
   part numbers, and makers show without root. Older systems need root for the raw table.
 - **Monitors** (`/sys/class/drm`): each output, and the monitor's name and best mode from its EDID.
@@ -127,6 +132,14 @@ When installed, these add more (each runs read-only, and the Scan Log lists ever
 The dnf, zypper, pacman, and apk readers follow those tools' documented output; they haven't been run on
 those distributions yet.
 
+As root (`sudo boardscout`), the power table adds:
+
+- **The processor's power** (`/sys/class/powercap`): the package, its cores, Intel's built-in graphics,
+  and the memory's share as the processor counts it, from its energy counters (Intel RAPL, which AMD
+  processors use too, or the amd_energy driver). Linux has kept these from other users since 2020.
+- **NVMe power states**: each drive's own idle, busy, and sleep watts from its Identify data, asked through
+  `/dev/nvmeN`, which only root may open. Identify only reads; it changes nothing on the drive.
+
 ## Differences from Windows
 
 - **Interrupts**: Linux shows every user how many interrupts each device raises, so the plan's
@@ -136,6 +149,9 @@ those distributions yet.
 - **Firmware**: Check firmware asks fwupd (the Linux Vendor Firmware Service) instead of vendor driver
   pages. BoardScout never installs anything.
 - **Write caching** isn't a per-drive setting on Linux; USB drives are flushed when they're unmounted.
+- **Power**: the processor's energy counters and NVMe power tables need root (on Windows: administrator and
+  the PawnIO driver for the processor; NVMe tables need neither). Of power supplies with a USB link, Linux
+  reads Corsair HXi and RMi models (corsair-psu); AXi and MSI models have no kernel driver.
 
 ## Privacy
 

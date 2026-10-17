@@ -8,18 +8,20 @@ using BoardScout.Views;
 namespace BoardScout.Live;
 
 /// <summary>
-/// Samples the kernel's counters (/proc/stat, /proc/meminfo, /proc/net/dev, /proc/diskstats, hwmon) and turns
-/// the change since the last sample into rates: what the header tiles and the Connections map's flowing dots show.
+/// Samples the kernel's counters (/proc/stat, /proc/meminfo, /proc/net/dev, /proc/diskstats, hwmon, powercap) and turns
+/// the change since the last sample into rates: what the header tiles, the Overview's power summary, and the Connections
+/// map's flowing dots show.
 /// </summary>
 internal sealed class Telemetry
 {
     private Dictionary<string, CpuTimes>? _cpu;
     private Dictionary<string, NetCounters>? _net;
     private Dictionary<string, DiskCounters>? _disk;
+    private EnergySample? _energy;
     private long _at;
     private readonly Dictionary<string, (double Dropped, long At)> _drops = [];
 
-    public (HeaderTelemetry Header, ConnectionFlow Flow) Sample(HardwareCapture? capture)
+    public (HeaderTelemetry Header, ConnectionFlow Flow) Sample(HardwareCapture? capture, bool privacy = false)
     {
         var now = Stopwatch.GetTimestamp();
         var seconds = _at == 0 ? 0 : Stopwatch.GetElapsedTime(_at, now).TotalSeconds;
@@ -66,6 +68,7 @@ internal sealed class Telemetry
 
         // Disks: [read B/s, written B/s, reads/s, writes/s, requests in flight, % of the interval busy].
         var disks = Block.ReadCounters();
+        var busyByDisk = new Dictionary<int, double>();
         if (capture is not null)
         {
             foreach (var disk in capture.Disks.Where(d => !d.Optical))
@@ -79,12 +82,22 @@ internal sealed class Telemetry
                     reads = Math.Max(0, counters.ReadOps - old.ReadOps) / seconds;
                     writes = Math.Max(0, counters.WriteOps - old.WriteOps) / seconds;
                     busy = Math.Clamp(Math.Max(0, counters.BusyMs - old.BusyMs) / (seconds * 10), 0, 100);
+                    busyByDisk[disk.Index] = busy;
                 }
                 flow.Disks[disk.Index.ToString(CultureInfo.InvariantCulture)] =
                     [Math.Round(read), Math.Round(write), Math.Round(reads), Math.Round(writes), counters.InFlight, Math.Round(busy, 1)];
             }
         }
         _disk = disks;
+
+        // Power: the processor's energy counters since the last sample, the graphics card, a reporting power supply,
+        // and the drive and USB estimates (the Overview's "Power right now").
+        var energy = Power.ReadEnergy();
+        var readings = Power.Readings(_energy, energy, chips);
+        _energy = energy;
+        var power = capture is null ? null
+            : LinuxPower.Breakdown(capture, new PowerSample(readings, busyByDisk.Count > 0 ? busyByDisk : null, Power.NoCpuReading(energy, readings, capture.Root)),
+                privacy: privacy);
 
         var header = new HeaderTelemetry(
             Math.Round(usage, 1),
@@ -97,7 +110,9 @@ internal sealed class Telemetry
             Math.Round(netIn),
             Math.Round(netOut),
             Sensors.GpuWatts(chips) is { } watts ? Math.Round(watts, 1) : null,
-            DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
+            DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+            readings.FirstOrDefault(r => r.Device == "CPU")?.Watts,
+            power);
         return (header, flow);
     }
 

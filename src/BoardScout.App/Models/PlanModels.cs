@@ -19,7 +19,7 @@ public sealed class OptimizationPlan
     [JsonPropertyName("elevated")] public bool Elevated { get; set; }
     [JsonPropertyName("gatheredMs")] public long GatheredMs { get; set; }
 
-    /// <summary>Where the power goes, for the Power section's table (Windows; Linux leaves it out).</summary>
+    /// <summary>Where the power goes, for the Power section's table.</summary>
     [JsonPropertyName("power")] public PowerBreakdown? Power { get; set; }
 }
 
@@ -40,6 +40,14 @@ public sealed class PowerBreakdown
     /// <summary>What the total leaves out, in one sentence.</summary>
     [JsonPropertyName("note")] public string Note { get; set; } = "";
 }
+
+/// <summary>
+/// Power draw a sensor reports right now. Device is "CPU" (package), "CPU cores", "CPU SoC", "CPU graphics", "Memory", "GPU"
+/// (the whole card or chip), "PSU output", "PSU input", or a PSU rail ("PSU +12V"). Source names the hardware
+/// (the power supply's model). Derived is true for a number worked out from other readings (a rail's volts times amps,
+/// input from output and efficiency).
+/// </summary>
+public sealed record PowerReading(string Device, double Watts, string? Source = null, bool Derived = false);
 
 public sealed class PowerRow
 {

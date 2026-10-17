@@ -312,7 +312,8 @@ are shown for you to compare before they are trusted. Details: [docs/remote.md](
 The Linux edition reads the kernel's own files (`/sys`, `/proc`) and serves the same views to your
 browser: the board, Topology, Connections with live traffic, Live drives, search, and the Optimization
 plan, Drivers with fwupd firmware checks, Storage, Efficiency, and System with your distribution's
-support dates and a security check. Nothing needs root. `boardscout --listen 0.0.0.0` serves a headless
+support dates and a security check, and the same power table. Nothing needs root (with sudo, the power
+table adds the processor's energy counters and NVMe power tables). `boardscout --listen 0.0.0.0` serves a headless
 server's dashboard on your network. The full guide, including what each optional tool (iw,
 NetworkManager, BlueZ, udisks, fwupd) adds, is in [docs/linux.md](docs/linux.md).
 

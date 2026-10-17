@@ -132,7 +132,8 @@ internal static class Program
           -h, --help            Show this help
 
         Settings, the log, and the running dashboard's address live in ~/.local/share/boardscout
-        (or $BOARDSCOUT_DATA). Nothing here needs root; nothing is installed system-wide. On a machine
+        (or $BOARDSCOUT_DATA). Nothing here needs root; nothing is installed system-wide. With sudo, the
+        power table adds the processor's energy counters and NVMe drives' power tables. On a machine
         it opens over SSH, BoardScout keeps its copy in ~/.cache/boardscout.
         """;
 
@@ -252,8 +253,9 @@ internal static class Program
         var capture = await Task.Run(HardwareCapture.Read);
         var map = LinuxConnections.Build(capture, privacy, null);
         var cores = LinuxPlan.SampleCoresAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+        var power = LinuxPlan.SamplePowerAsync(capture, TimeSpan.FromSeconds(1), CancellationToken.None);
         var irq = profile ? await LinuxPlan.ProfileAsync(capture, TimeSpan.FromSeconds(10), privacy, CancellationToken.None) : null;
-        return JsonSerializer.Serialize(LinuxPlan.Build(capture, map, await cores, irq, privacy), Json.Options);
+        return JsonSerializer.Serialize(LinuxPlan.Build(capture, map, await cores, irq, privacy, await power), Json.Options);
     }
 
     // Everything the dashboard shows, written as files: for checking a machine over SSH without a browser.
@@ -263,13 +265,14 @@ internal static class Program
         var capture = await Task.Run(HardwareCapture.Read);
         var discovery = await NetworkDiscovery.RunAsync(capture.Network, CancellationToken.None);
         var map = LinuxConnections.Build(capture, privacy, discovery);
+        var power = LinuxPlan.SamplePowerAsync(capture, TimeSpan.FromSeconds(1), CancellationToken.None);
         var cores = await LinuxPlan.SampleCoresAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
         var irq = await LinuxPlan.ProfileAsync(capture, TimeSpan.FromSeconds(3), privacy, CancellationToken.None);
-        var plan = LinuxPlan.Build(capture, map, cores, irq, privacy);
+        var plan = LinuxPlan.Build(capture, map, cores, irq, privacy, await power);
         var telemetry = new Telemetry();
-        telemetry.Sample(capture);
+        telemetry.Sample(capture, privacy);
         await Task.Delay(1000);
-        var (header, flow) = telemetry.Sample(capture);
+        var (header, flow) = telemetry.Sample(capture, privacy);
         var files = new Dictionary<string, string>
         {
             ["connections.json"] = Pretty(LinuxConnections.ToJson(map.Snapshot)),

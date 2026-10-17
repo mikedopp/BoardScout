@@ -62,6 +62,27 @@ internal static partial class LinuxPlan
         return new CoreSample(rows);
     }
 
+    /// <summary>
+    /// What the power breakdown needs over a short span: the processor's energy counters and each drive's busy time at both
+    /// ends, plus the graphics card and power supply now.
+    /// </summary>
+    public static async Task<PowerSample> SamplePowerAsync(HardwareCapture capture, TimeSpan span, CancellationToken token)
+    {
+        var energyBefore = BoardScout.Platform.Power.ReadEnergy();
+        var disksBefore = Block.ReadCounters();
+        var watch = Stopwatch.StartNew();
+        await Task.Delay(span, token);
+        var seconds = watch.Elapsed.TotalSeconds;
+        var energyAfter = BoardScout.Platform.Power.ReadEnergy();
+        var disksAfter = Block.ReadCounters();
+        var readings = BoardScout.Platform.Power.Readings(energyBefore, energyAfter, Sensors.Read());
+        var busy = new Dictionary<int, double>();
+        foreach (var disk in capture.Disks.Where(d => !d.Optical))
+            if (disksBefore.TryGetValue(disk.Name, out var a) && disksAfter.TryGetValue(disk.Name, out var b))
+                busy[disk.Index] = Math.Round(Math.Clamp(Math.Max(0, b.BusyMs - a.BusyMs) / (seconds * 10), 0, 100), 1);
+        return new PowerSample(readings, busy, BoardScout.Platform.Power.NoCpuReading(energyAfter, readings, capture.Root));
+    }
+
     /// <summary>Counts interrupts per device for a while. Linux shows every user the counts; timing each handler would need a root-only kernel trace.</summary>
     public static async Task<IrqProfile> ProfileAsync(HardwareCapture capture, TimeSpan span, bool privacy, CancellationToken token)
     {
@@ -122,7 +143,9 @@ internal static partial class LinuxPlan
 
     // ---- The plan ---------------------------------------------------------------------------------
 
-    public static OptimizationPlan Build(HardwareCapture capture, LinuxConnections.BuildResult map, CoreSample cores, IrqProfile? profile, bool privacy)
+    /// <summary>The plan. Without a power sample (the Overview's quick build) the Power section has no table.</summary>
+    public static OptimizationPlan Build(HardwareCapture capture, LinuxConnections.BuildResult map, CoreSample cores, IrqProfile? profile, bool privacy,
+        PowerSample? power = null)
     {
         var context = new Context(capture, map, privacy);
         var memory = MemoryAdvice.Analyze(capture.Memory.Firmware, capture.Identity.BoardName);
@@ -138,7 +161,7 @@ internal static partial class LinuxPlan
         plan.Sections.Add(InsideThePc(context));
         plan.Sections.Add(Memory(memory, plan, capture));
         plan.Sections.Add(InterruptSection(context, cores, profile, plan));
-        plan.Sections.Add(Power(context));
+        plan.Sections.Add(Power(context, plan, power));
         plan.Sections.Add(LinuxSettings(context));
         plan.Sections.Add(Compatibility(context, memory));
         return plan;
@@ -597,16 +620,36 @@ internal static partial class LinuxPlan
         return section;
     }
 
-    private static PlanSection Power(Context context)
+    private static PlanSection Power(Context context, OptimizationPlan plan, PowerSample? power)
     {
         var section = new PlanSection { Id = "power", Title = "Power" };
         var usb = context.Capture.UsbDevices.Where(d => !d.IsRootHub && d.MaxPowerMa > 0).ToList();
         var busPowered = usb.Where(d => !d.SelfPowered).OrderByDescending(d => d.MaxPowerMa).ToList();
         var name = (UsbDevice d) => context.Nodes.GetValueOrDefault(LinuxConnections.UsbNodeId(d))?.Name ?? d.ProductName ?? $"{d.Vendor:X4}:{d.Product:X4}";
-        section.Summary = usb.Count == 0
-            ? "No USB power information."
-            : $"USB devices ask for up to {busPowered.Sum(d => d.MaxPowerMa):N0} mA from their ports (about {busPowered.Sum(d => d.MaxPowerMa) * 5 / 1000.0:0} W at 5 V); " +
-              $"{usb.Count - busPowered.Count} {(usb.Count - busPowered.Count == 1 ? "has its" : "have their")} own power supply. These are the devices' own declared needs: Linux reads them without asking the devices anything.";
+
+        // Where the power goes: measured, estimated, and the most USB devices ask for, row by row (the table above the items).
+        if (power is not null)
+        {
+            var card = context.Nodes.Values.FirstOrDefault(n => n.Kind == "gpu" && context.Capture.Pci.Any(p => LinuxConnections.PciNodeId(p) == n.Id && p.Driver is "amdgpu" or "nouveau" or "xe"));
+            plan.Power = LinuxPower.Breakdown(context.Capture, power, card?.Name, id => context.Nodes.GetValueOrDefault(id)?.Name, context.Privacy);
+            foreach (var row in plan.Power.Rows)
+                if (row.Node is not null && !context.Nodes.ContainsKey(row.Node)) row.Node = null;
+        }
+        section.Summary = (plan.Power?.Total is > 0 ? $"{plan.Power.TotalLabel}: about {plan.Power.Total:0} W right now. The table says how each number was found. " : "") +
+                          (usb.Count == 0
+                              ? "No USB power information."
+                              : $"USB devices ask for up to {busPowered.Sum(d => d.MaxPowerMa):N0} mA from their ports (about {busPowered.Sum(d => d.MaxPowerMa) * 5 / 1000.0:0} W at 5 V); " +
+                                $"{usb.Count - busPowered.Count} {(usb.Count - busPowered.Count == 1 ? "has its" : "have their")} own power supply. These are the devices' own declared needs: Linux reads them without asking the devices anything.");
+        if (plan.Power is not null && !context.Capture.Root)
+            section.Items.Add(new PlanItem
+            {
+                Tone = "info",
+                Title = "Root sees more of the power",
+                Detail = "Started with sudo, BoardScout also reads the processor's own energy counters and each NVMe drive's power table. " +
+                         "Linux keeps both from other users, so the processor shows no reading and NVMe drives use typical figures.",
+                Action = "sudo boardscout",
+                Nodes = context.Nodes.ContainsKey("cpu") ? ["cpu"] : []
+            });
 
         var hungry = busPowered.Where(d => d.MaxPowerMa >= 400 && !d.IsHub).ToList();
         if (hungry.Count > 0)
@@ -650,18 +693,6 @@ internal static partial class LinuxPlan
                 Detail = "USB autosuspend has put idle devices to sleep; they wake as soon as they're used.",
                 Nodes = asleep.Select(LinuxConnections.UsbNodeId).ToList()
             });
-
-        if (Sensors.GpuWatts(context.Capture.Sensors) is { } watts)
-        {
-            var gpuName = context.Nodes.Values.FirstOrDefault(n => n.Kind == "gpu")?.Name ?? "The graphics card";
-            section.Items.Insert(0, new PlanItem
-            {
-                Tone = "info",
-                Title = "Biggest power user right now",
-                Detail = $"{gpuName} draws {watts:0} W right now and climbs under load (games, video exports). The processor's own reading needs root on most kernels.",
-                Nodes = context.Nodes.Values.Where(n => n.Kind == "gpu").Select(n => n.Id).ToList()
-            });
-        }
 
         foreach (var supply in Sys.Children("/sys/class/power_supply"))
         {

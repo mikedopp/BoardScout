@@ -13,7 +13,7 @@ namespace BoardScout.Linux.Tests;
 // in at USB 2 speed on a USB 3 socket.
 public class MapTests
 {
-    private static HardwareCapture Machine()
+    internal static HardwareCapture Machine()
     {
         const string root = "/sys/devices/pci0000:00";
         PciDevice Pci(string address, int vendor, int device, int @class, string? driver, string? name, PciLinkInfo? link = null) => new()

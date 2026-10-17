@@ -57,7 +57,7 @@ internal sealed record OverviewPayload(
 
 /// <summary>
 /// The header tiles' numbers: processor, memory, temperatures, fans, and network, right now. CpuWatts is the processor
-/// package's power; Power is the whole breakdown (Windows only, for the Overview's summary).
+/// package's power; Power is the whole breakdown, for the Overview's summary.
 /// </summary>
 internal sealed record HeaderTelemetry(
     double Cpu,

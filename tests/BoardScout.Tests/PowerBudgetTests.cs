@@ -52,7 +52,7 @@ public class PowerBudgetTests
         State(3, 250, true, true);
         State(4, 50, true, true);
 
-        var table = DeviceTree.ParsePowerTable(identify);
+        var table = DrivePowerTable.FromIdentify(identify);
 
         Assert.NotNull(table);
         Assert.Equal(4.2, table.MaxW, 3);
@@ -64,7 +64,7 @@ public class PowerBudgetTests
 
     [Fact]
     public void Nvme_power_table_without_power_is_ignored() =>
-        Assert.Null(DeviceTree.ParsePowerTable(new byte[4096]));
+        Assert.Null(DrivePowerTable.FromIdentify(new byte[4096]));
 
     private static DiskFacts Nvme(int number) =>
         new(number, null, "WD Blue SN570 1TB", "1", 17, 1_000_000_000_000, 40, false, false, new DrivePowerTable(4.2, 0.63, 3.7, 0.005, 5));

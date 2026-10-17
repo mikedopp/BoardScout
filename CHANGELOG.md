@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.5.0 — 2026-10-16
+
+The Linux edition shows where the power goes too.
+
+### Added
+- **Power table and Power right now on Linux.** The plan's Power section and the Overview's At a glance show the
+  same breakdown as on Windows, built by the same code, with every row marked by how it was found:
+  - **measured**: the processor package, its cores, and Intel's built-in graphics, from the processor's energy
+    counters (`/sys/class/powercap`, Intel RAPL, which AMD processors use too; or the amd_energy driver), as the
+    energy added between two readings; the graphics card from its driver (amdgpu, nouveau, xe); and a Corsair
+    HXi or RMi power supply on the kernel's corsair-psu driver, with its rails;
+  - **worked out**: everything in the package but the cores (and built-in graphics), and with a reporting power
+    supply, "everything else" as its output minus the rows above;
+  - **estimate**: each drive the PC powers, from an NVMe drive's own power table (its Identify data, asked
+    through `/dev/nvmeN`; read-only) or typical figures for its kind, scaled by how busy it was;
+  - **at most**: what bus-powered USB devices ask their ports for;
+  - **no reading**: the motherboard and fans, and the processor with the reason (Linux lets only root read its
+    energy counters, the kernel publishes none, or the first reading is still a second away).
+  Linux keeps the energy counters and NVMe controllers from other users, so started without sudo the
+  processor shows "no reading", NVMe drives use typical figures, and the plan says what root adds.
+- Linux drive cards on the Connections map carry the **Power (estimate)** line.
+- `--plan-json` and `--selftest` on Linux sample power across their one-second window.
+
+### Changed
+- Where the processor counts the memory's energy (RAPL's DRAM domain), the table shows a **Memory** row, marked
+  as an estimate: most processors work it out from the memory traffic. The unmeasured row is then "Motherboard
+  and fans".
+- With built-in graphics reported separately, "Everything but the cores" says it leaves the graphics out.
+- On an AMD APU, amdgpu's slowPPT and fastPPT (the whole chip's power) never count as a graphics card in the table.
+- "Biggest power user right now" is gone from the Linux plan's Power section: the table replaces it.
+- The power breakdown, drive facts, and the NVMe power-table reader are shared by both editions; the Windows
+  capture walk moved to `PowerBudget.Windows.cs`.
+
 ## 2.4.0 — 2026-10-16
 
 Where the power goes: measured, worked out, estimated, and "at most", kept apart.

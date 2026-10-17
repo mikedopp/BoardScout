@@ -541,6 +541,8 @@ internal static partial class LinuxConnections
                       (fromModel ? ", from its model number (the USB bridge doesn't pass the drive's own answer through)" : "")
                     : "Not reported: the drive or its USB bridge doesn't say whether it spins"));
             }
+            if (LinuxPower.Bus(disk) is 17 or 11 or 7 or 1)
+                node.Facts.Add(new("Power (estimate)", PowerBudget.DriveFact(LinuxPower.Facts(disk), disk.Transport == "usb")));
             if (disk.CacheType is { } cache)
                 node.Facts.Add(new("Write cache", cache.Contains("back", StringComparison.Ordinal)
                     ? "On (write back): unmount before unplugging"

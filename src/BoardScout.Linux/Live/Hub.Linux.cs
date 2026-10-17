@@ -206,6 +206,7 @@ internal sealed partial class Hub
             for (var i = 0; i < 150 && (_capture is null || _map is null); i++) await Task.Delay(100, cts.Token);
             if (_capture is not { } capture || _map is not { } map) throw new InvalidOperationException("The device map isn't ready yet.");
             var cores = LinuxPlan.SampleCoresAsync(TimeSpan.FromSeconds(1), cts.Token);
+            var power = LinuxPlan.SamplePowerAsync(capture, TimeSpan.FromSeconds(1), cts.Token);
             if (measure)
             {
                 Log("PLAN: counting interrupts per device for 10 seconds (/proc/interrupts), at your request.");
@@ -213,7 +214,7 @@ internal sealed partial class Hub
                 Log(_profile.Error is { } error ? "PLAN: " + error : $"PLAN: the busiest was {_profile.Rows.FirstOrDefault()?.Driver ?? "none"}.");
             }
             var sample = await cores;
-            var plan = LinuxPlan.Build(capture, map, sample, _profile, AppSettings.Current.PrivacyMode);
+            var plan = LinuxPlan.Build(capture, map, sample, _profile, AppSettings.Current.PrivacyMode, await power);
             if (!cts.IsCancellationRequested) Broadcast("connections", JsonSerializer.Serialize(plan, Json.Options));
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
@@ -241,7 +242,7 @@ internal sealed partial class Hub
 
     private (string? Header, string? Flow) SampleLive(bool detailed)
     {
-        var (header, flow) = _telemetry.Sample(_capture);
+        var (header, flow) = _telemetry.Sample(_capture, AppSettings.Current.PrivacyMode);
         return (Telemetry.HeaderJson(header), Telemetry.FlowJson(flow));
     }
 

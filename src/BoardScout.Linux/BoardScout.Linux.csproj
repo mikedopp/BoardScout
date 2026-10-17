@@ -40,7 +40,7 @@
   </ItemGroup>
 
   <!-- Code shared with the Windows edition: the web views' data contracts, privacy masking, network
-       discovery, the speed test, SMBIOS parsing, memory advice, and the IEEE/USB ID lookups. -->
+       discovery, the speed test, SMBIOS parsing, memory advice, the power breakdown, and the IEEE/USB ID lookups. -->
   <ItemGroup>
     <Compile Include="..\BoardScout.App\Models\ConnectionModels.cs" Link="Shared\Models\ConnectionModels.cs" />
     <Compile Include="..\BoardScout.App\Models\PlanModels.cs" Link="Shared\Models\PlanModels.cs" />
@@ -51,6 +51,7 @@
     <Compile Include="..\BoardScout.App\Services\NetworkDiscovery.cs" Link="Shared\Services\NetworkDiscovery.cs" />
     <Compile Include="..\BoardScout.App\Services\NetworkProbe.cs" Link="Shared\Services\NetworkProbe.cs" />
     <Compile Include="..\BoardScout.App\Services\Oui.cs" Link="Shared\Services\Oui.cs" />
+    <Compile Include="..\BoardScout.App\Services\PowerBudget.cs" Link="Shared\Services\PowerBudget.cs" />
     <Compile Include="..\BoardScout.App\Services\Privacy.cs" Link="Shared\Services\Privacy.cs" />
     <Compile Include="..\BoardScout.App\Services\Smbios.cs" Link="Shared\Services\Smbios.cs" />
     <Compile Include="..\BoardScout.App\Services\SpeedTest.cs" Link="Shared\Services\SpeedTest.cs" />
