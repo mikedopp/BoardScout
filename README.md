@@ -6,10 +6,47 @@ OS will keep patching it. It never installs drivers or firmware. It runs on Wind
 your browser ([BoardScout for Linux](docs/linux.md)), and it can open any other Linux or Windows
 machine you reach with SSH ([Machines](docs/remote.md)).
 
-**Status:** v2.0.0 (2026-10-11) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
+**Status:** v2.5.0 (2026-10-16) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
 .NET 10 · MIT license · [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout Overview: the board with its printed slot names, live gauges, and the At a glance panel](docs/screenshots/overview.png)
+
+## What it's for
+
+For anyone who wants to know what is really inside a PC and whether it is set up well, without
+opening the case or reading the motherboard manual: someone planning an upgrade, chasing a slow
+drive or crackling audio, adding a second NVMe drive, or checking how long the OS will keep getting
+patches. BoardScout shows which slot and port each part sits in, which link speed it actually
+negotiated, whose lanes feed it, where the power goes, which drivers are out of date (with links to
+the official download, never installing anything itself), and a plain-language plan for getting the
+most out of the hardware you already have. It does the same for Linux PCs and for other machines you
+can reach over SSH.
+
+## How to use
+
+1. **Get it.** Download `BoardScout-<version>-win-x64.exe` (one file) or the `-win-x64.zip`
+   (portable folder) from the [latest release](https://github.com/mikedopp/BoardScout/releases/latest),
+   or build it with `.\Build-Portable.ps1`, which writes them to `build\`. No installer and no .NET
+   install needed.
+2. **Run `BoardScout.exe`.** The **Overview** opens with your board drawn slot by slot, four live
+   gauges in the header, and **At a glance** beside it: anything worth a look, the live power
+   breakdown, and the system's details. Run it as administrator to see the processor's power and
+   sensors that need it.
+3. **Scan now** (top right) takes a local inventory in under a minute; later starts show it
+   instantly. Run it again after you change hardware or firmware.
+4. **Look around.** Hover a part on the Overview for what it is and what it suits; click to pin it.
+   **Topology** shows CPU lanes versus the chipset uplink, **Connections** maps every device to the
+   port it uses (search it, open a drive's details, eject a USB drive), and **System** covers the OS,
+   its support dates and Windows 11 readiness.
+5. **Check drivers** from the **Drivers** menu when you want the online check; it is separate and can
+   be cancelled.
+6. **Read the plan.** On Connections, click **Optimization plan** for advice on memory slots, drive
+   placement, lanes, interrupts and power.
+7. **Share safely.** Turn on privacy mode (**Ctrl+Shift+P**) before taking screenshots or exporting a
+   spec sheet or JSON; see [Privacy mode](#privacy-mode-screenshots-and-exports-you-can-share).
+8. **Other machines:** the **Machines** tab opens Linux or Windows PCs over SSH
+   ([docs/remote.md](docs/remote.md)); on Linux, run the Linux build and open it in a browser
+   ([docs/linux.md](docs/linux.md)).
 
 ## Download and run
 
@@ -17,10 +54,10 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-2.0.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-2.0.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `DriverScout` beside it. |
-| `BoardScout-2.0.0-SHA256SUMS.txt` | Checksums for both. |
-| `BoardScout-2.0.0-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
+| `BoardScout-2.5.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-2.5.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `DriverScout` beside it. |
+| `BoardScout-2.5.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-2.5.0-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
 
 To open Linux machines from Windows (or the other way round), put the builds those machines need
 next to `BoardScout.exe`, or let the Machines page fetch them from the release when it needs one.

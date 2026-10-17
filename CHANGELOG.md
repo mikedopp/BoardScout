@@ -33,6 +33,10 @@ The Linux edition shows where the power goes too.
 - The power breakdown, drive facts, and the NVMe power-table reader are shared by both editions; the Windows
   capture walk moved to `PowerBudget.Windows.cs`.
 
+### Docs
+- README: new "What it's for" and "How to use" sections, a current Overview screenshot (privacy mode on, with
+  Power right now), and the status line and download table name this version.
+
 ## 2.4.0 — 2026-10-16
 
 Where the power goes: measured, worked out, estimated, and "at most", kept apart.

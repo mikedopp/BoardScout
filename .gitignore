@@ -14,3 +14,6 @@
 *.log
 .DS_Store
 Thumbs.db
+
+# Hangar launch copy of the portable build.
+/dist/
