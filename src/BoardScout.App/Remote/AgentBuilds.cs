@@ -38,10 +38,28 @@ internal static class AgentBuilds
     /// <summary>The build this program is: its own file can be copied when a machine needs the same one.</summary>
     public static string OwnRid => RuntimeInformation.RuntimeIdentifier;
 
-    /// <summary>True when this program is one self-contained file (the standalone build), so it can be copied as is.</summary>
+    /// <summary>
+    /// True when this program is the standalone build: one file with Assets, Shell and DriverScout packed inside, so
+    /// it can be copied as is. The portable build is a single-file exe too, but those folders sit beside it, so
+    /// copying only the exe would leave the remote agent without its pages.
+    /// </summary>
 #pragma warning disable IL3000 // The empty location inside a single-file bundle is exactly what this asks about.
-    public static bool IsSingleFile => string.IsNullOrEmpty(typeof(AgentBuilds).Assembly.Location);
+    public static bool IsSingleFile => IsStandalone(string.IsNullOrEmpty(typeof(AgentBuilds).Assembly.Location), AppContext.BaseDirectory, Environment.ProcessPath);
 #pragma warning restore IL3000
+
+    /// <summary>
+    /// A bundle that carries its content unpacks it to a cache folder and runs from there, so the base directory is
+    /// not the exe's own folder. A bundle that leaves the content loose runs from the folder it sits in.
+    /// </summary>
+    public static bool IsStandalone(bool singleFile, string baseDirectory, string? processPath)
+    {
+        if (!singleFile || string.IsNullOrEmpty(processPath)) return false;
+        var exeFolder = Path.GetDirectoryName(processPath);
+        if (string.IsNullOrEmpty(exeFolder)) return false;
+        return !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(baseDirectory)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(exeFolder)),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
 
     /// <summary>Where a build for this machine is on this computer, and what it is (for the log), or null.</summary>
     public static (string Path, string From)? Find(string rid, string version, string dataRoot)

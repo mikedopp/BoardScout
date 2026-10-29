@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.5.1 — 2026-10-29
+
+Four fixes from an outside review. Each has a test that fails on 2.5.0.
+
+### Fixed
+- **A portable Windows build no longer copies itself to a remote machine as an agent.** The portable exe is a single
+  file with `Assets`, `Shell` and `DriverScout` beside it, so the copy arrived without its pages. Only the standalone
+  build (content packed inside) is copied now; with the portable build, Machines offers the standalone build from
+  the release or from beside BoardScout, as it does for other builds it doesn't have.
+- **Driver downloads can't return the wrong cached installer.** The cache was keyed on file name and size, so two
+  drivers named `setup.exe` of the same size shared one entry. Each URL now has its own folder under `Downloads`
+  (named for the URL), a cached file is reused only when the server's size and modified time still match, and a
+  download is written to a `.part` file first so a cancelled one is never mistaken for a finished one.
+- **Privacy mode hides what was already gathered.** A machine checked before privacy mode was switched on kept its
+  name, title, fullest-disk path and check details in the page; they are hidden each time the page is sent now, along
+  with user names in `/home/…` and `C:\Users\…` paths, addresses and e-mails (also in the error details).
+- **Two dashboards on one PC keep their own login.** `--serve` dashboards on different ports shared one cookie name,
+  and the browser kept only the last key; the name now includes the port.
+
 ## 2.5.0 — 2026-10-16
 
 The Linux edition shows where the power goes too.

@@ -65,6 +65,15 @@ internal static class WebServer
 
     public static string InstanceFile(string dataRoot) => Path.Combine(dataRoot, "instance.json");
 
+    /// <summary>
+    /// The access-key cookie's name. A local dashboard is named by its port, so two on one machine (127.0.0.1:8811
+    /// and :8812) don't overwrite each other's key; an agent's port is its far end of a tunnel, so it gets a random
+    /// name instead.
+    /// </summary>
+    public static string CookieName(bool agent, int port) => agent
+        ? "boardscout_" + RandomNumberGenerator.GetHexString(8, lowercase: true)
+        : "boardscout_key_" + port;
+
     public static async Task<int> RunAsync(ServeOptions options)
     {
         var hub = Hub.Current;
@@ -80,8 +89,8 @@ internal static class WebServer
         }
         var token = RandomNumberGenerator.GetHexString(32, lowercase: true);
         // Several dashboards can share 127.0.0.1 (this one and remote ones through SSH tunnels); browsers keep
-        // cookies per host, not per port, so each agent's key gets its own cookie name.
-        var cookie = options.Agent ? "boardscout_" + RandomNumberGenerator.GetHexString(8, lowercase: true) : "boardscout_key";
+        // cookies per host, not per port, so each dashboard's key gets its own cookie name.
+        var cookie = CookieName(options.Agent, port);
 
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();

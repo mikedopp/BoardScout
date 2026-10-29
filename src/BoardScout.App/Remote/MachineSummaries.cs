@@ -55,6 +55,40 @@ internal static class MachineSummaries
         };
     }
 
+    private static readonly System.Text.RegularExpressions.Regex HomePath = new(
+        @"(?<=/home/|/Users/|[A-Za-z]:\\Users\\|[A-Za-z]:/Users/)[^/\\\s""']+", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex Address = new(
+        @"\b\d{1,3}(\.\d{1,3}){3}\b|[\w.+-]+@[\w-]+(\.[\w-]+)+|\b([0-9A-F]{2}[:-]){5}[0-9A-F]{2}\b", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>Text that came from another computer, with its user names, home folders, addresses and e-mails hidden.</summary>
+    public static string ScrubRemote(string text) => Address.Replace(HomePath.Replace(Privacy.Scrub(text), "…"), "•••");
+
+    /// <summary>
+    /// A summary as the page shows it. The summary is kept as gathered, so privacy mode is applied here, every time
+    /// it is sent: turning it on after a machine was checked must hide that machine's name and home folder too.
+    /// </summary>
+    public static MachineSummary ForDisplay(MachineSummary summary, bool privacy)
+    {
+        if (!privacy) return summary;
+        string Hide(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            if (summary.Hostname.Length >= 3 && summary.Hostname != Privacy.HostPlaceholder)
+                text = text.Replace(summary.Hostname, Privacy.HostPlaceholder, StringComparison.OrdinalIgnoreCase);
+            return ScrubRemote(text);
+        }
+        return summary with
+        {
+            Hostname = Privacy.HostPlaceholder,
+            Title = Hide(summary.Title),
+            Verdict = Hide(summary.Verdict),
+            Fullest = summary.Fullest is null ? null : Hide(summary.Fullest),
+            Checks = summary.Checks.Select(c => new SummaryCheck(Hide(c.Label), c.State, Hide(c.Detail))).ToList(),
+            Fixes = summary.Fixes.Select(Hide).ToList()
+        };
+    }
+
     private static IEnumerable<ConnectionNode> Walk(ConnectionNode node)
     {
         yield return node;

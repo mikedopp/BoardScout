@@ -6,7 +6,7 @@ OS will keep patching it. It never installs drivers or firmware. It runs on Wind
 your browser ([BoardScout for Linux](docs/linux.md)), and it can open any other Linux or Windows
 machine you reach with SSH ([Machines](docs/remote.md)).
 
-**Status:** v2.5.0 (2026-10-16) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
+**Status:** v2.5.1 (2026-10-29) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
 .NET 10 · MIT license · [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout Overview: the board with its printed slot names, live gauges, and the At a glance panel](docs/screenshots/overview.png)
@@ -54,10 +54,10 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-2.5.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-2.5.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `DriverScout` beside it. |
-| `BoardScout-2.5.0-SHA256SUMS.txt` | Checksums for both. |
-| `BoardScout-2.5.0-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
+| `BoardScout-2.5.1-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-2.5.1-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `DriverScout` beside it. |
+| `BoardScout-2.5.1-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-2.5.1-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
 
 To open Linux machines from Windows (or the other way round), put the builds those machines need
 next to `BoardScout.exe`, or let the Machines page fetch them from the release when it needs one.

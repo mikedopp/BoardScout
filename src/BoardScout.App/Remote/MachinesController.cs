@@ -457,7 +457,7 @@ internal sealed class MachinesController : IDisposable
                             canUseGit = p.Kind == "key-permissions" && clients.Any(c => c.Id == "git") && current?.Id != "git"
                         },
                         host = s?.Agent is { } a ? new { os = a.Os, pretty = a.Pretty, rid = a.Rid, admin = a.Admin, note = a.Note } : null,
-                        summary = s?.Summary,
+                        summary = s?.Summary is { } gathered ? MachineSummaries.ForDisplay(gathered, privacy) : null,
                         session = s?.Session is { Alive: true } session ? new { url = session.Url, since = session.StartedUtc.ToLocalTime().ToString("HH:mm") } : null
                     };
                 }).ToList()
@@ -466,8 +466,7 @@ internal sealed class MachinesController : IDisposable
         _send(JsonSerializer.Serialize(payload, Views.Json.Options));
     }
 
-    private static string? Scrub(string? text) => text is null ? null :
-        System.Text.RegularExpressions.Regex.Replace(Privacy.Scrub(text), @"\b\d{1,3}(\.\d{1,3}){3}\b|\b[\w.-]+@[\w.-]+\b", "•••");
+    private static string? Scrub(string? text) => text is null ? null : MachineSummaries.ScrubRemote(text);
 
     public void Dispose()
     {

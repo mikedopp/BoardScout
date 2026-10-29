@@ -46,32 +46,35 @@ internal sealed class DriverDownloadService
             }
 
             var fileName = ResolveFileName(headResponse.Content.Headers, uri, componentName);
-            var localPath = Path.Combine(DownloadFolder, fileName);
+            var localPath = CachePath(DownloadFolder, uri, fileName);
+            var lastModified = headResponse.Content.Headers.LastModified;
 
-            if (File.Exists(localPath))
-            {
-                var existingSize = new FileInfo(localPath).Length;
-                var expectedSize = headResponse.Content.Headers.ContentLength;
-                if (expectedSize.HasValue && existingSize == expectedSize.Value)
-                    return new DownloadOutcome(true, false, localPath, null);
-            }
+            if (File.Exists(localPath) && IsCurrent(localPath, headResponse.Content.Headers.ContentLength, lastModified))
+                return new DownloadOutcome(true, false, localPath, null);
 
+            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+            var part = localPath + ".part";
             using var response = await Http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
             var total = response.Content.Headers.ContentLength;
 
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            await using var file = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
-            var buffer = new byte[81920];
-            long downloaded = 0;
-            int read;
-            while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+            await using (var stream = await response.Content.ReadAsStreamAsync(ct))
+            await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 81920))
             {
-                await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                downloaded += read;
-                progress?.Report((downloaded, total));
+                var buffer = new byte[81920];
+                long downloaded = 0;
+                int read;
+                while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+                {
+                    await file.WriteAsync(buffer.AsMemory(0, read), ct);
+                    downloaded += read;
+                    progress?.Report((downloaded, total));
+                }
             }
 
+            // Stamp the file with the server's modified time so the next visit can tell a changed installer from this one.
+            if ((response.Content.Headers.LastModified ?? lastModified) is { } stamp) File.SetLastWriteTimeUtc(part, stamp.UtcDateTime);
+            File.Move(part, localPath, overwrite: true);
             return new DownloadOutcome(true, false, localPath, null);
         }
         catch (OperationCanceledException)
@@ -93,6 +96,27 @@ internal sealed class DriverDownloadService
     private static void OpenInBrowser(Uri uri)
     {
         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+    }
+
+    /// <summary>
+    /// Where a URL's download lives: a folder named for the URL, so two installers that share a file name (setup.exe,
+    /// driver.zip) never share a cache entry.
+    /// </summary>
+    internal static string CachePath(string downloadFolder, Uri uri, string fileName)
+    {
+        var key = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(uri.AbsoluteUri)))[..12];
+        return Path.Combine(downloadFolder, key, fileName);
+    }
+
+    /// <summary>
+    /// A cached file is reused only when the server still describes it: same size, and the same modified time when
+    /// the server gives one. A server that reports no size gets a fresh download.
+    /// </summary>
+    internal static bool IsCurrent(string path, long? serverLength, DateTimeOffset? serverModified)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists || serverLength is not { } length || info.Length != length) return false;
+        return serverModified is not { } modified || Math.Abs((info.LastWriteTimeUtc - modified.UtcDateTime).TotalSeconds) < 2;
     }
 
     private static string ResolveFileName(
