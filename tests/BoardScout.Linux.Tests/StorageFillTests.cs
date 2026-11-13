@@ -38,5 +38,28 @@ public class StorageFillTests
 
     [Fact]
     public void The_listing_command_stays_on_one_filesystem_and_runs_last_in_line() =>
-        Assert.Equal("nice -n 19 ionice -c 3 find '/srv/sync' -xdev -printf '%y %b %n %i %P\\n' 2>/dev/null", BoardScout.StorageScan.Scanner.FindCommand("/srv/sync"));
+        Assert.Equal("nice -n 19 $(command -v ionice >/dev/null 2>&1 && echo ionice -c 3) find '/srv/sync' -xdev -printf '\\0%y %b %n %i %P\\n' 2>/dev/null",
+            BoardScout.StorageScan.Scanner.FindCommand("/srv/sync"));
+
+    [Fact]
+    public async Task A_file_name_with_a_line_break_cannot_add_an_entry()
+    {
+        // Every real line starts with a NUL; the file "a\nf 900 1 5 home/fake" spills a second line without one.
+        const string listing = "\0d 8 1 2 \n\0d 8 1 3 home\n\0f 70 1 4 home/a\nf 900 1 5 home/fake\n";
+        var scanner = new BoardScout.StorageScan.Scanner(BoardScout.StorageScan.ScanFlavor.Linux);
+        var feed = scanner.BeginListing("/");
+        foreach (var line in listing.Split('\n')) feed.Add(line);
+        feed.Complete();
+        Assert.Equal(1, scanner.Files);
+        Assert.Equal(3, feed.Records);
+        Assert.True(scanner.Bytes.Sum() < 900 * 512);
+    }
+
+    [Fact]
+    public void A_listing_with_nothing_in_it_has_no_records()
+    {
+        var feed = new BoardScout.StorageScan.Scanner(BoardScout.StorageScan.ScanFlavor.Linux).BeginListing("/");
+        feed.Complete();
+        Assert.Equal(0, feed.Records);
+    }
 }

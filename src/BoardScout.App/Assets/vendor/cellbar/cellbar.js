@@ -25,7 +25,7 @@
     const N = colors.length - 1; // real buckets
     const reduceMotion = opts.reduceMotion != null ? opts.reduceMotion : matchMedia("(prefers-reduced-motion: reduce)").matches;
     const g = canvas.getContext("2d");
-    let cells = [], cols = 0, dpr = 1, assigned = 0, flashUntil = 0, total = 1, scanning = false, lastDraw = 0, dead = false;
+    let cells = [], cols = 0, dpr = 1, assigned = 0, flashUntil = 0, total = 1, scanning = false, lastDraw = 0, dead = false, dirty = true;
     let bytes = new Array(N).fill(0), last = new Array(N).fill(0);
 
     const colMajor = (i) => Math.floor(i / ROWS) + (i % ROWS) * cols;
@@ -74,12 +74,14 @@
     function settle(instant) {
       const p = per();
       const order = bytes.map((_, i) => i).sort((a, b) => bytes[b] - bytes[a]);
-      const usedCells = Math.min(cells.length, Math.round(usedBytes / p));
+      const usedCells = Math.min(cells.length, Math.max(usedBytes > 0 ? 1 : 0, Math.round(usedBytes / p)));
       const seq = [];
       let cum = 0;
       for (const i of order) {
         cum += bytes[i];
-        const upto = Math.min(usedCells, Math.round(cum / p));
+        let upto = Math.round(cum / p);
+        if (seq.length === 0 && bytes[i] > 0) upto = Math.max(1, upto); // a nearly empty drive still shows what is on it
+        upto = Math.min(usedCells, upto);
         while (seq.length < upto) seq.push(i);
       }
       while (seq.length < usedCells) seq.push(N);
@@ -127,8 +129,9 @@
       requestAnimationFrame(frame);
       if (document.hidden || !canvas.clientWidth) return;
       const busy = scanning || cells.some((c) => c.t0 > 0 && now - c.t0 < 600);
-      if (!busy && now - lastDraw < (reduceMotion ? 1e9 : 90)) return;
-      lastDraw = now;
+      // dirty: the bar changed (a scan started, finished or was cleared), so draw even with motion turned off
+      if (!busy && !dirty && now - lastDraw < (reduceMotion ? 1e9 : 90)) return;
+      lastDraw = now; dirty = false;
       draw(now);
     }
 
@@ -141,12 +144,12 @@
     return {
       begin(totalBytes) {
         total = Math.max(1, totalBytes); scanning = true; finished = false; bytes = new Array(N).fill(0); last = new Array(N).fill(0);
-        assigned = 0; cells.forEach((c) => { c.from = c.to = -1; c.t0 = 0; });
+        assigned = 0; cells.forEach((c) => { c.from = c.to = -1; c.t0 = 0; }); dirty = true;
       },
-      progress(b) { bytes = b.slice(0, N); assign(false); },
-      finish(b, used) { bytes = b.slice(0, N); usedBytes = used; scanning = false; finished = true; settle(false); },
-      stop() { scanning = false; },
-      clear() { scanning = false; finished = false; assigned = 0; bytes = new Array(N).fill(0); cells.forEach((c) => { c.from = c.to = -1; c.t0 = 0; }); },
+      progress(b) { bytes = b.slice(0, N); assign(false); dirty = true; },
+      finish(b, used) { bytes = b.slice(0, N); usedBytes = used; scanning = false; finished = true; settle(false); dirty = true; },
+      stop() { scanning = false; dirty = true; },
+      clear() { scanning = false; finished = false; assigned = 0; bytes = new Array(N).fill(0); cells.forEach((c) => { c.from = c.to = -1; c.t0 = 0; }); dirty = true; },
       resize: layout,
       destroy,
     };

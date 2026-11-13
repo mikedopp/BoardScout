@@ -41,7 +41,7 @@ details code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; f
 </head>
 <body>
 <h2>What fills a drive</h2>
-<div class="sub">Reads one drive's folder names and sizes and shows what is using the room. It never opens, moves or deletes a file.</div>
+<div class="sub">Reads one drive's folder names and sizes and shows what is using the room. It never reads a file's contents, and never moves or deletes a file.</div>
 <div class="toolbar">
   <label for="drive" style="position:absolute;left:-9999px">Drive to read</label>
   <select id="drive"></select>
@@ -143,7 +143,8 @@ function onMessage(m) {
       bar.finish(m.bytes, used);
       st.target = Math.max(used, sum(m.bytes));
       $('go').textContent = 'Read again';
-      $('status').textContent = `Read ${m.files.toLocaleString()} files in ${m.secs < 90 ? Math.round(m.secs) + ' s' : (m.secs / 60).toFixed(1) + ' min'}.`;
+      $('status').textContent = `Read ${m.files.toLocaleString()} files in ${m.secs < 90 ? Math.round(m.secs) + ' s' : (m.secs / 60).toFixed(1) + ' min'}.`
+        + (m.skippedLinks > 0 ? ` ${m.skippedLinks.toLocaleString()} more names for the same Windows files were counted once.` : '');
       let tip = m.bytes[7] > 0 ? `Caches are using ${fmt(m.bytes[7])} across ${m.caches.length} folders. BoardScout only reads; it never deletes.` : 'Nothing that looks like a cache.';
       if (gap > 1073741824) tip += m.os === 'linux'
         ? ` ${fmt(gap)} couldn't be read (folders this account may not open; run BoardScout as root to count them).`

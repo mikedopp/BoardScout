@@ -182,7 +182,7 @@ and SDK, and searchable tables of patches, installed software, and scheduled tas
 **Drivers, Storage, Efficiency** — driver versions with links to official vendor, OEM, or Microsoft
 update pages; every volume with its usage; and suggestions such as enabling XMP/DOCP/EXPO,
 freeing space, or reviewing BIOS updates. Storage also has **What fills a drive**: pick a drive and
-BoardScout reads its folder names and sizes (never opening, moving or deleting a file) and draws the whole drive as a bar
+BoardScout reads its folder names and sizes (never reading a file's contents, moving or deleting a file) and draws the whole drive as a bar
 of cells coloured by Apps, Developer, Photos, Movies, Documents, Music, System data, Caches, Trash and Other, with the
 cache folders it found. It says how much of the used space it couldn't read. On Linux it reads one filesystem at a time
 (never crossing into another mount) with Linux's own rules: `/usr` and `/boot` are System data, `/opt` and container
@@ -265,8 +265,10 @@ BoardScout only reads, and only what Windows already knows. The one exception is
 when you click it twice: it asks Windows to stop that USB drive, exactly as Safely Remove Hardware does
 (Windows writes out anything cached first, and refuses while a file is open).
 
-- **Your files are never opened.** It never opens a volume, folder, or file outside its own `Data`
-  folder, and never formats, repairs, defragments, TRIMs, or sends SMART commands to a drive.
+- **Your files are never read.** It never reads the contents of a volume or file outside its own `Data`
+  folder, and never formats, repairs, defragments, TRIMs, or sends SMART commands to a drive. The only
+  files it opens are under the drive's `Windows` folder, during **What fills a drive**, and only to read
+  their attributes (attribute-only access, no data), so a file listed under two names is counted once.
 - **Drives are opened with no access rights**, which can't read or write data, to ask Windows for the
   model, size, bus, whether it is an SSD, and the read and write counters Windows keeps (the ones Task
   Manager shows). Temperature is asked only of internal drives.

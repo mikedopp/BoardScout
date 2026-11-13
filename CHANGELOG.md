@@ -18,13 +18,27 @@ An untested macOS build.
   are signed ad hoc (Apple silicon won't start an unsigned program), and the script checks each one for the signature.
   They aren't notarized.
 
+### Fixed
+- **What fills a drive counts the room Windows files really take.** Compressed and sparse files count what they hold
+  on the drive, not their listed size, and a file under the `Windows` folder that has two names (WinSxS and System32
+  share thousands) is counted once; the summary says how many extra names it skipped. On a test PC, System data went
+  from 60.7 to 53.4 GB. To learn a file's link count, files under `Windows` are opened for their attributes only: no
+  data is read. The page now says BoardScout never reads a file's contents (instead of never opening a file).
+- With Windows animations turned off, the cell bar never drew its final, sorted state. A nearly empty drive now gets
+  at least one cell.
+- A `tmp`, `temp` or `cache` folder inside a developer or app folder (an npm package named `tmp`, the `/tmp` inside a
+  container image) stays Developer or Apps instead of counting as a cache.
+- A server listing (the `find` command) marks every line, so a file name with a line break in it can't pass for an
+  extra entry, and `ionice` is only used where the server has it.
+
 ### Changed
 - The storage scanner gets macOS rules.
 - The bundled engines now have plain names: `Drivers` (the driver engine; the portable folder keeps it beside
   `BoardScout.exe`), `Shell/orb`, `Assets/vendor/cellbar`, `vendor/drivestream`, `vendor/crawler` and
   `Services/StorageScan`.
 - The Mac tests use documentation addresses (192.0.2.x) instead of home-network ones.
-- 14 new tests that feed the Mac parsers made-up output in Apple's formats and build every view from it.
+- 14 new tests that feed the Mac parsers made-up output in Apple's formats and build every view from it, and 2 for
+  the marked listing: 148 Windows and 127 Linux/Mac.
 
 ## 2.7.0 — 2026-11-12
 

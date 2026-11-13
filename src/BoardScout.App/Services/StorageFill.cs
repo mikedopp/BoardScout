@@ -6,7 +6,7 @@ namespace BoardScout.Services;
 
 /// <summary>
 /// The Storage tab's "what fills a drive" scan: reads one drive's folder tree for names and sizes with the storage scanner
-/// (it never opens, moves or deletes a file), sorts the bytes into buckets, and streams the totals to the page, which
+/// (it never reads a file's contents and never moves or deletes a file), sorts the bytes into buckets, and streams the totals to the page, which
 /// draws them as a bar of cells. The native window and the browser dashboard both use it, each handing in how a message
 /// reaches its page. One scan at a time; starting another stops the first.
 /// </summary>
@@ -164,6 +164,7 @@ internal sealed class StorageFill : IDisposable
             bytes = scanner.Bytes,
             files = scanner.Files,
             skippedCloud = scanner.SkippedCloud,
+            skippedLinks = scanner.SkippedLinks,
             current = _privacy(scanner.Current),
             secs = clock.Elapsed.TotalSeconds,
             caches,

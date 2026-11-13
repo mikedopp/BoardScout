@@ -22,6 +22,7 @@ public class StorageScanTests
             Make(root, @"Users\me\Pictures\a.jpg", 1000);
             Make(root, @"Users\me\Videos\b.mp4", 5000);
             Make(root, @"Users\me\proj\node_modules\x\big.png", 2000); // a developer folder beats the .png extension
+            Make(root, @"Users\me\proj\node_modules\tmp\index.js", 300); // an npm package named tmp is not a cache
             Make(root, @"Users\me\AppData\Local\Temp\t.tmp", 600);     // caches
             Make(root, @"$Recycle.Bin\S-1\deleted.mp4", 3000);         // trash beats the .mp4 extension
             Make(root, @"Windows\System32\k.dll", 4000);               // system
@@ -33,12 +34,13 @@ public class StorageScanTests
 
             Assert.Equal(1000, bytes[BoardScout.StorageScan.Cats.Photos]);
             Assert.Equal(5000, bytes[BoardScout.StorageScan.Cats.Movies]);
-            Assert.Equal(2000, bytes[BoardScout.StorageScan.Cats.Developer]);
+            Assert.Equal(2300, bytes[BoardScout.StorageScan.Cats.Developer]);
             Assert.Equal(600, bytes[BoardScout.StorageScan.Cats.Caches]);
             Assert.Equal(3000, bytes[BoardScout.StorageScan.Cats.Trash]);
             Assert.Equal(4000, bytes[BoardScout.StorageScan.Cats.System]);
             Assert.Equal(8000, bytes[BoardScout.StorageScan.Cats.Apps]);
-            Assert.Equal(7, scanner.Files);
+            Assert.Equal(8, scanner.Files);
+            Assert.Equal(0, scanner.SkippedLinks);
             Assert.Single(scanner.CacheRoots());
         }
         finally { try { Directory.Delete(root, true); } catch { /* temp cleanup */ } }

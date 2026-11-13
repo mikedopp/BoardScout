@@ -98,7 +98,10 @@ public sealed class Scanner
     /// <summary>
     /// The shell command a Linux server runs to list one filesystem for <see cref="ReadListingAsync"/>: every entry under the
     /// mount point, one per line as "type blocks links inode relative-path", never crossing into another filesystem, at the lowest CPU and
-    /// disk priority. <paramref name="mount"/> must already be a checked mount point (it is single-quoted here).
+    /// disk priority (ionice only where the server has it). Every line starts with a NUL byte, which no file name can hold,
+    /// so a name with a line break in it cannot pass for a line of its own. <paramref name="mount"/> must already be a
+    /// checked mount point (it is single-quoted here). Needs GNU find; without it nothing comes back, see
+    /// <see cref="ListingFeed.Records"/>.
     /// </summary>
     public static string FindCommand(string mount)
     {
@@ -106,19 +109,20 @@ public sealed class Scanner
             throw new ArgumentException("not a mount point", nameof(mount));
         // %b = 512-byte blocks the file really takes (a sparse VM image counts what it holds, not its nominal size);
         // %n and %i let a file with several hard links be counted once, as df counts it
-        return $"nice -n 19 ionice -c 3 find '{mount}' -xdev -printf '%y %b %n %i %P\\n' 2>/dev/null";
+        return $"nice -n 19 $(command -v ionice >/dev/null 2>&1 && echo ionice -c 3) find '{mount}' -xdev -printf '\\0%y %b %n %i %P\\n' 2>/dev/null";
     }
 
     const FileAttributes RecallOnOpen = (FileAttributes)0x40000, RecallOnDataAccess = (FileAttributes)0x400000;
     readonly record struct Entry(string Name, bool IsDir, long Length, FileAttributes Attr);
-    readonly record struct Work(string Path, int Class, int Depth, string Parent, string? CacheRoot);
+    readonly record struct Work(string Path, int Class, int Depth, string Parent, string? CacheRoot, bool Links = false);
 
     readonly ScanFlavor _flavor;
     readonly long[] _bytes = new long[Cats.Count];
     readonly ConcurrentDictionary<string, long> _cacheRoots = new(StringComparer.OrdinalIgnoreCase);
     readonly ConcurrentQueue<Work> _queue = new();
+    readonly ConcurrentDictionary<(uint Volume, ulong File), byte> _linkedFiles = new();
     HashSet<string> _otherMounts = new(StringComparer.Ordinal);
-    long _files, _skipped, _dirs;
+    long _files, _skipped, _dirs, _linkNames;
     int _pending;
     volatile string _current = "";
 
@@ -131,17 +135,25 @@ public sealed class Scanner
     public long Directories => Interlocked.Read(ref _dirs);
     /// <summary>Cloud-only placeholders (Windows) that take no room on the drive and so were not counted.</summary>
     public long SkippedCloud => Interlocked.Read(ref _skipped);
+    /// <summary>Extra names of hard-linked files under a drive's Windows folder: each file was counted once, at its first name.</summary>
+    public long SkippedLinks => Interlocked.Read(ref _linkNames);
     public string Current => _current;
 
     public IReadOnlyList<CacheRoot> CacheRoots(int top = 40) =>
         _cacheRoots.Select(p => new CacheRoot(p.Key, p.Value)).OrderByDescending(c => c.Bytes).Take(top).ToList();
+
+    /// <summary>
+    /// A cache by its name ("Temp", "Cache", ".cache"), unless it sits inside a developer or app folder: node_modules\tmp is
+    /// an npm package and the /tmp inside a Docker image layer is part of the image, so neither is something to clear.
+    /// </summary>
+    static bool IsCache(int inherited, string name) => inherited != Cats.Developer && inherited != Cats.Apps && CacheNames.Contains(name);
 
     /// <summary>The bucket a Windows folder gives its files and subfolders, or -1 when it decides nothing (the extension will).</summary>
     public static int DirClass(int inherited, string name, int depth, string parent)
     {
         if (inherited == Cats.Trash) return Cats.Trash;
         if (name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase)) return Cats.Trash;
-        if (CacheNames.Contains(name)) return Cats.Caches;
+        if (IsCache(inherited, name)) return Cats.Caches;
         if (inherited >= 0) return inherited;
         if (DevNames.Contains(name)) return Cats.Developer;
         if (depth == 1)
@@ -168,7 +180,7 @@ public sealed class Scanner
         if (inherited == Cats.Trash) return Cats.Trash;
         // a desktop's ~/.local/share/Trash, and the .Trash-1000 folder a removable drive gets
         if (name.StartsWith(".Trash-", StringComparison.Ordinal) || name == ".Trash" || (name == "Trash" && parent == "share")) return Cats.Trash;
-        if (CacheNames.Contains(name)) return Cats.Caches;
+        if (IsCache(inherited, name)) return Cats.Caches;
         if (LinuxApps.Contains(absolute)) return Cats.Apps;
         if (inherited >= 0) return inherited;
         if (DevNames.Contains(name)) return Cats.Developer;
@@ -187,7 +199,7 @@ public sealed class Scanner
         if (inherited == Cats.Trash) return Cats.Trash;
         // ~/.Trash, and the .Trashes folder a removable drive gets
         if (name == ".Trash" || name == ".Trashes") return Cats.Trash;
-        if (CacheNames.Contains(name) || absolute == "/private/var/folders") return Cats.Caches;
+        if (IsCache(inherited, name) || absolute == "/private/var/folders") return Cats.Caches;
         if (MacApps.Contains(absolute) || IsHomeChild(absolute, "Applications")) return Cats.Apps;
         if (inherited >= 0) return inherited;
         if (DevNames.Contains(name) || IsHomeChild(absolute, "Library/Developer")) return Cats.Developer;
@@ -393,8 +405,10 @@ public sealed class Scanner
                 int cls = Dir(w.Class, full, e.Name, w.Depth + 1, parentName);
                 string? cacheRoot = w.CacheRoot;
                 if (cls == Cats.Caches && w.Class != Cats.Caches) cacheRoot = full;
+                // the Windows folder keeps thousands of files under two names (WinSxS and System32): see WindowsSize
+                bool links = w.Links || (windows && _flavor == ScanFlavor.Windows && w.Depth == 0 && e.Name.Equals("Windows", StringComparison.OrdinalIgnoreCase));
                 Interlocked.Increment(ref _pending);
-                _queue.Enqueue(new Work(full, cls, w.Depth + 1, parentName, cacheRoot));
+                _queue.Enqueue(new Work(full, cls, w.Depth + 1, parentName, cacheRoot, links));
             }
             else
             {
@@ -406,13 +420,69 @@ public sealed class Scanner
                 }
                 // a Linux symlink takes a few bytes; its target is counted where it lives
                 if (!windows && (e.Attr & FileAttributes.ReparsePoint) != 0) continue;
+                long size = e.Length;
+                if (windows && (w.Links || (e.Attr & (FileAttributes.Compressed | FileAttributes.SparseFile)) != 0))
+                {
+                    size = WindowsSize(Path.Join(w.Path, e.Name), e.Length, e.Attr, w.Links);
+                    if (size < 0) { Interlocked.Increment(ref _linkNames); continue; } // another name for a file already counted
+                }
                 int cls = File(w.Class, w.Path, e.Name, w.Depth);
-                Interlocked.Add(ref _bytes[cls], e.Length);
+                Interlocked.Add(ref _bytes[cls], size);
                 Interlocked.Increment(ref _files);
-                if (cls == Cats.Caches && w.CacheRoot != null) cacheBytes += e.Length;
+                if (cls == Cats.Caches && w.CacheRoot != null) cacheBytes += size;
             }
         }
         if (cacheBytes > 0 && w.CacheRoot != null) _cacheRoots.AddOrUpdate(w.CacheRoot, cacheBytes, (_, old) => old + cacheBytes);
+    }
+
+    // ---- Windows: the room a file really takes
+    //
+    // A folder listing gives a file's nominal size. Two kinds of file take less than that: a compressed or sparse file,
+    // and a file with several names (hard links), which is one file however many folders list it. Windows only tells the
+    // link count for an open file, so files under the Windows folder (where nearly all hard links are) are opened for
+    // their attributes only: no data is read and nothing is changed. Elsewhere only the folder listing is used.
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern uint GetCompressedFileSizeW(string path, out uint high);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string path, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle handle, out ByHandleInfo info);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct ByHandleInfo
+    {
+        public uint Attributes; public long Created, Accessed, Written;
+        public uint VolumeSerial, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+
+    /// <summary>
+    /// The bytes a Windows file takes on the drive, or -1 when it is another name of a hard-linked file already counted.
+    /// Falls back to the listed size when Windows will not say.
+    /// </summary>
+    long WindowsSize(string path, long listed, FileAttributes attr, bool links)
+    {
+        // the \\?\ prefix lets the calls reach paths past 260 characters, which the Windows folder has
+        string full = path.StartsWith(@"\\", StringComparison.Ordinal) ? path : @"\\?\" + path;
+        try
+        {
+            if (links)
+            {
+                const uint ReadAttributes = 0x80, ShareAll = 7, OpenExisting = 3, BackupSemantics = 0x02000000, OpenReparsePoint = 0x00200000;
+                using var h = CreateFileW(full, ReadAttributes, ShareAll, IntPtr.Zero, OpenExisting, BackupSemantics | OpenReparsePoint, IntPtr.Zero);
+                if (!h.IsInvalid && GetFileInformationByHandle(h, out var info) && info.Links > 1
+                    && !_linkedFiles.TryAdd((info.VolumeSerial, ((ulong)info.IndexHigh << 32) | info.IndexLow), 0)) return -1;
+            }
+            if ((attr & (FileAttributes.Compressed | FileAttributes.SparseFile)) != 0)
+            {
+                uint low = GetCompressedFileSizeW(full, out uint high);
+                if (low != 0xFFFFFFFF || System.Runtime.InteropServices.Marshal.GetLastWin32Error() == 0) return ((long)high << 32) | low;
+            }
+        }
+        catch (Exception) { /* keep the listed size */ }
+        return listed;
     }
 
     readonly record struct Frame(string Rel, string Abs, string Name, int Class, string? CacheRoot);
@@ -450,7 +520,14 @@ public sealed class Scanner
         readonly List<Frame> _stack;
         readonly Dictionary<string, long> _cacheBytes = new(StringComparer.Ordinal);
         readonly HashSet<long> _linked = new();
-        long _n;
+        long _n, _records;
+        bool _marked;
+
+        /// <summary>
+        /// Lines read so far that were real entries. Still 0 after <see cref="Complete"/> means the server sent no listing
+        /// (no GNU find, or the mount could not be read): say so, rather than show a drive nobody read.
+        /// </summary>
+        public long Records => Interlocked.Read(ref _records);
 
         internal ListingFeed(Scanner s, string mount)
         {
@@ -469,12 +546,18 @@ public sealed class Scanner
         public void Add(string line)
         {
             _n++;
+            // FindCommand starts every line with a NUL. Once one is seen, a line without it is the tail of a file name
+            // that holds a line break, not an entry. (A listing with no NULs at all is an older or hand-made one.)
+            if (line.Length > 0 && line[0] == '\0') { _marked = true; line = line[1..]; }
+            else if (_marked) return;
             if (line.Length < 8 || line[1] != ' ') return;
             int a = line.IndexOf(' ', 2), b = a < 0 ? -1 : line.IndexOf(' ', a + 1), c = b < 0 ? -1 : line.IndexOf(' ', b + 1);
             if (c < 0
                 || !long.TryParse(line.AsSpan(2, a - 2), out long blocks)
                 || !long.TryParse(line.AsSpan(a + 1, b - a - 1), out long links)
                 || !long.TryParse(line.AsSpan(b + 1, c - b - 1), out long inode)) return;
+            if (blocks < 0 || blocks > long.MaxValue / 512) return;
+            Interlocked.Increment(ref _records);
             long size = blocks * 512;
             char type = line[0];
             string rel = line[(c + 1)..].TrimEnd('\r');
