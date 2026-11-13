@@ -12,6 +12,7 @@ internal static class DriveEject
     public static (bool Ok, string Message) Run(BlockDisk disk)
     {
         if (disk.Transport != "usb") return (false, "Only USB drives can be ejected here.");
+        if (OperatingSystem.IsMacOS()) return MacEject(disk);
         if (!Tools.Has("udisksctl"))
             return (false, "udisksctl (part of udisks2) isn't installed, so BoardScout can't stop the drive. Unmount it, then unplug it.");
         // The same drive must still be at the same port: a different drive may have taken its name since.
@@ -44,6 +45,18 @@ internal static class DriveEject
             : (false, offError.Contains("Not authorized", StringComparison.OrdinalIgnoreCase)
                 ? "Its filesystems are unmounted, so it's safe to unplug, but Linux didn't allow powering it off without an administrator."
                 : $"Its filesystems are unmounted; powering it off failed ({FirstLine(offError)}). It's safe to unplug.");
+    }
+
+    // diskutil unmounts every volume on the drive (refusing while a file is open), then ejects it.
+    private static (bool Ok, string Message) MacEject(BlockDisk disk)
+    {
+        if (!File.Exists($"/dev/{disk.Name}")) return (false, "That drive is no longer connected.");
+        var (code, output, error) = Tools.RunFull("diskutil", ["eject", $"/dev/{disk.Name}"], 60000);
+        if (code == 0) return (true, "Ejected: safe to unplug.");
+        var reason = FirstLine(error.Length > 0 ? error : output);
+        return (false, reason.Contains("busy", StringComparison.OrdinalIgnoreCase) || reason.Contains("in use", StringComparison.OrdinalIgnoreCase)
+            ? "A program has a file open on it, so nothing was ejected. Close it and try again."
+            : $"Couldn't eject it: {reason}");
     }
 
     private static string FirstLine(string text) => text.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "no reason given";

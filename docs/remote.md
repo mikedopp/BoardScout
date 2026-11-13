@@ -24,7 +24,7 @@ connection. When you close the dashboard, the connection ends and BoardScout sto
   | `--key FILE` | Signs in with this private key. |
 
   `NAME` is a machine from the list, a `Host` from `~/.ssh/config`, or any SSH destination such as
-  `admin@192.168.1.20` or `nas.local:2222`.
+  `admin@192.0.2.20` or `nas.local:2222`.
 
 ## Adding machines
 
@@ -71,7 +71,7 @@ accepts passwords can't be added until you put your public key in its `authorize
 | On the machine | Linux | Windows |
 | --- | --- | --- |
 | Folder | `~/.cache/boardscout` (owner-only) | `%LOCALAPPDATA%\BoardScout\Remote` |
-| Inside | `agent/` the program, `data/` its settings and log, `extract/` .NET's unpacked files | the same, plus DriverScout's inventory and driver reports in `data` |
+| Inside | `agent/` the program, `data/` its settings and log, `extract/` .NET's unpacked files | the same, plus the driver engine's inventory and driver reports in `data` |
 | Runs as | the SSH account | the SSH account |
 | Remove it | `rm -rf ~/.cache/boardscout` | delete the folder |
 

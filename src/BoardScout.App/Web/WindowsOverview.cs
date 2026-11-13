@@ -8,7 +8,7 @@ namespace BoardScout.Views;
 
 /// <summary>
 /// The browser dashboard's Overview, Drivers, Storage, and Efficiency for a Windows PC, built from the same
-/// Connections map, DriverScout scan, and driver report the Windows app shows in its own window.
+/// Connections map, hardware scan, and driver report the Windows app shows in its own window.
 /// </summary>
 internal static partial class WindowsOverview
 {
@@ -403,7 +403,7 @@ internal static partial class WindowsOverview
     public static async Task<MachineSummary> SummaryAsync(bool privacy)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var scout = new DriverScoutService();
+        var scout = new DriverEngine();
         var scanPath = scout.GetLatestScanPath() ?? await scout.ScanAsync(CancellationToken.None);
         var scan = await scout.LoadScanAsync(scanPath, CancellationToken.None);
         Privacy.Learn(await File.ReadAllTextAsync(scanPath));

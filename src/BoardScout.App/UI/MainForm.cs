@@ -6,14 +6,14 @@ using BoardScout.Models;
 using BoardScout.Remote;
 using BoardScout.Services;
 using BoardScout.Views;
-using Glimmer.WinForms;
+using BoardScout.UI.Orb;
 using Microsoft.Web.WebView2.WinForms;
 
 namespace BoardScout.UI;
 
 public sealed class MainForm : Form
 {
-    private readonly DriverScoutService _service = new();
+    private readonly DriverEngine _service = new();
     private readonly DriverDownloadService _downloadService;
     private readonly SystemTelemetryService _telemetryService = new();
     private readonly WebView2 _overviewWebView = new() { Dock = DockStyle.Fill };
@@ -26,6 +26,10 @@ public sealed class MainForm : Form
     private readonly GlassCard _connectionsCard = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _machinesWebView = new() { Dock = DockStyle.Fill };
     private readonly GlassCard _machinesCard = new() { Dock = DockStyle.Fill };
+    // Storage tab: "what fills a drive" (the storage scanner and cell bar) above the drive list
+    private readonly WebView2 _fillWebView = new() { Dock = DockStyle.Fill };
+    private readonly GlassCard _fillCard = new() { Dock = DockStyle.Top, Height = 470 };
+    private StorageFill? _storageFill;
     private readonly List<RemoteWindow> _remoteWindows = [];
     private MachinesController? _machines;
     private bool _machinesReady;
@@ -186,6 +190,8 @@ public sealed class MainForm : Form
             // Remote dashboards end with this window: their SSH sessions close, and BoardScout stops on each machine.
             foreach (var window in _remoteWindows.ToList()) window.Close();
             _machines?.Dispose();
+            _storageFill?.Dispose();
+            _fillWebView.Dispose();
             _overviewWebView.Dispose();
             _topologyWebView.Dispose();
             _systemWebView.Dispose();
@@ -559,6 +565,32 @@ public sealed class MainForm : Form
             PostSettings(_systemWebView);
             if (_systemPayload is not null) _systemWebView.CoreWebView2.PostWebMessageAsJson(_systemPayload);
         });
+        _storageFill = new StorageFill(
+            (json, _) => { if (!IsDisposed) BeginInvoke(() => _fillWebView.CoreWebView2?.PostWebMessageAsJson(json)); },
+            AppendLog,
+            text => AppSettings.Current.PrivacyMode ? Privacy.Scrub(text) : text);
+        await InitializeWebViewAsync(_fillWebView, _fillCard, "fill.html", () => { });
+        if (_fillWebView.CoreWebView2 is { } fill)
+            fill.WebMessageReceived += (_, e) =>
+            {
+                try
+                {
+                    using var message = System.Text.Json.JsonDocument.Parse(e.WebMessageAsJson);
+                    var root = message.RootElement;
+                    switch (root.TryGetProperty("type", out var type) ? type.GetString() : null)
+                    {
+                        case "drives": _storageFill?.SendDrives(); break;
+                        case "storagescan": _storageFill?.Start(root.TryGetProperty("drive", out var drive) ? drive.GetString() : null); break;
+                        case "storagecancel": _storageFill?.Cancel(); break;
+                        case "fillheight" when root.TryGetProperty("height", out var height) && height.TryGetInt32(out var h):
+                            // CSS pixels → window pixels (display scaling and page zoom)
+                            _fillContentHeight = (int)Math.Ceiling(h * _fillWebView.DeviceDpi / 96.0 * _fillWebView.ZoomFactor);
+                            FitFillCard();
+                            break;
+                    }
+                }
+                catch (Exception ex) { AppendLog("STORAGE: " + ex.Message); }
+            };
         await InitializeWebViewAsync(_machinesWebView, _machinesCard, "machines.html", () =>
         {
             _machinesReady = true;
@@ -1092,7 +1124,28 @@ public sealed class MainForm : Form
             ("Volume", 75), ("Physical disk", 315), ("Bus", 80), ("File system", 90),
             ("Capacity", 110), ("Free", 110), ("Used", 100));
         page.Controls.Add(Card(_storage));
+        // the view is added after the grid so the grid keeps the room below it (docking runs back to front)
+        _fillWebView.DefaultBackgroundColor = AppTheme.Surface;
+        _fillWebView.Visible = false;
+        _fillCard.Padding = new Padding(6);
+        _fillCard.Controls.Add(_fillWebView);
+        page.Controls.Add(_fillCard);
+        _webTabs.Add((page, _fillWebView));
+        page.Resize += (_, _) => FitFillCard();
         return page;
+    }
+
+    // The fill card is as tall as the page inside it says it is, but always leaves the drive list room for
+    // its header and a few rows; anything taller scrolls inside the view.
+    private int _fillContentHeight = 330;
+
+    private void FitFillCard()
+    {
+        if (_fillCard.Parent is not { } page) return;
+        var chrome = _fillCard.Padding.Vertical + _fillCard.Margin.Vertical;
+        var room = page.ClientSize.Height - page.Padding.Vertical - 190;
+        var height = Math.Max(150, Math.Min(_fillContentHeight + chrome, room));
+        if (_fillCard.Height != height) _fillCard.Height = height;
     }
 
     private TabPage BuildSuggestionsTab()
@@ -1251,7 +1304,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        _versionButton.State = GlimmerState.Thinking;
+        _versionButton.State = OrbState.Thinking;
         try
         {
             _scanPath = latest;
@@ -1265,11 +1318,11 @@ public sealed class MainForm : Form
             }
             BindSnapshot();
             _status.Text = $"Loaded cached scan from {_scan.Scan.TimestampUtc?.ToLocalTime():g}. No rescan needed unless hardware changed.";
-            _versionButton.Flash(GlimmerState.Success);
+            _versionButton.Flash(OrbState.Success);
         }
         catch (Exception ex)
         {
-            _versionButton.State = GlimmerState.Error;
+            _versionButton.State = OrbState.Error;
             AppendLog("CACHE ERROR: " + ex.Message);
             SetEmptyState();
         }
@@ -1277,7 +1330,7 @@ public sealed class MainForm : Form
 
     private async Task RunScanAsync()
     {
-        await RunOperationAsync("Scanning hardware with DriverScout…", async token =>
+        await RunOperationAsync("Scanning hardware…", async token =>
         {
             _scanPath = await _service.ScanAsync(token);
             _scan = await _service.LoadScanAsync(_scanPath, token);
@@ -1369,7 +1422,7 @@ public sealed class MainForm : Form
         using var dialog = new OpenFileDialog
         {
             Filter = "BoardScout scan (*.json)|*.json|All files (*.*)|*.*",
-            Title = "Load a BoardScout or DriverScout scan"
+            Title = "Load a BoardScout scan"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
@@ -1430,22 +1483,22 @@ public sealed class MainForm : Form
         AppendLog($"[{DateTime.Now:T}] {message}");
         // The version orb says what is happening: thinking now, mint for a moment when done, red after a failure
         // until the next run or a click on it.
-        _versionButton.State = GlimmerState.Thinking;
+        _versionButton.State = OrbState.Thinking;
 
         try
         {
             await operation(_operationCts.Token);
-            _versionButton.Flash(GlimmerState.Success);
+            _versionButton.Flash(OrbState.Success);
         }
         catch (OperationCanceledException)
         {
-            _versionButton.State = GlimmerState.Idle;
+            _versionButton.State = OrbState.Idle;
             _status.Text = "Operation cancelled. Existing cached results were preserved.";
             AppendLog("Cancelled.");
         }
         catch (Exception ex)
         {
-            _versionButton.State = GlimmerState.Error;
+            _versionButton.State = OrbState.Error;
             _status.Text = "Operation failed — see Scan Log.";
             AppendLog("FAILED: " + ex);
             MessageBox.Show(this, ex.Message, "BoardScout", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1652,7 +1705,7 @@ public sealed class MainForm : Form
 
     private void ToggleVersionPopout()
     {
-        if (_versionButton.State == GlimmerState.Error) _versionButton.State = GlimmerState.Idle; // seen
+        if (_versionButton.State == OrbState.Error) _versionButton.State = OrbState.Idle; // seen
         if (_versionPopout is not null)
         {
             _versionPopout.Close();
@@ -1754,6 +1807,30 @@ public sealed class MainForm : Form
                 await SaveSnapshotAsync(Path.Combine(directory, "overview-pinned.png"));
                 await _overviewWebView.CoreWebView2.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))");
             }
+            // Only with BOARDSCOUT_SNAPSHOT_STORAGE=1: a real read of the system drive in the Storage tab (about a minute).
+            if (Environment.GetEnvironmentVariable("BOARDSCOUT_SNAPSHOT_STORAGE") == "1" && _fillWebView.CoreWebView2 is not null)
+            {
+                _tabs.SelectedTab = _tabs.TabPages["Storage"];
+                await Task.Delay(1500);
+                await _fillWebView.CoreWebView2.ExecuteScriptAsync("document.getElementById('go').click()");
+                for (var i = 0; i < 150; i++)
+                {
+                    await Task.Delay(2000);
+                    if (i == 5) await SaveSnapshotAsync(Path.Combine(directory, "storage-reading.png"));
+                    var label = await _fillWebView.CoreWebView2.ExecuteScriptAsync("document.getElementById('go').textContent");
+                    if (!label.Contains("Stop")) break;
+                }
+                await Task.Delay(2500);
+                await SaveSnapshotAsync(Path.Combine(directory, "storage-fill.png"));
+                // a small window with the cache list open: the drive list must keep room under the fill card
+                var full = Bounds;
+                Bounds = new Rectangle(full.Location, new Size(1280, 720));
+                await _fillWebView.CoreWebView2.ExecuteScriptAsync("document.getElementById('caches').open = true");
+                await Task.Delay(2000);
+                await SaveSnapshotAsync(Path.Combine(directory, "storage-small.png"));
+                Bounds = full;
+                await Task.Delay(1000);
+            }
             AppSettings.Update(s => s.GlassEffects = false);
             await Task.Delay(2500);
             await SaveSnapshotAsync(Path.Combine(directory, "overview-solid.png"));
@@ -1774,7 +1851,7 @@ public sealed class MainForm : Form
     // with no smoothing, so the orb can be judged pixel by pixel.
     private void SaveVersionStates(string path)
     {
-        GlimmerState[] states = [GlimmerState.Idle, GlimmerState.Thinking, GlimmerState.Success, GlimmerState.Error];
+        OrbState[] states = [OrbState.Idle, OrbState.Thinking, OrbState.Success, OrbState.Error];
         const int zoom = 3;
         var before = _versionButton.State;
         var crop = Rectangle.Inflate(RectangleToClient(_versionButton.RectangleToScreen(_versionButton.ClientRectangle)), 10, 8);
@@ -1872,7 +1949,7 @@ public sealed class MainForm : Form
     private void SetEmptyState()
     {
         _title.Text = "BoardScout";
-        _subtitle.Text = "No inventory yet: Scan now takes one (about half a minute), or import a DriverScout JSON file from More.";
+        _subtitle.Text = "No inventory yet: Scan now takes one (about half a minute), or import a scan JSON file from More.";
     }
 
     private void ApplyTheme()

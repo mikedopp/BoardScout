@@ -17,7 +17,17 @@ internal sealed record Distro(
 {
     public bool IsLike(string id) => Id == id || Like.Contains(id);
 
-    public static Distro Read() => Parse(Sys.Lines("/etc/os-release").Any() ? Sys.Lines("/etc/os-release") : Sys.Lines("/usr/lib/os-release"));
+    public static Distro Read() => OperatingSystem.IsMacOS() ? Mac() : Parse(Sys.Lines("/etc/os-release").Any() ? Sys.Lines("/etc/os-release") : Sys.Lines("/usr/lib/os-release"));
+
+    /// <summary>macOS from sw_vers: "macOS Sequoia 15.5".</summary>
+    public static Distro Mac(string? swVers = null)
+    {
+        var (name, version, build) = Platform.Mac.MacParse.SwVers(swVers ?? Tools.Run("sw_vers"));
+        var marketing = Platform.Mac.MacParse.MarketingName(version);
+        var pretty = string.Join(' ', new[] { name, marketing, version }.Where(s => !string.IsNullOrEmpty(s)));
+        return new Distro("macos", [], name, pretty, build is null ? version : $"{version} ({build})", version.Length == 0 ? null : version,
+            marketing?.ToLowerInvariant(), null, null);
+    }
 
     public static Distro Parse(IEnumerable<string> lines)
     {
@@ -90,6 +100,8 @@ internal static class Lifecycle
 
     public static SupportStatus Of(Distro distro, DateOnly today)
     {
+        if (distro.Id == "macos")
+            return new SupportStatus("Apple doesn't publish end dates; it has usually kept the newest three macOS versions patched", "info", "Check Software Update", null, false);
         if (distro.Id is "arch" or "manjaro" or "endeavouros" or "garuda" or "void" or "gentoo" or "opensuse-tumbleweed" or "cachyos" ||
             distro.VersionId is null && distro.IsLike("arch"))
             return new SupportStatus("Rolling release: current as long as you update", "good", "Never (rolling)", null, true);

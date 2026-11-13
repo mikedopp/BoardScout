@@ -108,13 +108,13 @@ internal static class PlanService
                     _ => "add-in card"
                 };
                 var roots = device.Children.Where(c => c.IdStarts(@"USB\ROOT_HUB")).ToList();
-                var counts = roots.Select(r => CountPorts(r.PortMap)).ToList();
+                var counts = roots.Select(r => CountPorts(r.PortSlots)).ToList();
                 var direct = roots.SelectMany(r => r.Children).Where(c => c.Usb is not null).ToList();
                 Controllers.Add(new Controller
                 {
                     Device = device,
                     Node = node,
-                    Ports = roots.SelectMany(r => r.PortMap).ToList(),
+                    Ports = roots.SelectMany(r => r.PortSlots).ToList(),
                     Summary = new UsbControllerSummary
                     {
                         Node = nodeId,

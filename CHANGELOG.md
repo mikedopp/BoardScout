@@ -1,12 +1,101 @@
 # Changelog
 
+## 2.8.0 — 2026-11-12
+
+An untested macOS build.
+
+### Added
+- **BoardScout for macOS (untested).** The Linux edition now also builds for Macs (`osx-arm64` for Apple silicon,
+  `osx-x64` for Intel) and reads the Mac with Apple's own tools: `system_profiler`, `sysctl`, `diskutil`, `df`, `mount`,
+  `ifconfig`, `netstat`, `arp`, `scutil`, `vm_stat`, `ioreg` and `sw_vers`. None of them needs sudo. Model and chip,
+  unified memory or memory slots, drives (APFS containers left out), volumes, USB, screens, network, Wi-Fi, Bluetooth,
+  live processor, memory, network and disk load, and the macOS version fill the same views as on Linux. It was written
+  from Apple's documented formats and published sample output, and **has not run on a Mac**. See
+  [docs/macos.md](docs/macos.md).
+- On a Mac, What fills a drive offers the startup disk and drives under `/Volumes` (not macOS's own VM, Preboot and
+  Update volumes) and sorts with Mac rules (`/Applications` and Homebrew are Apps, `~/Library/Caches` is Caches).
+- `Build-Linux.ps1` builds the two Mac runtimes too and writes a separate `macos-SHA256SUMS.txt`. The Mac binaries
+  are signed ad hoc (Apple silicon won't start an unsigned program), and the script checks each one for the signature.
+  They aren't notarized.
+
+### Changed
+- The storage scanner gets macOS rules.
+- The bundled engines now have plain names: `Drivers` (the driver engine; the portable folder keeps it beside
+  `BoardScout.exe`), `Shell/orb`, `Assets/vendor/cellbar`, `vendor/drivestream`, `vendor/crawler` and
+  `Services/StorageScan`.
+- The Mac tests use documentation addresses (192.0.2.x) instead of home-network ones.
+- 14 new tests that feed the Mac parsers made-up output in Apple's formats and build every view from it.
+
+## 2.7.0 — 2026-11-12
+
+What fills a drive on Linux too.
+
+### Added
+- **Storage › What fills a drive in the Linux edition.** The drive list offers each real filesystem (never /proc, tmpfs,
+  snap images or container layers), and a reading stays on that filesystem: it stops at other mount points. Linux has its
+  own rules: `/usr`, `/lib`, `/boot`, `/etc` and `/var/log` are System data; `/opt`, `/snap`, `/usr/local` and container
+  and VM storage are Apps; `/var/cache`, `/tmp` and `~/.cache` are Caches; `~/.local/share/Trash` is Trash. A folder
+  named `usr` on a data drive is just a folder. Symlinks aren't counted.
+- Run as an ordinary user, folders that account may not open can't be counted; the summary says how much that was and
+  that running as root counts it.
+
+### Changed
+- "Used" is now the drive's size minus all of its free space, so the room Linux keeps for root isn't taken for files
+  nobody could read.
+- `.cache` folders count as Caches on Windows too.
+- 4 new Linux tests (which mounts are offered, a listing sorted by the Linux rules, the listing command): 148 Windows and
+  111 Linux.
+
+## 2.6.1 — 2026-11-12
+
+Fixes for 2.6.0's Storage view, and a launcher opening an old build.
+
+### Fixed
+- **A launcher started an old BoardScout.** Launchers that pick the newest build in `dist\` found 2.5.0 there, so 2.6.0
+  never opened from them, and that copy started with no settings and a full rescan. `Build-Portable.ps1` now also writes
+  `dist\BoardScout-<version>-<runtime>\` and carries settings and scans forward from the newest earlier one there (never
+  its WebView2 cache).
+- **The Storage tab gave the drive list too little room.** "What fills a drive" sat in a fixed 470 px card with an empty
+  band under its legend, and on a smaller window the drive list shrank to its header. The card now follows the height
+  of what is on it (and grows when Cache folders found is opened), always leaving the drive list room for a few rows.
+  The browser dashboard's card does the same.
+- Regular expressions that read SSH and kernel text now have a one-second time limit (found by a code scan).
+- **A page that opened during a read offered to start one.** In a second window or tab, "What fills a drive" showed the
+  first drive and Read the drive while a read was running, and pressing it stopped that read. It now shows the drive being
+  read, Stop, and how full the drive is.
+
+### Changed
+- WebView2 SDK 1.0.4191.47 → 1.0.4314.35.
+
+## 2.6.0 — 2026-11-12
+
+The Storage tab shows what fills a drive.
+
+### Added
+- **What fills a drive** (Windows, in the window and in the browser dashboard). Pick a drive and press Read the drive:
+  BoardScout reads the folder names and sizes and draws the whole drive as a bar of small cells. While it reads, the cells
+  take the colour of what was just found; when it finishes they sort into blocks, largest first, and free space stays dim.
+  A legend gives the size of Apps, Developer, Photos, Movies, Documents, Music, System data, Caches, Trash and Other.
+- **It says what it couldn't read.** Windows reports how much of the drive is used; BoardScout shows that number and how
+  much of it was protected or in use and so could not be read, and skips cloud-only files that take no room.
+- **Cache folders found** lists the largest cache folders (Temp, browser and shader caches, npm) with their sizes.
+  BoardScout only reads: it never opens, moves or deletes a file, and it will only start on a drive root, never a folder.
+- Privacy mode hides user names in the paths shown while it reads and in the cache list.
+- `BOARDSCOUT_SNAPSHOT_STORAGE=1` makes `--snapshot` also read the system drive and save `storage-reading.png` and
+  `storage-fill.png`.
+
+### Notes
+- The Linux edition does not have this view yet: it needs its own rules for what counts as a cache or system data.
+- 4 new tests (buckets, cancel, drive matching, drive roots only): 148 Windows and 98 Linux.
+
+
 ## 2.5.1 — 2026-10-29
 
 Four fixes from an outside review. Each has a test that fails on 2.5.0.
 
 ### Fixed
 - **A portable Windows build no longer copies itself to a remote machine as an agent.** The portable exe is a single
-  file with `Assets`, `Shell` and `DriverScout` beside it, so the copy arrived without its pages. Only the standalone
+  file with `Assets`, `Shell` and the driver engine's folder beside it, so the copy arrived without its pages. Only the standalone
   build (content packed inside) is copied now; with the portable build, Machines offers the standalone build from
   the release or from beside BoardScout, as it does for other builds it doesn't have.
 - **Driver downloads can't return the wrong cached installer.** The cache was keyed on file name and size, so two
@@ -93,12 +182,12 @@ Where the power goes: measured, worked out, estimated, and "at most", kept apart
 
 ## 2.3.0 — 2026-10-15
 
-The version button is a Glimmer orb in the Windows app too.
+The version button is an orb in the Windows app too.
 
 ### Changed
-- **Version button**: the four-colour chasing border is gone. The version now sits on the Glimmer orb badge
-  (aurora), the same badge the browser dashboard shows, drawn natively with GDI+ (Glimmer 0.5.0's
-  `GlimmerBadge`, copied to `UI/Glimmer/`). The orb says what BoardScout is doing:
+- **Version button**: the four-colour chasing border is gone. The version now sits on the orb badge
+  (aurora), the same badge the browser dashboard shows, drawn natively with GDI+ (
+  `OrbBadge` in `UI/Orb/`). The orb says what BoardScout is doing:
   - **thinking** (fast swirl, pulsing glow) while a scan, driver check, or driver download runs, and while the
     cached scan loads at startup;
   - **success** (a mint pop for 1.6 s) when it finishes;
@@ -109,12 +198,12 @@ The version button is a Glimmer orb in the Windows app too.
 ### Added
 - `--snapshot` also writes `version-states.png`: the version badge in each state, cropped from the window and
   enlarged 3x.
-- Tests check that the window's aurora colours match the browser dashboard's `glimmer-badge.css` in every state.
+- Tests check that the window's aurora colours match the browser dashboard's `orb-badge.css` in every state.
 
 ### Fixed
 - Release builds are deterministic (`ContinuousIntegrationBuild`): the exe, its embedded debug info, and the
   source link map record `/_/` instead of the folder the build ran in.
-- The bundled FlashStream copy is 1.1.1, whose header no longer names a folder on the PC it was built on.
+- The bundled DriveStream copy is 1.1.1, whose header no longer names a folder on the PC it was built on.
 
 ## 2.2.0 — 2026-10-15
 
@@ -197,7 +286,7 @@ Machines: any Linux or Windows machine you reach with SSH.
   the window (`--listen`, `--port`, `--no-browser`); it's also what a Windows machine runs when opened
   over SSH. Overview board, Topology, Connections with live traffic and the plan, Drivers with
   **Check drivers** and links to official pages, Storage, Efficiency, System, and the Scan Log, built
-  from the same map, DriverScout inventory, and sensors as the app.
+  from the same map, hardware inventory, and sensors as the app.
 - **Linux builds for more machines:** `linux-arm` (32-bit Raspberry Pi OS), `linux-musl-x64` and
   `linux-musl-arm64` (Alpine), beside `linux-x64` and `linux-arm64`.
 - **Linux updates waiting** for dnf (from its cached package lists), zypper, pacman (against the last
@@ -238,7 +327,7 @@ BoardScout for Linux.
   root. It shows the same views as Windows (the shared Topology, Connections, and System pages run
   unchanged through a small bridge) plus its own Overview board, Drivers, Storage, Efficiency, and Scan
   Log, in Liquid Glass with opacity and blur settings, a solid fallback for reduced transparency and high
-  contrast, and the Glimmer orb on the version button.
+  contrast, and the orb on the version button.
   - **Connections** from `/sys`: Intel (PCH over DMI) and AMD chipsets, PCIe links now against their best,
     every USB controller, hub, and port, with the firmware's USB 2/USB 3 socket pairing (sockets counted
     once, unwired ports left out, a USB 3 bridge that came in on the USB 2 wires flagged), USB port
@@ -319,10 +408,10 @@ Search, Eject, and drives that don't say what they are.
 
 ## 1.8.0 — 2026-10-05
 
-FlashStream: SSDs and NVMe drives as light moving through their NAND dies.
+DriveStream: SSDs and NVMe drives as light moving through their NAND dies.
 
 ### Changed
-- **Live drives: FlashStream for SSD/NVMe** (shared with DedupApp 2.4). The flat board of blinking cells is replaced
+- **Live drives: DriveStream for SSD/NVMe**. The flat board of blinking cells is replaced
   by a tilted grid of NAND dies with light streaks moving through it: reads (blue) leave a die, cross the
   controller and arc up to the PC; writes (amber) travel the other way and flash the die they land on. The number
   of streaks follows operations per second, their speed follows MB/s, their length follows the average I/O size
@@ -337,20 +426,20 @@ FlashStream: SSDs and NVMe drives as light moving through their NAND dies.
   live samples, on one shared scale, with the peak. A drive's details panel uses the same colors for disks.
 - Per-disk **busy %** in the live samples, from the same zero-access disk counters (idle time over the
   interval). It drives the controller glow.
-- The engine lives in `Assets/vendor/flashstream/flashstream.js`, built from the shared FlashStream source.
+- The engine lives in `Assets/vendor/drivestream/drivestream.js`, built from the shared DriveStream source.
 
 ## 1.7.1 — 2026-10-04
 
-- Skitter engine 2.1.0: the crawlers on the Connections map are now drawn as real spiders (abdomen and carapace,
+- Crawler engine 2.1.0: the crawlers on the Connections map are now drawn as real spiders (abdomen and carapace,
   eight eyes, palps, three-part legs, each in its own color). Behavior on the map is unchanged; the engine's new
   reading, link-following and octopus modes aren't used in BoardScout.
 
 ## 1.7.0 — 2026-10-01
 
-Skitter: spiders that crawl the Connections map and hunt bottlenecks.
+Crawler: spiders that crawl the Connections map and hunt bottlenecks.
 
 ### Added
-- **Skitter crawlers** (Settings → *Skitter crawlers on the Connections map*: Off, 2, 4, 8; off by default).
+- **Crawler crawlers** (Settings → *Crawler crawlers on the Connections map*: Off, 2, 4, 8; off by default).
   Procedural spiders with jointed legs walk over the map. Their feet plant on real device cards, summary pills,
   and buttons, and they ride along when the map scrolls.
 - They hunt problems first: cards and pills for links running below what the device supports (and other
@@ -358,7 +447,6 @@ Skitter: spiders that crawl the Connections map and hunt bottlenecks.
   and some get their name torn off and dragged away. Only the overlay draws this; the map itself is unchanged,
   and torn labels use the text already on screen, so privacy mode still applies.
 - Move the pointer near a spider to shoo it. Spiders need Motion on and pause while the window is hidden.
-- The engine (Assets/vendor/skitter/skitter.js) is shared with OpsConsole.
 
 ## 1.6.0 — 2026-09-27
 
@@ -371,7 +459,7 @@ Live drives: every drive animated from its real activity.
   writes (amber). Dots carry reads and writes between the drive and the PC, and each card shows read and
   write speed, operations per second, queue, and temperature where Windows reports it.
 - The same live picture in the details panel when you click any drive on the map.
-- Ported from DedupApp's Live drives screen. It is driven by the disk counters BoardScout already samples
+- It is driven by the disk counters BoardScout already samples
   for the map (no new requests to drives), follows the Motion setting, and stops when the panel closes or
   the tab is hidden; nine drives animating cost about 7% of one CPU core.
 
@@ -685,7 +773,7 @@ truth about Windows support.
 ### Added
 - **Pimp My Build button**: green-accent header button opens the upgrade planner report directly in the browser with Amazon and Newegg search links for each recommended component
 - **Minimize to tray**: minimizing the window sends BoardScout to the system tray with a version-labeled icon; double-click or right-click "Open" to restore; right-click "Exit" to close
-- **Version button animation rewrite**: rotating `LinearGradientBrush` (blue→red→yellow→green sweep, ~8 second revolution) matching SnipDeck's GlowEffect approach
+- **Version button animation rewrite**: rotating `LinearGradientBrush` (blue→red→yellow→green sweep, ~8 second revolution)
 - **Feedback/report links**: "Report issue" link in status bar and version popout opens GitHub Issues
 
 ### Changed
@@ -734,7 +822,7 @@ truth about Windows support.
 - TEMP, FANS, NET live metrics in the header bar with color-coded thresholds
 
 ### Changed
-- Color palette swapped to match the DriverScout HTML dashboard (deep navy base, blue/green/amber/red semantic colors)
+- Color palette swapped to match the driver engine's HTML dashboard (deep navy base, blue/green/amber/red semantic colors)
 - Scanner engine bumped to v1.0.0 (schema 2.0) with full board-layout collectors
 - Build archive updated for 0.5.0
 

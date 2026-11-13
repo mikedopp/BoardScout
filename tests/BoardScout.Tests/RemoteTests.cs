@@ -138,7 +138,7 @@ public class RemoteTests
     // ---- Machines and builds -------------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("admin@192.168.1.20", "admin@192.168.1.20", null)]
+    [InlineData("admin@192.0.2.20", "admin@192.0.2.20", null)]
     [InlineData("ssh dutch", "dutch", null)]
     [InlineData("nas.local:2222", "nas.local", 2222)]
     [InlineData(" root@pi:22 ", "root@pi", 22)]
@@ -183,11 +183,11 @@ public class RemoteTests
     // ---- What SSH said ----------------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("No ED25519 host key is known for 10.0.0.5 and you have requested strict checking.\r\nHost key verification failed.", "hostkey")]
+    [InlineData("No ED25519 host key is known for 192.0.2.5 and you have requested strict checking.\r\nHost key verification failed.", "hostkey")]
     [InlineData("@@@@@@@\r\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\r\nHost key verification failed.", "hostkey-changed")]
-    [InlineData("bald@10.0.0.5: Permission denied (publickey,password).", "auth")]
-    [InlineData("ssh: connect to host 10.0.0.9 port 22: Connection timed out", "unreachable")]
-    [InlineData("ssh: connect to host 10.0.0.9 port 22: Connection refused", "unreachable")]
+    [InlineData("user@192.0.2.5: Permission denied (publickey,password).", "auth")]
+    [InlineData("ssh: connect to host 192.0.2.9 port 22: Connection timed out", "unreachable")]
+    [InlineData("ssh: connect to host 192.0.2.9 port 22: Connection refused", "unreachable")]
     [InlineData("ssh: Could not resolve hostname nas: No such host is known.", "unreachable")]
     [InlineData("kex_exchange_identification: something unusual", "other")]
     public void Ssh_failures_are_sorted(string error, string kind) =>

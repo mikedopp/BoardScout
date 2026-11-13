@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoardScout · What fills a drive</title>
+<style>
+:root {
+    --surface: #0c1620; --text: #e8edf4; --muted: #8a9bb2; --faint: #4a6080;
+    --accent: #3d9eff; --good: #10b981; --warning: #f59e0b;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scrollbar-color: #2a3a4f transparent; }
+body { background: var(--surface); color: var(--text); font: 14px/1.45 'Segoe UI', system-ui, sans-serif; padding: 18px 22px 16px; }
+h2 { font-size: 15px; font-weight: 600; }
+.sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.toolbar { display: flex; gap: 8px; align-items: center; margin: 12px 0 6px; flex-wrap: wrap; }
+select, button { font: inherit; color: inherit; }
+select { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 5px 10px; min-height: 32px; }
+select option { background: #0c1620; }
+button.go { background: linear-gradient(180deg, #4aa8ff, #2d84e0); border: 1px solid #6bb8ff; color: #fff; border-radius: 10px; padding: 5px 14px; min-height: 32px; cursor: pointer; font-size: 12.5px; }
+button.go:hover { filter: brightness(1.15); }
+button:focus-visible, select:focus-visible { outline: 2px solid rgba(255,255,255,.55); outline-offset: 2px; }
+.head { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+#big { font-size: 34px; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+#of { color: var(--muted); }
+#status { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 2px 0 6px; min-height: 18px; }
+#bar { display: block; width: 100%; height: 76px; margin: 4px 0 10px; }
+ul.legend { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 28px; }
+.legend li { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.legend i { width: 14px; height: 14px; border-radius: 4px; background: var(--c); flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.18) inset; }
+.legend span { flex: 1; }
+.legend em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+#tip { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+details { margin-top: 8px; color: var(--muted); font-size: 12.5px; }
+details ul { list-style: none; margin-top: 6px; max-height: 180px; overflow: auto; }
+details li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+details code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px Consolas, monospace; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h2>What fills a drive</h2>
+<div class="sub">Reads one drive's folder names and sizes and shows what is using the room. It never opens, moves or deletes a file.</div>
+<div class="toolbar">
+  <label for="drive" style="position:absolute;left:-9999px">Drive to read</label>
+  <select id="drive"></select>
+  <button class="go" id="go" type="button">Read the drive</button>
+</div>
+<div class="head"><b id="big">&mdash;</b><span id="of"></span></div>
+<div id="status">Pick a drive and press Read the drive.</div>
+<canvas id="bar" role="img" aria-label="Drive fill: one cell per slice of the drive, coloured by what fills it"></canvas>
+<ul class="legend" id="legend"></ul>
+<div id="tip"></div>
+<details id="caches" hidden><summary>Cache folders found</summary><ul id="cacheList"></ul></details>
+
+<script src="./vendor/cellbar/cellbar.js"></script>
+<script>
+'use strict';
+// This page works in the native window (WebView2) and inside the browser dashboard (its bridge stands in for
+// window.chrome.webview), so it only ever talks through postMessage / message events.
+const $ = id => document.getElementById(id);
+const CATS = [
+  ['Apps', '#4f8cff'], ['Developer', '#2dd4bf'], ['Photos', '#f472b6'], ['Movies', '#a78bfa'], ['Documents', '#fbbf24'],
+  ['Music', '#4ade80'], ['System data', '#94a3b8'], ['Caches', '#fb923c'], ['Trash', '#f87171'], ['Other', '#64748b']
+];
+const st = { reading: false, bytes: new Array(10).fill(0), shown: 0, target: 0 };
+const host = window.chrome && window.chrome.webview;
+const send = m => host && host.postMessage(m);
+
+function fmt(b) {
+  const g = b / 1073741824;
+  if (g >= 100) return g.toFixed(0) + ' GB';
+  if (g >= 1) return g.toFixed(1) + ' GB';
+  const m = b / 1048576;
+  if (m >= 1) return m.toFixed(0) + ' MB';
+  return Math.max(0, b / 1024).toFixed(0) + ' KB';
+}
+const sum = a => a.reduce((x, y) => x + y, 0);
+const text = (tag, t) => { const e = document.createElement(tag); e.textContent = t; return e; };
+
+CATS.forEach(([name, color], i) => {
+  const li = document.createElement('li');
+  const chip = document.createElement('i');
+  chip.style.setProperty('--c', color);
+  const size = text('em', '0 KB');
+  size.id = 'sz' + i;
+  li.append(chip, text('span', name), size);
+  $('legend').append(li);
+});
+const bar = CellBar.create($('bar'), { colors: CATS.map(c => c[1]) });
+
+function show() {
+  $('big').textContent = fmt(st.shown);
+  CATS.forEach((_, i) => { $('sz' + i).textContent = fmt(st.bytes[i]); });
+}
+function tween() {
+  if (Math.abs(st.target - st.shown) < 1e6) { st.shown = st.target; show(); return; }
+  st.shown += (st.target - st.shown) * 0.2;
+  show();
+  requestAnimationFrame(tween);
+}
+
+function onMessage(m) {
+  if (!m) return;
+  if (m.type === 'drives') {
+    const keep = $('drive').value;
+    $('drive').replaceChildren(...m.drives.map(d => {
+      const o = text('option', `${d.name}${d.label ? ' ' + d.label : ''} (${fmt(d.total)})`);
+      o.value = d.name;
+      return o;
+    }));
+    if (keep) $('drive').value = keep;
+    return;
+  }
+  if (m.type !== 'storage') return;
+  st.bytes = m.bytes;
+  // The picker shows the drive being read, also on a page that opened partway through (another window or tab).
+  const reading = (m.drive || '').replace(/[\\/]+$/, '') || m.drive;
+  if ([...$('drive').options].some(o => o.value === reading)) $('drive').value = reading;
+  // A page that opens mid-read starts at the first progress message: without this it offered "Read the drive",
+  // which would have stopped the read already running.
+  if (m.phase === 'progress' && !st.reading) onMessage({ ...m, phase: 'start' });
+  switch (m.phase) {
+    case 'start':
+      st.reading = true; st.target = 0; st.shown = 0;
+      bar.begin(m.total);
+      $('go').textContent = 'Stop';
+      $('of').textContent = 'of ' + fmt(m.total) + ' used';
+      $('tip').textContent = '';
+      $('caches').hidden = true;
+      $('status').textContent = 'Reading ' + m.drive;
+      break;
+    case 'progress':
+      bar.progress(m.bytes);
+      st.target = sum(m.bytes);
+      $('status').textContent = 'Reading ' + (m.current.length > 70 ? m.current.slice(0, 3) + '…' + m.current.slice(-64) : m.current);
+      requestAnimationFrame(tween);
+      break;
+    case 'done': {
+      st.reading = false;
+      const used = m.total - m.free, gap = used - sum(m.bytes);
+      bar.finish(m.bytes, used);
+      st.target = Math.max(used, sum(m.bytes));
+      $('go').textContent = 'Read again';
+      $('status').textContent = `Read ${m.files.toLocaleString()} files in ${m.secs < 90 ? Math.round(m.secs) + ' s' : (m.secs / 60).toFixed(1) + ' min'}.`;
+      let tip = m.bytes[7] > 0 ? `Caches are using ${fmt(m.bytes[7])} across ${m.caches.length} folders. BoardScout only reads; it never deletes.` : 'Nothing that looks like a cache.';
+      if (gap > 1073741824) tip += m.os === 'linux'
+        ? ` ${fmt(gap)} couldn't be read (folders this account may not open; run BoardScout as root to count them).`
+        : m.os === 'macos'
+        ? ` ${fmt(gap)} couldn't be read (folders macOS keeps private, local Time Machine snapshots, or space it can free on its own).`
+        : ` ${fmt(gap)} couldn't be read (Windows protects it or it's in use).`;
+      $('tip').textContent = tip;
+      $('caches').hidden = !m.caches.length;
+      $('cacheList').replaceChildren(...m.caches.map(c => { const li = document.createElement('li'); li.append(text('code', c.path), text('span', fmt(c.bytes))); return li; }));
+      requestAnimationFrame(tween);
+      break;
+    }
+    case 'cancelled':
+    case 'error':
+      st.reading = false;
+      bar.stop();
+      $('go').textContent = 'Read the drive';
+      $('status').textContent = m.phase === 'error' ? 'Reading failed. The Scan Log has the reason.' : 'Stopped. The numbers are what was read so far.';
+      break;
+  }
+}
+
+// The card holding this page is only as tall as what is on it: the native window and the dashboard shell size it
+// from this height, so the drive list below keeps the rest of the room (and no empty band sits under the legend).
+let lastHeight = 0;
+function reportHeight() {
+  const h = Math.ceil(document.body.getBoundingClientRect().height);
+  if (Math.abs(h - lastHeight) < 2) return;
+  lastHeight = h;
+  if (window.parent !== window) window.parent.postMessage({ fillheight: h }, location.origin);
+  else send({ type: 'fillheight', height: h });
+}
+new ResizeObserver(reportHeight).observe(document.body);
+$('caches').addEventListener('toggle', reportHeight);
+
+$('go').onclick = () => send(st.reading ? { type: 'storagecancel' } : { type: 'storagescan', drive: $('drive').value });
+if (host) host.addEventListener('message', e => onMessage(e.data));
+send({ type: 'drives' });
+</script>
+</body>
+</html>

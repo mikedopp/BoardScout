@@ -12,7 +12,7 @@ namespace BoardScout.Live;
 
 /// <summary>
 /// The Windows half of the browser dashboard's engine, for a PC reached over SSH (or served with --serve): the
-/// same Connections map, plan, DriverScout scan, System view, and sensors the Windows app shows in its window.
+/// same Connections map, plan, hardware scan, System view, and sensors the Windows app shows in its window.
 /// </summary>
 internal sealed partial class Hub
 {
@@ -21,7 +21,7 @@ internal sealed partial class Hub
 
     private readonly SemaphoreSlim _reading = new(1, 1);
     private readonly Dictionary<string, string> _netKeys = [];
-    private DriverScoutService? _scout;
+    private DriverEngine? _scout;
     private SystemTelemetryService? _telemetry;
     private ConnectionsService.Capture? _capture;
     private ConnectionsSnapshot? _map;
@@ -39,13 +39,13 @@ internal sealed partial class Hub
 
     private bool HasReading => _capture is not null;
 
-    private DriverScoutService Scout
+    private DriverEngine Scout
     {
         get
         {
             if (_scout is not null) return _scout;
-            var scout = new DriverScoutService();
-            scout.OutputReceived += (_, line) => Log("DRIVERSCOUT: " + line);
+            var scout = new DriverEngine();
+            scout.OutputReceived += (_, line) => Log("DRIVERS: " + line);
             return _scout = scout;
         }
     }
@@ -64,7 +64,7 @@ internal sealed partial class Hub
 
     /// <summary>
     /// Reads the device tree, links, and network (a few seconds), shows the map, then looks up router, network,
-    /// and device names. The DriverScout inventory (for Topology, Drivers, and the System view's build) comes
+    /// and device names. The hardware inventory (for Topology, Drivers, and the System view's build) comes
     /// from the last scan on this PC, or a new one when there is none.
     /// </summary>
     public async Task LoadAsync(bool rediscover, bool sweep = false)
@@ -127,7 +127,7 @@ internal sealed partial class Hub
             var path = fresh ? null : Scout.GetLatestScanPath();
             if (path is null)
             {
-                Log("SCAN: running DriverScout's hardware inventory (read-only PowerShell and WMI; about half a minute).");
+                Log("SCAN: running the driver engine's hardware inventory (read-only PowerShell and WMI; about half a minute).");
                 path = await Scout.ScanAsync(CancellationToken.None);
             }
             var scan = await Scout.LoadScanAsync(path, CancellationToken.None);
@@ -246,6 +246,15 @@ internal sealed partial class Hub
             case ("shell", "drivers"):
                 await CheckDriversAsync();
                 break;
+            case ("fill", "drives"):
+                Fill.SendDrives();
+                break;
+            case ("fill", "storagescan"):
+                Fill.Start(message.TryGetProperty("drive", out var storageDrive) ? storageDrive.GetString() : null);
+                break;
+            case ("fill", "storagecancel"):
+                Fill.Cancel();
+                break;
             case ("connections", "refresh"):
                 await LoadAsync(rediscover: true);
                 break;
@@ -269,7 +278,7 @@ internal sealed partial class Hub
         }
     }
 
-    // DriverScout's update check: vendor, OEM, and Windows Update catalog pages for each component. Nothing is
+    // the driver engine's update check: vendor, OEM, and Windows Update catalog pages for each component. Nothing is
     // downloaded or installed; the Drivers tab links to the official pages.
     private async Task CheckDriversAsync()
     {

@@ -72,28 +72,28 @@ public class ReviewFixTests
     {
         var gathered = new MachineSummary
         {
-            Hostname = "werc-0",
-            Title = "werc-0 · Ubuntu",
-            Fullest = "/home/mike/media",
-            Verdict = "Backups at /home/mike/.cache/boardscout, from 192.168.1.20 or mike@example.com",
-            Checks = [new SummaryCheck("Firewall", "warn", "werc-0 off; C:\\Users\\Mike\\notes")],
-            Fixes = ["Clean /home/mike/Downloads"]
+            Hostname = "lab-host",
+            Title = "lab-host · Ubuntu",
+            Fullest = "/home/example/media",
+            Verdict = "Backups at /home/example/.cache/boardscout, from 192.0.2.20 or someone@example.com",
+            Checks = [new SummaryCheck("Firewall", "warn", "lab-host off; C:\\Users\\Example\\notes")],
+            Fixes = ["Clean /home/example/Downloads"]
         };
 
         var shown = MachineSummaries.ForDisplay(gathered, privacy: true);
         var all = string.Join("|", shown.Hostname, shown.Title, shown.Fullest, shown.Verdict, shown.Checks[0].Detail, shown.Fixes[0]);
 
         Assert.Equal(Services.Privacy.HostPlaceholder, shown.Hostname);
-        foreach (var leaked in new[] { "werc-0", "mike", "Mike", "192.168.1.20", "example.com" })
+        foreach (var leaked in new[] { "lab-host", "Example", "192.0.2.20", "example.com" })
             Assert.DoesNotContain(leaked, all);
         Assert.StartsWith("/home/…", shown.Fullest);
-        Assert.Equal("werc-0", gathered.Hostname); // the kept copy is untouched, so turning privacy off shows it again
+        Assert.Equal("lab-host", gathered.Hostname); // the kept copy is untouched, so turning privacy off shows it again
     }
 
     [Fact]
     public void Without_privacy_the_summary_is_shown_as_gathered()
     {
-        var gathered = new MachineSummary { Hostname = "werc-0", Fullest = "/home/mike/media" };
+        var gathered = new MachineSummary { Hostname = "lab-host", Fullest = "/home/example/media" };
         Assert.Same(gathered, MachineSummaries.ForDisplay(gathered, privacy: false));
     }
 

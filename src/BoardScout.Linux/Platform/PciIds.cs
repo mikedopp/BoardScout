@@ -7,7 +7,7 @@ namespace BoardScout.Platform;
 internal sealed record PciNames(string? Vendor, string? Device, string? Subsystem);
 
 /// <summary>
-/// Names from the PCI ID Repository file BoardScout bundles (DriverScout/data/pci.ids), falling back to the
+/// Names from the PCI ID Repository file BoardScout bundles (Drivers/data/pci.ids), falling back to the
 /// system's copy. Only the IDs asked for are kept, so the 1.6 MB file is streamed once per map.
 /// </summary>
 internal static partial class PciIds
@@ -19,7 +19,7 @@ internal static partial class PciIds
         var result = new Dictionary<(int, int, int, int), PciNames>();
         path ??= new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "DriverScout", "data", "pci.ids"),
+            Path.Combine(AppContext.BaseDirectory, "Drivers", "data", "pci.ids"),
             "/usr/share/hwdata/pci.ids",
             "/usr/share/misc/pci.ids"
         }.FirstOrDefault(File.Exists);

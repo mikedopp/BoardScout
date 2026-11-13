@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BoardScout</title>
 <link rel="icon" href="/shell/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/shell/glimmer/glimmer-badge.css">
+<link rel="stylesheet" href="/shell/orb/orb-badge.css">
 <link rel="stylesheet" href="/shell/shell.css">
 </head>
 <body>
@@ -13,9 +13,9 @@
   <div class="brand">
     <div class="brand-row">
       <h1 id="title">Reading this computer…</h1>
-      <button id="versionBtn" class="version-button glimmer-version" data-preset="aurora" data-state="thinking"
+      <button id="versionBtn" class="version-button orb-version" data-preset="aurora" data-state="thinking"
         aria-haspopup="dialog" aria-controls="popout" title="Settings, dependencies, help, and diagnostics">
-        <span class="glimmer-dot" aria-hidden="true"></span><span id="versionText">v…</span>
+        <span class="orb-dot" aria-hidden="true"></span><span id="versionText">v…</span>
       </button>
       <button id="healthChip" type="button" title="What the Efficiency tab found">Checking…</button>
       <button id="privacyChip" type="button" title="Privacy mode is on: names, addresses, and serial-like values are masked. Click to turn it off.">Privacy on</button>
@@ -82,6 +82,7 @@
     </section>
 
     <section class="tab" data-tab="storage" aria-label="Storage">
+      <div class="frame-card glass fillframe"><iframe title="What fills a drive" data-view="fill" data-src="/views/fill.html"></iframe></div>
       <div class="panel glass">
         <h2>Filesystems</h2>
         <div class="sub">Every mounted filesystem with its space, and the drives it lives on.</div>
@@ -153,7 +154,7 @@
         <small>How often CPU, memory, temperatures, and traffic update while a dashboard is open.</small></div>
       <div class="setting"><label for="sCrawlers">Crawlers on the Connections map</label>
         <select id="sCrawlers"><option value="0">Off</option><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
-        <small>Skitter spiders that walk the map and hunt slow links. Just for fun.</small></div>
+        <small>Crawler spiders that walk the map and hunt slow links. Just for fun.</small></div>
       <div class="setting"><label for="sBrowser">Open the browser at start</label><input type="checkbox" class="switch" id="sBrowser">
         <small>When BoardScout starts on a desktop. Servers and --listen never open one.</small></div>
     </div>
@@ -212,7 +213,7 @@
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="/shell/glimmer/glimmer-badge.js"></script>
+<script src="/shell/orb/orb-badge.js"></script>
 <script src="/shell/shell.js"></script>
 </body>
 </html>

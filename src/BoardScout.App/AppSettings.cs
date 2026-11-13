@@ -21,7 +21,7 @@ internal sealed class AppSettings
     public int TelemetryIntervalMs { get; set; } = 1000;
     public bool MinimizeToTray { get; set; } = true;
     public bool PrivacyMode { get; set; }
-    /// <summary>Skitter spiders crawling the Connections map; 0 turns them off.</summary>
+    /// <summary>Crawler spiders crawling the Connections map; 0 turns them off.</summary>
     public int Crawlers { get; set; }
 
     private static readonly JsonSerializerOptions WriteOptions =

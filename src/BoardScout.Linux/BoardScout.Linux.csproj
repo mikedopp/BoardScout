@@ -9,14 +9,14 @@
     <!-- One version for both editions: it comes from the Windows app's project, so the two can't drift. -->
     <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\BoardScout.App\BoardScout.App.csproj')), '&lt;Version&gt;([^&lt;]+)&lt;/Version&gt;').Groups[1].Value)</Version>
     <Product>BoardScout</Product>
-    <Description>Linux edition of BoardScout: motherboard, connections, drives, and OS dashboard in the browser.</Description>
+    <Description>Linux and macOS edition of BoardScout: motherboard, connections, drives, and OS dashboard in the browser.</Description>
     <Authors>mikedopp</Authors>
     <Company>mikedopp</Company>
     <Copyright>Copyright (c) 2026 mikedopp</Copyright>
     <!-- No ICU dependency: the binary runs on any glibc distribution without libicu installed. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <RuntimeIdentifiers>linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;linux-arm</RuntimeIdentifiers>
+    <RuntimeIdentifiers>linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;linux-arm;osx-arm64;osx-x64</RuntimeIdentifiers>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>embedded</DebugType>
@@ -58,6 +58,10 @@
     <Compile Include="..\BoardScout.App\Services\UsbIds.cs" Link="Shared\Services\UsbIds.cs" />
     <Compile Include="..\BoardScout.App\Models\OverviewModels.cs" Link="Shared\Models\OverviewModels.cs" />
     <Compile Include="..\BoardScout.App\Web\BoardProfiles.cs" Link="Shared\Web\BoardProfiles.cs" />
+    <!-- Storage › What fills a drive: the scan and the storage scanner (its Linux rules apply here) -->
+    <Compile Include="..\BoardScout.App\Services\StorageFill.cs" Link="Shared\Services\StorageFill.cs" />
+    <Compile Include="..\BoardScout.App\Services\StorageScan\Scanner.cs" Link="Shared\Services\StorageScan\Scanner.cs" />
+    <Compile Include="..\BoardScout.App\Web\Hub.Storage.cs" Link="Shared\Web\Hub.Storage.cs" />
   </ItemGroup>
 
   <!-- The browser dashboard's server and engine (Live\Hub.Linux.cs is this edition's half), and the Machines
@@ -75,8 +79,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <!-- IEEE, PCI, and USB ID registries; Oui and UsbIds look for them in DriverScout\data. -->
-    <Content Include="..\BoardScout.App\DriverScout\data\oui.tsv;..\BoardScout.App\DriverScout\data\pci.ids;..\BoardScout.App\DriverScout\data\usb.ids;..\BoardScout.App\DriverScout\data\README.md" LinkBase="DriverScout\data">
+    <!-- IEEE, PCI, and USB ID registries; Oui and UsbIds look for them in Drivers\data. -->
+    <Content Include="..\BoardScout.App\Drivers\data\oui.tsv;..\BoardScout.App\Drivers\data\pci.ids;..\BoardScout.App\Drivers\data\usb.ids;..\BoardScout.App\Drivers\data\README.md" LinkBase="Drivers\data">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

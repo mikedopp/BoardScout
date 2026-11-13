@@ -10,6 +10,7 @@ using BoardScout.Web;
 
 // The Linux edition: only the parsers it shares with its tests run anywhere else.
 [assembly: System.Runtime.Versioning.SupportedOSPlatform("linux")]
+[assembly: System.Runtime.Versioning.SupportedOSPlatform("macos")]
 
 namespace BoardScout;
 
@@ -55,7 +56,7 @@ internal sealed record LaunchOptions
                 "-V" or "--version" => options with { Version = true },
                 "--listen" => Next() is { } value && ParseListen(value) is var (host, port) && host is not null
                     ? options with { Listen = host, Port = port ?? options.Port, OpenBrowser = false }
-                    : options with { Error = "--listen needs an address, like --listen 0.0.0.0 or --listen 192.168.1.20:8797" },
+                    : options with { Error = "--listen needs an address, like --listen 0.0.0.0 or --listen 192.0.2.20:8797" },
                 "--port" => int.TryParse(Next(), out var p) && p is >= 1024 and <= 65535 ? options with { Port = p } : options with { Error = "--port needs a number from 1024 to 65535" },
                 "--no-browser" => options with { OpenBrowser = false },
                 "--stop-when-closed" => options with { StopWhenClosed = true },
@@ -104,7 +105,7 @@ internal static class Program
 
           (no options)          Serve the dashboard on this computer and open it in your browser
           --port N              Use port N (default 8797, or the next free one)
-          --listen ADDRESS      Serve on your network too (e.g. 0.0.0.0 or 192.168.1.20[:port]);
+          --listen ADDRESS      Serve on your network too (e.g. 0.0.0.0 or 192.0.2.20[:port]);
                                 anyone with the printed link can open it
           --no-browser          Don't open a browser (print the link only)
           --stop-when-closed    Stop when the last dashboard tab closes (the app-menu entry uses this)
@@ -156,9 +157,9 @@ internal static class Program
             Console.WriteLine($"BoardScout {AppInfo.Version}{(AppInfo.Commit is { } commit ? $" ({commit})" : "")}");
             return 0;
         }
-        if (!OperatingSystem.IsLinux())
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
         {
-            Console.Error.WriteLine("This is the Linux edition of BoardScout. On Windows, run BoardScout.exe.");
+            Console.Error.WriteLine("This is the Linux and macOS edition of BoardScout. On Windows, run BoardScout.exe.");
             return 2;
         }
 

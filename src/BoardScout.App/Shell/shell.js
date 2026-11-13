@@ -93,7 +93,7 @@ async function copy(text, what) {
   }
 }
 
-// ---- Version badge (Glimmer orb) -------------------------------------------------------------------
+// ---- Version badge (orb) -------------------------------------------------------------------
 
 let badgeApi = null;
 function badge(stateName) {
@@ -102,6 +102,16 @@ function badge(stateName) {
   badgeApi.setState(stateName);
   if (stateName === 'success') state.badgeTimer = setTimeout(() => badgeApi.setState('idle'), 1600);
 }
+
+// The Storage tab's "what fills a drive" view says how tall its content is; its card follows, so the
+// filesystem list sits right under it instead of below a fixed 470 px box.
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || typeof e.data.fillheight !== 'number') return;
+  const frame = state.frames.fill;
+  if (!frame || e.source !== frame.contentWindow) return;
+  const card = frame.closest('.fillframe');
+  if (card) card.style.height = Math.max(160, Math.min(1200, e.data.fillheight + 12)) + 'px';
+});
 
 // ---- Event stream ------------------------------------------------------------------------------------
 
@@ -173,10 +183,11 @@ function setTab(name) {
     if (button.dataset.tab === name) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  const frame = document.querySelector(`.tab[data-tab="${name}"] iframe`);
-  if (frame && !frame.getAttribute('src')) {
+  // a tab's iframe is its view (Connections, System...); the Storage tab's is the "fill" view inside it
+  for (const frame of document.querySelectorAll(`.tab[data-tab="${name}"] iframe`)) {
+    if (frame.getAttribute('src')) continue;
     frame.src = frame.dataset.src;
-    state.frames[name] = frame;
+    state.frames[frame.dataset.view || name] = frame;
   }
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
   store('tab', name);
@@ -380,7 +391,7 @@ function renderDrivers() {
   table.append(body);
 }
 
-// Windows: the header's button checks drivers (DriverScout) instead of fwupd firmware.
+// Windows: the header's button checks drivers (the driver engine) instead of fwupd firmware.
 function renderDriverButton() {
   const button = $('firmwareBtn');
   if (!windows()) {
@@ -526,7 +537,7 @@ function renderMeta() {
   };
   for (const t of m.tools) row(t.name, `${t.path ? t.path : 'not installed'} — ${what[t.name] || ''}`);
   row('Bundled data', 'IEEE OUI registry (oui.tsv), PCI ID Repository (pci.ids), USB ID Repository (usb.ids), inside the app');
-  row('Bundled libraries', 'D3 7, QuickLiquid, Skitter, FlashStream, Glimmer badge: all served from the app, never a CDN');
+  row('Bundled libraries', 'D3 7, QuickLiquid, Crawler, DriveStream, orb badge: all served from the app, never a CDN');
   row('Runtime', `.NET ${m.runtime}, built into the program (no .NET install needed)`);
   row('Data folder', m.dataFolder, true);
   row('Environment', 'BOARDSCOUT_DATA (data folder), XDG_DATA_HOME, DISPLAY / WAYLAND_DISPLAY (opening the browser)', true);
@@ -552,10 +563,10 @@ function versionsTable(rows) {
 // What the Windows edition depends on when it serves this dashboard (over SSH, or --serve).
 function renderWindowsMeta(m, row) {
   row('Windows interfaces', 'SetupAPI and the PnP device tree, USB hub IOCTLs, storage IOCTLs, SMBIOS, WMI/CIM, the registry, IP Helper, WLAN API, performance counters', true);
-  row('DriverScout', 'Inventory and driver checks: PowerShell scripts bundled with the app (Windows PowerShell 5.1), read-only');
+  row('Driver engine', 'Inventory and driver checks: PowerShell scripts bundled with the app (Windows PowerShell 5.1), read-only');
   row('LibreHardwareMonitor', `CPU, GPU, chipset, and fan sensors (MPL-2.0). Board sensors need the PawnIO driver (${m.sensors?.pawnIo ? 'installed' + (m.sensors.pawnIoVersion ? ' ' + m.sensors.pawnIoVersion : '') : 'not installed'}) and administrator rights (${m.sensors?.elevated ? 'yes' : 'no'}).`);
   row('Bundled data', 'IEEE OUI registry (oui.tsv), PCI ID Repository (pci.ids), USB ID Repository (usb.ids), inside the app');
-  row('Bundled libraries', 'ASP.NET Core (this dashboard\'s server), D3 7, QuickLiquid, Skitter, FlashStream, Glimmer badge: all served from the app, never a CDN');
+  row('Bundled libraries', 'ASP.NET Core (this dashboard\'s server), D3 7, QuickLiquid, Crawler, DriveStream, orb badge: all served from the app, never a CDN');
   row('Runtime', `.NET ${m.runtime}, built into the program (no .NET install needed)`);
   row('Data folder', m.dataFolder, true);
   row('Environment', 'BOARDSCOUT_DATA (data folder), DOTNET_BUNDLE_EXTRACT_BASE_DIR (where the program unpacks itself)', true);
@@ -597,7 +608,7 @@ async function diagnostics() {
 // ---- Wiring --------------------------------------------------------------------------------------------------
 
 function init() {
-  if (window.GlimmerBadge) badgeApi = GlimmerBadge.attach($('versionBtn'), { app: 'BoardScout', preset: 'aurora', contextMenu: false });
+  if (window.OrbBadge) badgeApi = OrbBadge.attach($('versionBtn'), { app: 'BoardScout', preset: 'aurora', contextMenu: false });
   for (const button of document.querySelectorAll('.navbtn')) button.onclick = () => setTab(button.dataset.tab);
   setTab((location.hash || '').slice(1) || load('tab') || 'overview');
   window.addEventListener('hashchange', () => setTab(location.hash.slice(1)));

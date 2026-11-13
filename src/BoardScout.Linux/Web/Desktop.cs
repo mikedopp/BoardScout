@@ -7,7 +7,7 @@ internal static class Desktop
 {
     /// <summary>A graphical session for this user, where opening a browser makes sense.</summary>
     public static bool HasDisplay =>
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")) || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
+        (OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("SSH_CONNECTION") is null) || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")) || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
 
     public static void OpenBrowser(string url)
     {
@@ -15,7 +15,7 @@ internal static class Desktop
         if (!HasDisplay || Environment.GetEnvironmentVariable("SUDO_USER") is not null) return;
         try
         {
-            var start = new ProcessStartInfo("xdg-open") { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
+            var start = new ProcessStartInfo(OperatingSystem.IsMacOS() ? "/usr/bin/open" : "xdg-open") { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
             start.ArgumentList.Add(url);
             Process.Start(start)?.Dispose();
         }
@@ -33,6 +33,11 @@ internal static class Desktop
     /// <summary>Copies the program to ~/.local/bin and adds BoardScout to the app menu. Touches nothing outside your home folder.</summary>
     public static int Install()
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            Console.WriteLine("On a Mac there's no app menu to add BoardScout to: keep it where you like and run it from Terminal.");
+            return 0;
+        }
         var self = Environment.ProcessPath;
         if (self is null || !File.Exists(self))
         {

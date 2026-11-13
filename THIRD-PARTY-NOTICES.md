@@ -18,7 +18,7 @@ the Windows browser dashboard.
 | DiskInfoToolkit (LibreHardwareMonitorLib dependency) | 1.1.2 | MPL-2.0 | https://github.com/Blacktempel/DiskInfoToolkit |
 | RAMSPDToolkit-NDD (LibreHardwareMonitorLib dependency) | 1.4.2 | MPL-2.0 | https://github.com/Blacktempel/RAMSPDToolkit |
 | HidSharp (LibreHardwareMonitorLib dependency) | 2.6.4 | Apache-2.0 | https://software.seekye.com/hidsharp |
-| Microsoft.Web.WebView2 (SDK and loader) | 1.0.4191.47 | Microsoft BSD-style license (below) | https://www.nuget.org/packages/Microsoft.Web.WebView2 |
+| Microsoft.Web.WebView2 (SDK and loader) | 1.0.4314.35 | Microsoft BSD-style license (below) | https://www.nuget.org/packages/Microsoft.Web.WebView2 |
 | System.Management | 10.0.12 | MIT | https://github.com/dotnet/runtime |
 | System.IO.Ports (LibreHardwareMonitorLib dependency) | 10.0.3 | MIT | https://github.com/dotnet/runtime |
 | Mono.Posix.NETStandard (LibreHardwareMonitorLib dependency) | 1.0.0 | MIT | https://www.nuget.org/packages/Mono.Posix.NETStandard |
@@ -32,15 +32,15 @@ the Windows browser dashboard.
 The Linux edition doesn't include LibreHardwareMonitorLib, WebView2, or System.Management: it reads the
 kernel's own files instead, and its views run in the browser you already have.
 
-### Glimmer badge 0.4.0 (web) and 0.5.0 (native)
+### orb badge 0.4.0 (web) and 0.5.0 (native)
 
-`Shell/glimmer/` (the browser dashboard, in both editions): the orb on the version button. MIT, Copyright (c) 2026 mikedopp; its look
+`Shell/orb/` (the browser dashboard, in both editions): the orb on the version button. MIT, Copyright (c) 2026 mikedopp; its look
 follows "orb" by LerSent001 (MIT). The license texts and credits travel in that folder (`LICENSE`,
 `LICENSE-orb-LerSent001`, `NOTICE.md`).
 
-`src/BoardScout.App/UI/Glimmer/GlimmerBadge.cs` (the Windows app's header): Glimmer 0.5.0's GDI+ rendition of
+`src/BoardScout.App/UI/Orb/OrbBadge.cs` (the Windows app's header): a GDI+ rendition of
 the same badge, compiled into BoardScout.exe. MIT, Copyright (c) 2026 mikedopp; its orb look follows "orb" by
-LerSent001 (MIT), and the file's header carries that credit. The MIT texts are the ones in `Shell/glimmer/`.
+LerSent001 (MIT), and the file's header carries that credit. The MIT texts are the ones in `Shell/orb/`.
 
 **MPL-2.0 components.** The Source Code Form of each MPL-2.0 component is available at the
 repository linked above, under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/).
@@ -145,13 +145,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 The WebView2 package also ships a `NOTICE.txt` for components Microsoft incorporates; Microsoft
 publishes the corresponding source at https://3rdpartysource.microsoft.com.
 
-## Bundled DriverScout engine
+## Bundled driver engine
 
-The PowerShell scanner in `DriverScout/` is part of this project (MIT). Its own notices, including
-the PCI and USB ID databases, are in `src/BoardScout.App/DriverScout/THIRD-PARTY-NOTICES.md`. The
+The PowerShell scanner in `Drivers/` is part of this project (MIT). Its own notices, including
+the PCI and USB ID databases, are in `src/BoardScout.App/Drivers/THIRD-PARTY-NOTICES.md`. The
 Connections view also reads that same bundled `usb.ids` file (the USB ID Repository, 3-clause BSD)
 to name USB devices, and `oui.tsv` — the IEEE Registration Authority's public MA-L listing reduced
-to prefix and organization name — to label network devices by maker (details in the DriverScout
+to prefix and organization name — to label network devices by maker (details in the driver engine's
 notices).
 
 The Linux edition also bundles `pci.ids` from the same folder (the PCI ID Repository, used under its

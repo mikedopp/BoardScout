@@ -1,15 +1,16 @@
 [CmdletBinding()]
 param(
-    # glibc x64 and Arm64 (most distributions), musl (Alpine), and 32-bit ARMv7 (Raspberry Pi OS 32-bit).
-    [ValidateSet('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64', 'linux-arm')]
-    [string[]]$Runtime = @('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64', 'linux-arm'),
+    # glibc x64 and Arm64 (most distributions), musl (Alpine), 32-bit ARMv7 (Raspberry Pi OS 32-bit), and macOS
+    # on Apple silicon and Intel (the same program; its Mac half is untested on a Mac).
+    [ValidateSet('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64', 'linux-arm', 'osx-arm64', 'osx-x64')]
+    [string[]]$Runtime = @('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64', 'linux-arm', 'osx-arm64', 'osx-x64'),
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipTests
 )
 
-# Builds the Linux edition from Windows (or Linux): a portable folder packed as .tar.gz (executable bit set),
-# a standalone single binary, and checksums, for each runtime.
+# Builds the Linux and macOS edition from Windows (or Linux): a portable folder packed as .tar.gz (executable bit
+# set), a standalone single binary, and checksums, for each runtime.
 $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'src\BoardScout.Linux\BoardScout.Linux.csproj'
 $appProject = Join-Path $PSScriptRoot 'src\BoardScout.App\BoardScout.App.csproj'
@@ -23,7 +24,6 @@ if (-not $SkipTests) {
 }
 
 $buildRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'build'))
-$sums = Join-Path $buildRoot "BoardScout-$version-linux-SHA256SUMS.txt"
 $artifacts = @()
 
 function Publish-Linux([string]$Rid, [string]$Output, [string[]]$Extra) {
@@ -36,6 +36,9 @@ function Publish-Linux([string]$Rid, [string]$Output, [string[]]$Extra) {
         '-p:PublishTrimmed=false',
         '--output', $Output
     ) + $Extra
+    # Apple silicon won't start a program with no signature. The SDK signs Mac builds ad hoc on any OS when asked
+    # on the command line (set in the project file, the SDK's own default wins).
+    if ($Rid.StartsWith('osx-')) { $publishArgs += '-p:EnableMacOSCodeSign=true' }
     & dotnet @publishArgs
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish ($Rid) failed with exit code $LASTEXITCODE" }
 }
@@ -99,9 +102,10 @@ foreach ($rid in $Runtime) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
     }
 
-    # Portable folder: boardscout with Assets, Shell, DriverScout data, LICENSE, and notices beside it.
+    # Portable folder: boardscout with Assets, Shell, Drivers data, LICENSE, and notices beside it.
     Publish-Linux $rid $portable @()
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs\linux.md') -Destination (Join-Path $portable 'README.md') -Force
+    $readme = if ($rid.StartsWith('osx-')) { 'docs\macos.md' } else { 'docs\linux.md' }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $readme) -Destination (Join-Path $portable 'README.md') -Force
     $tar = Join-Path $buildRoot "BoardScout-$version-$rid.tar.gz"
     # The folder inside is "-portable" so it can't collide with the standalone binary in the same download folder.
     Write-TarGz $portable "BoardScout-$version-$rid-portable" $tar
@@ -114,9 +118,35 @@ foreach ($rid in $Runtime) {
     $artifacts += $binary
 }
 
-Get-FileHash -Algorithm SHA256 -LiteralPath $artifacts |
-    ForEach-Object { '{0}  {1}' -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
-    Set-Content -LiteralPath $sums -Encoding ascii
+# Apple silicon refuses to start an unsigned program. Report whether the SDK gave the Mac binaries an ad-hoc
+# signature (an LC_CODE_SIGNATURE load command) so a release never ships one that can't start.
+function Test-MachOSigned([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    # 0xFEEDFACF, the 64-bit Mach-O magic (written as a number: PowerShell reads the hex literal as a negative Int32).
+    if ([BitConverter]::ToUInt32($bytes, 0) -ne [uint32]4277009103) { return $false }
+    $count = [BitConverter]::ToUInt32($bytes, 16)
+    $offset = 32
+    for ($i = 0; $i -lt $count; $i++) {
+        $cmd = [BitConverter]::ToUInt32($bytes, $offset)
+        if ($cmd -eq 0x1D) { return $true }
+        $offset += [BitConverter]::ToUInt32($bytes, $offset + 4)
+    }
+    return $false
+}
+
+foreach ($family in 'linux', 'macos') {
+    $set = @($artifacts | Where-Object { ((Split-Path $_ -Leaf) -match '-osx-') -eq ($family -eq 'macos') })
+    if ($set.Count -eq 0) { continue }
+    $sums = Join-Path $buildRoot "BoardScout-$version-$family-SHA256SUMS.txt"
+    Get-FileHash -Algorithm SHA256 -LiteralPath $set |
+        ForEach-Object { '{0}  {1}' -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
+        Set-Content -LiteralPath $sums -Encoding ascii
+    Write-Host "Checksums: $sums" -ForegroundColor Green
+}
 
 foreach ($artifact in $artifacts) { Write-Host "Built: $artifact" -ForegroundColor Green }
-Write-Host "Checksums: $sums" -ForegroundColor Green
+foreach ($rid in $Runtime | Where-Object { $_.StartsWith('osx-') }) {
+    $binary = Join-Path $buildRoot "BoardScout-$version-$rid"
+    $signed = Test-MachOSigned $binary
+    Write-Host ("{0}: {1}" -f (Split-Path $binary -Leaf), $(if ($signed) { 'ad-hoc signed' } else { 'NOT signed (run codesign -s - on a Mac before it will start)' })) -ForegroundColor $(if ($signed) { 'Green' } else { 'Yellow' })
+}

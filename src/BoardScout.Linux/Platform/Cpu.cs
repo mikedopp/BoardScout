@@ -81,6 +81,7 @@ internal static class Cpu
     /// <summary>Every "cpu" line of /proc/stat: the total first ("cpu"), then each processor ("cpu0"…).</summary>
     public static Dictionary<string, CpuTimes> ReadTimes()
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacCapture.CpuTimes();
         var result = new Dictionary<string, CpuTimes>(StringComparer.Ordinal);
         foreach (var line in Sys.Lines("/proc/stat"))
         {
@@ -107,6 +108,7 @@ internal static class Cpu
 
     public static (ulong Total, ulong Available, ulong SwapTotal, ulong SwapFree) ReadMemory()
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacCapture.Memory();
         ulong total = 0, available = 0, swapTotal = 0, swapFree = 0;
         foreach (var line in Sys.Lines("/proc/meminfo"))
         {

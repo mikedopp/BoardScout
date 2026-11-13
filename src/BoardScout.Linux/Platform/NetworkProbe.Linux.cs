@@ -94,6 +94,24 @@ internal static partial class NetworkProbe
     private static Dictionary<string, List<(string Address, string Scope)>> ReadIPv6()
     {
         var result = new Dictionary<string, List<(string, string)>>(StringComparer.Ordinal);
+        if (OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+                    foreach (var unicast in nic.GetIPProperties().UnicastAddresses.Where(u => u.Address.AddressFamily == AddressFamily.InterNetworkV6))
+                    {
+                        var a = unicast.Address;
+                        var scope = a.IsIPv6LinkLocal ? "link-local" : a.IsIPv6UniqueLocal ? "unique-local" : "global";
+                        if (!result.TryGetValue(nic.Name, out var list)) result[nic.Name] = list = [];
+                        list.Add((new IPAddress(a.GetAddressBytes()).ToString(), scope));
+                    }
+            }
+            catch (NetworkInformationException)
+            {
+            }
+            return result;
+        }
         foreach (var line in Sys.Lines("/proc/net/if_inet6"))
         {
             var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -113,6 +131,9 @@ internal static partial class NetworkProbe
     // systemd-networkd keeps each DHCP lease in /run/systemd/netif/leases/<ifindex>.
     private static IPAddress? ReadDhcpServer(int index)
     {
+        if (OperatingSystem.IsMacOS())
+            return NetLinks.Read().FirstOrDefault(l => l.Index == index) is { } link &&
+                   IPAddress.TryParse(Tools.Run("ipconfig", "getoption", link.Name, "server_identifier")?.Trim(), out var server) ? server : null;
         foreach (var line in Sys.Lines($"/run/systemd/netif/leases/{index}"))
             if (line.StartsWith("SERVER_ADDRESS=", StringComparison.Ordinal) && IPAddress.TryParse(line[15..], out var server))
                 return server;
@@ -154,7 +175,7 @@ internal static partial class NetworkProbe
     }
 
     // What NetworkManager's own connectivity check last concluded (nothing is sent to read it).
-    private static bool? InternetAccess() => Tools.Run("nmcli", "-t", "networking", "connectivity")?.Trim() switch
+    private static bool? InternetAccess() => OperatingSystem.IsMacOS() ? null : Tools.Run("nmcli", "-t", "networking", "connectivity")?.Trim() switch
     {
         "full" => true,
         "none" or "limited" or "portal" => false,

@@ -149,6 +149,10 @@ As root (`sudo boardscout`), the power table adds:
 - **Firmware**: Check firmware asks fwupd (the Linux Vendor Firmware Service) instead of vendor driver
   pages. BoardScout never installs anything.
 - **Write caching** isn't a per-drive setting on Linux; USB drives are flushed when they're unmounted.
+- **What fills a drive** (Storage) reads one mounted filesystem and stops at other mount points. It sorts with Linux's
+  own rules (`/usr`, `/boot`, `/etc`, `/var/log` are System data; `/opt`, `/snap`, `/usr/local`, container and VM storage
+  are Apps; `/var/cache`, `/tmp`, `~/.cache` are Caches; `~/.local/share/Trash` is Trash). As an ordinary user it
+  can't count folders that account may not open, and says how much that was; run it as root to count everything.
 - **Power**: the processor's energy counters and NVMe power tables need root (on Windows: administrator and
   the PawnIO driver for the processor; NVMe tables need neither). Of power supplies with a USB link, Linux
   reads Corsair HXi and RMi models (corsair-psu); AXi and MSI models have no kernel driver.

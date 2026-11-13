@@ -227,6 +227,7 @@ internal static partial class Block
 
     public static Dictionary<string, DiskCounters> ReadCounters()
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacCapture.DiskCounters();
         var result = new Dictionary<string, DiskCounters>(StringComparer.Ordinal);
         foreach (var line in Sys.Lines("/proc/diskstats"))
         {

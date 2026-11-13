@@ -1,29 +1,29 @@
 using System.Drawing;
 using System.Text.RegularExpressions;
-using Glimmer.WinForms;
+using BoardScout.UI.Orb;
 using Xunit;
 
 namespace BoardScout.Tests;
 
-// The window's version badge (GDI+) and the browser dashboard's (glimmer-badge.css) are the same orb:
-// aurora's colours in every state must match the CSS that ships in Shell/glimmer.
+// The window's version badge (GDI+) and the browser dashboard's (orb-badge.css) are the same orb:
+// aurora's colours in every state must match the CSS that ships in Shell/orb.
 public class VersionBadgeTests
 {
-    private static readonly string Css = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shell", "glimmer", "glimmer-badge.css"));
+    private static readonly string Css = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shell", "orb", "orb-badge.css"));
 
     [Theory]
-    [InlineData(GlimmerState.Idle, "[data-preset=\"aurora\"] {")]
-    [InlineData(GlimmerState.Success, "[data-preset=\"aurora\"][data-state=\"success\"]")]
-    [InlineData(GlimmerState.Error, "[data-preset=\"aurora\"][data-state=\"error\"]")]
-    public void Native_aurora_matches_the_web_badge(GlimmerState state, string selector)
+    [InlineData(OrbState.Idle, "[data-preset=\"aurora\"] {")]
+    [InlineData(OrbState.Success, "[data-preset=\"aurora\"][data-state=\"success\"]")]
+    [InlineData(OrbState.Error, "[data-preset=\"aurora\"][data-state=\"error\"]")]
+    public void Native_aurora_matches_the_web_badge(OrbState state, string selector)
     {
         var start = Css.IndexOf(selector, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"{selector} is in glimmer-badge.css");
+        Assert.True(start >= 0, $"{selector} is in orb-badge.css");
         var block = Css[start..Css.IndexOf('}', start)];
         string Web(string name) => Regex.Match(block, $@"--gd-{name}: #([0-9A-Fa-f]{{6}})").Groups[1].Value.ToUpperInvariant();
         static string Hex(Color c) => $"{c.R:X2}{c.G:X2}{c.B:X2}";
 
-        var native = GlimmerBadgePresets.Get("aurora").For(state);
+        var native = OrbBadgePresets.Get("aurora").For(state);
         Assert.Equal(Web("a"), Hex(native.A));
         Assert.Equal(Web("b"), Hex(native.B));
         Assert.Equal(Web("c"), Hex(native.C));
@@ -38,7 +38,7 @@ public class VersionBadgeTests
     [Fact]
     public void Unknown_presets_fall_back_to_siri_as_on_the_web()
     {
-        Assert.Contains("aurora", GlimmerBadgePresets.Names);
-        Assert.Same(GlimmerBadgePresets.Get("siri"), GlimmerBadgePresets.Get("no-such-preset"));
+        Assert.Contains("aurora", OrbBadgePresets.Names);
+        Assert.Same(OrbBadgePresets.Get("siri"), OrbBadgePresets.Get("no-such-preset"));
     }
 }

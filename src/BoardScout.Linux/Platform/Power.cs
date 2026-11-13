@@ -141,6 +141,7 @@ internal static partial class Power
     public static string? NoCpuReading(EnergySample sample, IReadOnlyList<PowerReading> readings, bool root)
     {
         if (readings.Any(r => r.Device == "CPU")) return null;
+        if (OperatingSystem.IsMacOS()) return "macOS shares the processor's power draw only through powermetrics, which needs sudo; BoardScout doesn't run it.";
         if (sample.Counters.Any(c => c.Device == "CPU")) return "Measuring: the processor's energy counters need two readings a moment apart.";
         if (sample.Locked)
             return root

@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BoardScout</AssemblyName>
     <RootNamespace>BoardScout</RootNamespace>
-    <Version>2.5.1</Version>
+    <Version>2.8.0</Version>
     <Product>BoardScout</Product>
     <Description>Portable motherboard, storage, and driver health dashboard.</Description>
     <Authors>mikedopp</Authors>
@@ -30,7 +30,7 @@
     <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
-  <!-- -p:Standalone=true packs Assets, DriverScout, and the notices into the exe itself; .NET unpacks
+  <!-- -p:Standalone=true packs Assets, Drivers, and the notices into the exe itself; .NET unpacks
        them to a per-version temp cache on first run. Without it the exe expects those folders beside it. -->
   <PropertyGroup Condition="'$(Standalone)' == 'true'">
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
@@ -46,7 +46,7 @@
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="System.Management" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
   <!-- The WebView2 package references its WPF control for every .NET 5+ app. This app is
@@ -58,7 +58,7 @@
   </Target>
 
   <ItemGroup>
-    <Content Include="DriverScout\**\*">
+    <Content Include="Drivers\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

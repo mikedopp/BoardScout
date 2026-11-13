@@ -3,8 +3,8 @@ using System.Text.RegularExpressions;
 namespace BoardScout.Services;
 
 /// <summary>
-/// Vendor and product names from the USB ID Repository file DriverScout already bundles
-/// (DriverScout\data\usb.ids). Only the IDs asked for are kept, so the 750 KB file is streamed once.
+/// Vendor and product names from the USB ID Repository file BoardScout already bundles
+/// (Drivers\data\usb.ids). Only the IDs asked for are kept, so the 750 KB file is streamed once.
 /// </summary>
 internal static partial class UsbIds
 {
@@ -13,7 +13,7 @@ internal static partial class UsbIds
         var wanted = ids.ToHashSet();
         var vendors = wanted.Select(id => id.Vendor).ToHashSet();
         var result = new Dictionary<(int, int), (string, string?)>();
-        var path = Path.Combine(AppContext.BaseDirectory, "DriverScout", "data", "usb.ids");
+        var path = Path.Combine(AppContext.BaseDirectory, "Drivers", "data", "usb.ids");
         if (wanted.Count == 0 || !File.Exists(path)) return result;
 
         try

@@ -56,6 +56,8 @@ internal static partial class NetLinks
 {
     public static List<NetLink> Read()
     {
+        if (OperatingSystem.IsMacOS())
+            return Mac.MacParse.Links(Tools.Run("ifconfig", "-a"), Mac.MacParse.Profiler(Tools.Run("system_profiler", ["-json", "SPNetworkDataType"], 30_000)));
         var links = new List<NetLink>();
         foreach (var name in Sys.Children("/sys/class/net"))
         {
@@ -113,7 +115,7 @@ internal static partial class NetLinks
         return index > 0 ? string.Join('/', parts[..(index + 1)]) : null;
     }
 
-    public static List<DefaultRoute> ReadDefaultRoutes() =>
+    public static List<DefaultRoute> ReadDefaultRoutes() => OperatingSystem.IsMacOS() ? Mac.MacParse.DefaultRoutes(Tools.Run("netstat", "-rn", "-f", "inet")) :
         Sys.Lines("/proc/net/route").Skip(1).Select(ParseRoute).Where(r => r is not null).Select(r => r!).OrderBy(r => r.Metric).ToList();
 
     /// <summary>A default-route line from /proc/net/route (destination 0, gateway set), or null.</summary>
@@ -132,6 +134,7 @@ internal static partial class NetLinks
     /// <summary>The neighbor cache: complete entries only (flag 0x2).</summary>
     public static List<(IPAddress Address, string Mac, string Interface)> ReadArp()
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacParse.Arp(Tools.Run("arp", "-an"));
         var result = new List<(IPAddress, string, string)>();
         foreach (var line in Sys.Lines("/proc/net/arp").Skip(1))
         {
@@ -150,6 +153,7 @@ internal static partial class NetLinks
     /// </summary>
     public static (List<IPAddress> Servers, bool Resolved) ReadDnsServers()
     {
+        if (OperatingSystem.IsMacOS()) return (Mac.MacParse.DnsServers(Tools.Run("scutil", "--dns")), false);
         var resolved = Sys.Exists("/run/systemd/resolve/resolv.conf");
         var file = resolved ? "/run/systemd/resolve/resolv.conf" : "/etc/resolv.conf";
         var servers = Sys.Lines(file)
@@ -166,6 +170,7 @@ internal static partial class NetLinks
 
     public static Dictionary<string, NetCounters> ReadCounters()
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacCapture.NetCounters();
         var result = new Dictionary<string, NetCounters>(StringComparer.Ordinal);
         foreach (var line in Sys.Lines("/proc/net/dev").Skip(2))
             if (ParseNetDev(line) is { } entry) result[entry.Name] = entry.Counters;
@@ -186,6 +191,7 @@ internal static partial class NetLinks
     /// <summary>The Wi-Fi association, from iw when installed, else NetworkManager, else the kernel's signal level.</summary>
     public static WifiLink ReadWifi(NetLink link)
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacParse.Wifi(link.Name, Tools.Run("system_profiler", ["-json", "SPAirPortDataType"], 30_000));
         if (Tools.Run("iw", "dev", link.Name, "link") is { } iw)
         {
             var parsed = ParseIwLink(link.Name, iw);

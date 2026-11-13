@@ -102,7 +102,7 @@ internal static partial class KernelInfo
     /// <summary>The ATA port a disk is on ("…/0000:00:17.0/ata1/host0/…" → 1).</summary>
     public static int? AtaPortOf(string sysPath)
     {
-        var match = Regex.Match(sysPath, @"/ata(\d+)/");
+        var match = Regex.Match(sysPath, @"/ata(\d+)/", RegexOptions.None, TimeSpan.FromSeconds(1));
         return match.Success ? int.Parse(match.Groups[1].Value) : null;
     }
 

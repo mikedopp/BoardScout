@@ -133,7 +133,7 @@ internal sealed class MachineStore
             port = int.Parse(match.Groups["port"].Value, System.Globalization.CultureInfo.InvariantCulture);
             if (port is < 1 or > 65535) return (null, null, "That port number is out of range.");
         }
-        if (!Target.IsMatch(text)) return (null, null, "Use letters, digits, and . _ - @ only, like admin@192.168.1.20 or a Host from your SSH config.");
+        if (!Target.IsMatch(text)) return (null, null, "Use letters, digits, and . _ - @ only, like admin@192.0.2.20 or a Host from your SSH config.");
         return (text, port, null);
     }
 

@@ -6,7 +6,7 @@ OS will keep patching it. It never installs drivers or firmware. It runs on Wind
 your browser ([BoardScout for Linux](docs/linux.md)), and it can open any other Linux or Windows
 machine you reach with SSH ([Machines](docs/remote.md)).
 
-**Status:** v2.5.1 (2026-10-29) · Windows 10/11 and Linux (x64, arm64, arm, musl) · remote machines over SSH ·
+**Status:** v2.8.0 (2026-11-12) · Windows 10/11 and Linux (x64, arm64, arm, musl) · macOS (untested) · remote machines over SSH ·
 .NET 10 · MIT license · [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
 ![BoardScout Overview: the board with its printed slot names, live gauges, and the At a glance panel](docs/screenshots/overview.png)
@@ -54,10 +54,11 @@ From the [latest release](https://github.com/mikedopp/BoardScout/releases/latest
 
 | File | What it is |
 | --- | --- |
-| `BoardScout-2.5.1-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
-| `BoardScout-2.5.1-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `DriverScout` beside it. |
-| `BoardScout-2.5.1-SHA256SUMS.txt` | Checksums for both. |
-| `BoardScout-2.5.1-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
+| `BoardScout-2.8.0-win-x64.exe` | **Standalone.** One file with everything inside. Put it in any writable folder and run it. |
+| `BoardScout-2.8.0-win-x64.zip` | **Portable folder.** Extract and run `BoardScout.exe`; keep `Assets`, `Shell`, and `Drivers` beside it. |
+| `BoardScout-2.8.0-SHA256SUMS.txt` | Checksums for both. |
+| `BoardScout-2.8.0-linux-x64`, `-linux-arm64`, `-linux-arm`, `-linux-musl-x64`, `-linux-musl-arm64` (and `.tar.gz`) | **Linux edition.** See [BoardScout for Linux](docs/linux.md). |
+| `BoardScout-2.8.0-osx-arm64`, `-osx-x64` (and `.tar.gz`) | **macOS (untested).** The same program reading the Mac with Apple's tools. See [BoardScout for macOS](docs/macos.md). |
 
 To open Linux machines from Windows (or the other way round), put the builds those machines need
 next to `BoardScout.exe`, or let the Machines page fetch them from the release when it needs one.
@@ -129,7 +130,7 @@ public IP and **test your Internet speed** (latency, download, upload), each onl
 
 **Live drives** — also on the Connections tab: every drive animated from its real activity. Hard
 drives spin faster as data moves, with an arm that seeks at the measured operation rate and parks when
-idle. SSDs and NVMe drives use FlashStream: light streaks through a tilted grid of NAND dies, blue for
+idle. SSDs and NVMe drives use DriveStream: light streaks through a tilted grid of NAND dies, blue for
 reads heading to the PC and amber for writes landing on a die. More streaks means more operations, faster
 means more MB/s, longer means bigger I/O, and beads circling the controller are queued requests. Click any
 drive on the map for the same picture in its details. Many USB enclosures don't pass on whether the drive
@@ -180,9 +181,16 @@ and SDK, and searchable tables of patches, installed software, and scheduled tas
 
 **Drivers, Storage, Efficiency** — driver versions with links to official vendor, OEM, or Microsoft
 update pages; every volume with its usage; and suggestions such as enabling XMP/DOCP/EXPO,
-freeing space, or reviewing BIOS updates.
+freeing space, or reviewing BIOS updates. Storage also has **What fills a drive**: pick a drive and
+BoardScout reads its folder names and sizes (never opening, moving or deleting a file) and draws the whole drive as a bar
+of cells coloured by Apps, Developer, Photos, Movies, Documents, Music, System data, Caches, Trash and Other, with the
+cache folders it found. It says how much of the used space it couldn't read. On Linux it reads one filesystem at a time
+(never crossing into another mount) with Linux's own rules: `/usr` and `/boot` are System data, `/opt` and container
+storage are Apps, `/var/cache` and `~/.cache` are Caches.
 
-**Version button** — the version on a Glimmer orb badge (aurora, the same orb as the browser
+![Storage tab: what fills a drive, with a real read of a 476 GB system drive](docs/screenshots/storage-fill.png)
+
+**Version button** — the version on a orb badge (aurora, the same orb as the browser
 dashboard's). The orb thinks while a scan, driver check, or download runs, turns mint for a moment when it
 finishes, and stays red after a failure until the next run or a click. It opens runtime details, sensor
 troubleshooting, settings (privacy mode, glass effects, motion, live refresh, minimize to tray),
@@ -202,6 +210,7 @@ dependencies, requirements, and legal notices. *Copy diagnostics* gathers what a
 | Linux on Arm64 (Raspberry Pi 4/5 with a 64-bit OS) | Built (`linux-arm64`); untested on hardware. |
 | Linux on 32-bit ARMv7 (Raspberry Pi OS 32-bit) | Built (`linux-arm`); untested on hardware. ARMv6 boards (Pi 1, Zero) can't run .NET. |
 | Alpine and other musl distributions | Built (`linux-musl-x64`, `linux-musl-arm64`), with Alpine's packages and updates; untested on Alpine. |
+| macOS (Apple silicon or Intel) | Built (`osx-arm64`, `osx-x64`) from Apple's documented tool output; **not yet run on a Mac**. No temperatures, fans or PCI tree. See [BoardScout for macOS](docs/macos.md). |
 | Another PC or server you reach with SSH | Yes: the Machines tab opens its dashboard or checks it, Linux or Windows ([Machines](docs/remote.md)). |
 | Virtual machine | Runs, but shows the hypervisor's virtual devices rather than real hardware. |
 | Windows 11 on Arm | Should run the x64 build under Windows' emulation; untested. Windows 10 on Arm can't run x64 apps. |
@@ -391,7 +400,7 @@ Source layout:
   `WindowsOverview.cs` are the Windows half (the app's Overview, agent and `--serve` modes), and
   `BoardProfiles.cs` holds the boards known slot by slot (shared)
 - `src\BoardScout.App\Remote` — the Machines page: SSH, probing, copying, tunnels, summaries (shared)
-- `src\BoardScout.App\DriverScout` — the bundled PowerShell scan engine and its notices
+- `src\BoardScout.App\Drivers` — the bundled PowerShell scan engine and its notices
 - `src\BoardScout.Linux` — the Linux edition: `Platform` reads `/sys` and `/proc`, `Views` builds the
   same payloads the web views use, and `Live` (with `Hub.Linux.cs`) streams telemetry. It compiles the
   Windows app's shared models, web server, Remote code, and network code (`*.Windows.cs` files stay

@@ -2,7 +2,7 @@ namespace BoardScout.Services;
 
 /// <summary>
 /// Maker of a network device from the first three bytes of its MAC address, using the IEEE MA-L listing
-/// bundled as DriverScout\data\oui.tsv. Only the prefixes asked for are kept, so the file is streamed once.
+/// bundled as Drivers\data\oui.tsv. Only the prefixes asked for are kept, so the file is streamed once.
 /// </summary>
 internal static class Oui
 {
@@ -10,7 +10,7 @@ internal static class Oui
     {
         var wanted = macs.Select(Prefix).Where(p => p is not null).Select(p => p!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var path = Path.Combine(AppContext.BaseDirectory, "DriverScout", "data", "oui.tsv");
+        var path = Path.Combine(AppContext.BaseDirectory, "Drivers", "data", "oui.tsv");
         if (wanted.Count == 0 || !File.Exists(path)) return result;
         try
         {

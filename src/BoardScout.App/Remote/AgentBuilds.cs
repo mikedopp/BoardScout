@@ -39,7 +39,7 @@ internal static class AgentBuilds
     public static string OwnRid => RuntimeInformation.RuntimeIdentifier;
 
     /// <summary>
-    /// True when this program is the standalone build: one file with Assets, Shell and DriverScout packed inside, so
+    /// True when this program is the standalone build: one file with Assets, Shell and Drivers packed inside, so
     /// it can be copied as is. The portable build is a single-file exe too, but those folders sit beside it, so
     /// copying only the exe would leave the remote agent without its pages.
     /// </summary>

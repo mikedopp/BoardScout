@@ -57,14 +57,14 @@ public class UpdateTests
     {
         string[] lines =
         [
-            "C:Q1abc=", "P:musl", "V:1.2.5-r0", "A:x86_64", "S:411323", "I:654321", "T:the musl c library", "m:Natanael Copa <ncopa@alpinelinux.org>", "t:1712345678", "",
-            "C:Q1def=", "P:busybox", "V:1.36.1-r29", "I:950272", "m:Sören Tempel <soeren@alpinelinux.org>", "",
+            "C:Q1abc=", "P:musl", "V:1.2.5-r0", "A:x86_64", "S:411323", "I:654321", "T:the musl c library", "m:A Maintainer <maintainer@example.org>", "t:1712345678", "",
+            "C:Q1def=", "P:busybox", "V:1.36.1-r29", "I:950272", "m:B Maintainer <maintainer-b@example.org>", "",
             "P:no-trailing-blank", "V:1"
         ];
         var packages = LinuxSystemInfo.ParseApkInstalled(lines);
         Assert.Equal(["musl", "busybox", "no-trailing-blank"], packages.Select(p => p.Name));
         Assert.Equal("1.2.5-r0", packages[0].Version);
-        Assert.Equal("Natanael Copa", packages[0].Publisher);
+        Assert.Equal("A Maintainer", packages[0].Publisher);
         Assert.Equal("639 KB", packages[0].Size);
         Assert.Equal("", packages[0].InstallDate); // apk keeps the build time, not the install time
     }

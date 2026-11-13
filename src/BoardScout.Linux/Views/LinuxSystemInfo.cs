@@ -181,7 +181,7 @@ internal static partial class LinuxSystemInfo
         var other => other.ToString().ToLowerInvariant()
     };
 
-    private static TimeSpan? ReadUptime() =>
+    private static TimeSpan? ReadUptime() => OperatingSystem.IsMacOS() ? Platform.Mac.MacCapture.Uptime() :
         double.TryParse(Sys.Read("/proc/uptime")?.Split(' ')[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
             ? TimeSpan.FromSeconds(seconds)
             : null;
@@ -205,12 +205,14 @@ internal static partial class LinuxSystemInfo
                 true => new ReadinessCheck { Label = "Secure Boot", State = "pass", Detail = "On: the firmware only starts signed boot loaders and kernels" },
                 false => new ReadinessCheck { Label = "Secure Boot", State = "warn", Detail = "Off in the firmware settings" },
                 null when !capture.Security.Uefi => new ReadinessCheck { Label = "Secure Boot", State = "warn", Detail = "Not available: the computer boots in legacy BIOS mode" },
+                null when capture.Identity.SystemVendor == "Apple" => new ReadinessCheck { Label = "Secure Boot", State = "unknown", Detail = "Macs check the system at every start; reading the level set in Startup Security needs an administrator" },
                 _ => new ReadinessCheck { Label = "Secure Boot", State = "unknown", Detail = "The firmware doesn't say" }
             },
             capture.Security.TpmVersion switch
             {
                 2 => new ReadinessCheck { Label = "TPM", State = "pass", Detail = "TPM 2.0 present" + (capture.Security.TpmMaker is { } maker ? $" ({maker})" : "") },
                 1 => new ReadinessCheck { Label = "TPM", State = "warn", Detail = "TPM 1.2: older, and not used for disk encryption unlocking" },
+                _ when capture.Identity.SystemVendor == "Apple" => new ReadinessCheck { Label = "Secure Enclave", State = capture.Security.TpmMaker is null ? "unknown" : "pass", Detail = capture.Security.TpmMaker is null ? "Intel Macs have one only with the T2 chip" : "Holds FileVault and Touch ID keys (Macs use it instead of a TPM)" },
                 _ => new ReadinessCheck { Label = "TPM", State = "unknown", Detail = "None found (it may be switched off in the firmware)" }
             },
             firewall.Active switch
@@ -305,7 +307,7 @@ internal static partial class LinuxSystemInfo
             Gpu = gpus.Count == 0 ? (capture.Displays.Count > 0 ? "Built-in graphics" : "") : string.Join(" + ", gpus),
             Motherboard = string.Join(" · ", new[] { capture.Identity.System, capture.Identity.Board ?? capture.DeviceTreeModel }.Where(s => s is not null).Distinct()),
             Bios = capture.Identity.BiosVersion is { } bios ? $"{bios}{(capture.Identity.BiosDate is { } date ? $" ({date})" : "")}" : "",
-            Tpm = capture.Security.TpmVersion switch { 2 => "TPM 2.0", 1 => "TPM 1.2", _ => "Not detected" },
+            Tpm = capture.Security.TpmVersion switch { 2 => "TPM 2.0", 1 => "TPM 1.2", _ => capture.Security.TpmMaker ?? "Not detected" },
             SecureBoot = capture.Security.SecureBoot switch { true => "On", false => "Off", null when !capture.Security.Uefi => "Legacy BIOS boot", _ => "Unknown" }
         };
         foreach (var disk in capture.Disks.Where(d => !d.Optical))

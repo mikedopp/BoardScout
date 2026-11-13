@@ -259,3 +259,6 @@ body.no-motion #toast { transition: none; }
   .frame-card { height: calc(100vh - 160px); min-height: 460px; }
   .search { min-width: 0; width: 100%; }
 }
+
+/* Storage: the "what fills a drive" view sits above the filesystem list */
+.fillframe { height: 340px; min-height: 0; margin-bottom: 14px; }  /* until the view reports its own height */

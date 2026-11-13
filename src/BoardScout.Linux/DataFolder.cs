@@ -13,6 +13,8 @@ internal static class DataFolder
     public static string Resolve()
     {
         var chosen = Environment.GetEnvironmentVariable("BOARDSCOUT_DATA");
+        if (string.IsNullOrWhiteSpace(chosen) && OperatingSystem.IsMacOS())
+            chosen = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "BoardScout");
         if (string.IsNullOrWhiteSpace(chosen))
         {
             var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");

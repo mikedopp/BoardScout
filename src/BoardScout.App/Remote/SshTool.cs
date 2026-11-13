@@ -38,7 +38,7 @@ internal sealed class RemoteException(string kind, string message, string? detai
 /// </summary>
 internal static class SshTool
 {
-    private static readonly Regex Fingerprint = new(@"SHA256:[A-Za-z0-9+/=]+", RegexOptions.Compiled);
+    private static readonly Regex Fingerprint = new(@"SHA256:[A-Za-z0-9+/=]+", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     /// <summary>The SSH programs found on this computer, best first.</summary>
     public static IReadOnlyList<SshClient> Available()
@@ -257,7 +257,7 @@ internal static class SshTool
             {
                 var match = Fingerprint.Match(line);
                 if (!match.Success) continue;
-                var type = Regex.Match(line, @"\(([A-Z0-9-]+)\)\s*$").Groups[1].Value;
+                var type = Regex.Match(line, @"\(([A-Z0-9-]+)\)\s*$", RegexOptions.None, TimeSpan.FromSeconds(1)).Groups[1].Value;
                 fingerprints.Add(type.Length > 0 ? $"{type} {match.Value}" : match.Value);
             }
         }
@@ -300,9 +300,9 @@ internal static class SshTool
             return new RemoteException("auth",
                 "The machine didn't accept any of your SSH keys. BoardScout signs in with keys only, never passwords: add your public key to that account's authorized_keys, or choose the key file for this machine.",
                 LastLine(error));
-        if (Regex.IsMatch(error, "Could not resolve hostname|Name or service not known|No such host|nodename nor servname", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(error, "Could not resolve hostname|Name or service not known|No such host|nodename nor servname", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)))
             return new RemoteException("unreachable", "SSH couldn't find that machine's name on the network.", LastLine(error));
-        if (Regex.IsMatch(error, "Connection refused|timed out|No route to host|Network is unreachable|Connection reset|Connection closed", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(error, "Connection refused|timed out|No route to host|Network is unreachable|Connection reset|Connection closed", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)))
             return new RemoteException("unreachable", "The machine didn't answer on its SSH port. Is it on, and is its SSH server running?", LastLine(error));
         var last = LastLine(error);
         return new RemoteException("other", $"{what} failed{(result.ExitCode > 0 ? $" (exit {result.ExitCode})" : "")}.", last.Length > 0 ? last : LastLine(result.Output));
@@ -311,7 +311,7 @@ internal static class SshTool
     /// <summary>The key file SSH refused: Load key "C:\\Users\\me\\.ssh\\id": bad permissions (Windows doubles the backslashes).</summary>
     public static string? RefusedKey(string error)
     {
-        var match = Regex.Match(error, @"Load key ""(?<path>[^""]+)""");
+        var match = Regex.Match(error, @"Load key ""(?<path>[^""]+)""", RegexOptions.None, TimeSpan.FromSeconds(1));
         return match.Success ? match.Groups["path"].Value.Replace(@"\\", @"\") : null;
     }
 

@@ -1,14 +1,14 @@
-using Glimmer.WinForms;
+using BoardScout.UI.Orb;
 
 namespace BoardScout.UI;
 
 /// <summary>
-/// The version number on a Glimmer orb badge, aurora like the browser dashboard's. The orb thinks while a scan,
+/// The version number on a orb badge, aurora like the browser dashboard's. The orb thinks while a scan,
 /// driver check, or download runs, turns mint for a moment when it finishes, and stays red after a failure until
 /// the next run or a click. Clicking it opens the version pop-out (runtime, sensors, troubleshooting, settings,
 /// dependencies, requirements, legal).
 /// </summary>
-internal sealed class VersionButton : GlimmerBadge
+internal sealed class VersionButton : OrbBadge
 {
     public static string AppVersion => Services.AppInfo.Version;
 

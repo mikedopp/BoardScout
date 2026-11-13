@@ -93,7 +93,7 @@ body.no-glass #inspector{background:var(--sr);backdrop-filter:none;border:1px so
 #legend .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl)}
 #legend .dot.out{background:#e8edf4;box-shadow:0 0 6px #e8edf4}
 #legend .sep{width:1px;height:12px;background:var(--b)}
-/* Live drives: platters and FlashStream NAND dies driven by Windows' disk counters */
+/* Live drives: platters and DriveStream NAND dies driven by Windows' disk counters */
 .dcard{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);padding:10px 12px 9px;margin-top:10px}
 .dcard .top{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
 .dcard .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
@@ -108,10 +108,10 @@ canvas.dgraph{display:block;width:100%;height:44px;margin-top:7px}
 #drivesBody > .sum{font-size:11.5px;color:var(--ts);line-height:1.5;margin:12px 2px 4px}
 /* Memory slots on the map */
 .card.empty .face{opacity:.62}
-/* Skitter crawlers (vendor/skitter): cards a spider is visiting, red for problems it found */
+/* Crawler crawlers (vendor/crawler): cards a spider is visiting, red for problems it found */
 .card.crawler-bitten .edge{stroke:var(--crawler-color);stroke-width:2.4;stroke-opacity:1}
-.card.crawler-prey .edge{stroke:#ff3b5c;animation:skitterPrey .9s ease-in-out infinite alternate}
-@keyframes skitterPrey{from{stroke-width:2}to{stroke-width:4}}
+.card.crawler-prey .edge{stroke:#ff3b5c;animation:crawlerPrey .9s ease-in-out infinite alternate}
+@keyframes crawlerPrey{from{stroke-width:2}to{stroke-width:4}}
 .pill.crawler-bitten,.btn.crawler-bitten{outline:1px solid var(--crawler-color);outline-offset:2px}
 /* Cards a plan item points at */
 .card.flash .edge{stroke:#fde047;stroke-width:3;animation:flash .6s ease-in-out 6 alternate}
@@ -289,8 +289,8 @@ body.no-motion #toast{transition:none}
 <div id="drives" role="region" aria-label="Live drives"><div id="drivesHead"></div><div id="drivesBody"></div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="vendor/d3/d3.v7.min.js"></script>
-<script src="vendor/skitter/skitter.js"></script>
-<script src="vendor/flashstream/flashstream.js"></script>
+<script src="vendor/crawler/crawler.js"></script>
+<script src="vendor/drivestream/drivestream.js"></script>
 <script>
 'use strict';
 const BUS={pcie:'#3d9eff',internal:'#a78bfa',usb:'#2dd4bf',sata:'#fb923c',display:'#f472b6',bluetooth:'#818cf8',
@@ -356,7 +356,7 @@ const ICON={
 const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=18,SPINE=64,COL_INSET=30;
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
   history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
-  skitter:null,speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false,
+  crawler:null,speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false,
   query:'',hits:[],hitIndex:-1,ejects:new Map(),platform:'windows'};
 // The Windows and Linux editions share this view; a few sentences name what each operating system does.
 const OS=()=>state.platform==='linux'?'Linux':'Windows';
@@ -1233,16 +1233,16 @@ function applySettings(s){
   document.body.classList.toggle('no-motion',!state.motion);
   if(!state.motion&&state.anim){cancelAnimationFrame(state.anim);state.anim=0;clearFlow()}
   else {startAnimation();startDiskViews()}
-  syncSkitter(state.motion?Math.max(0,Math.min(8,s.crawlers|0)):0);
+  syncCrawler(state.motion?Math.max(0,Math.min(8,s.crawlers|0)):0);
   syncGlass();
 }
 
-// Skitter: spiders walk the map with their feet on cards and pills, and hunt links running below what the device supports.
-function syncSkitter(count){
-  if(!window.SkitterLib)return;
-  if(!count){state.skitter?.destroy();state.skitter=null;return}
-  if(state.skitter){state.skitter.setCount(count);return}
-  state.skitter=new SkitterLib.Skitter({count,food:'.card, .pill, .btn',prey:'.card.warn, .pill.warn',
+// Crawler: spiders walk the map with their feet on cards and pills, and hunt links running below what the device supports.
+function syncCrawler(count){
+  if(!window.CrawlerLib)return;
+  if(!count){state.crawler?.destroy();state.crawler=null;return}
+  if(state.crawler){state.crawler.setCount(count);return}
+  state.crawler=new CrawlerLib.Crawler({count,food:'.card, .pill, .btn',prey:'.card.warn, .pill.warn',
     label:e=>(e.querySelector('.name')||e).textContent.replace(/^⚠\s*/,'')});
 }
 
@@ -1262,9 +1262,9 @@ async function syncGlass(){
 }
 
 // ---- Live drives -------------------------------------------------------------------------
-// Ported from DedupApp. Hard drives draw as a platter whose spin follows throughput and an arm that seeks
-// at the measured operation rate (parking when idle). SSDs and NVMe drives use FlashStream
-// (vendor/flashstream): light streaks between the controller, the NAND dies and the PC, whose count,
+// Hard drives draw as a platter whose spin follows throughput and an arm that seeks
+// at the measured operation rate (parking when idle). SSDs and NVMe drives use DriveStream
+// (vendor/drivestream): light streaks between the controller, the NAND dies and the PC, whose count,
 // speed and length follow operations, throughput and I/O size. It is a picture of Windows' disk counters:
 // Windows doesn't report a drive's real head position, spin, or which die an operation lands on, so
 // nothing here pretends to.
@@ -1280,10 +1280,10 @@ function isSpinning(n){return /^Hard drive/.test(n.facts?.find(f=>f.label==='Dri
 function driveTag(n){return n.kind==='nvme'?'NVMe':isSpinning(n)?'HDD':/^Solid-state/.test(n.facts?.find(f=>f.label==='Drive type')?.value||'')?'SSD':'Disk'}
 
 function diskView(canvas,node,height){
-  // Flash drives run their own FlashStream loop (it follows Motion and cleans up when the card is removed).
+  // Flash drives run their own DriveStream loop (it follows Motion and cleans up when the card is removed).
   // Only drives known to be flash get it; a drive that doesn't report its type gets the plain flow line.
-  if(/^(SSD|NVMe)$/.test(driveTag(node))&&window.FlashStream){
-    FlashStream.createFlashStream(canvas,{lanes:FlashStream.lanesFor(driveTag(node)),height,motion:()=>state.motion,
+  if(/^(SSD|NVMe)$/.test(driveTag(node))&&window.DriveStream){
+    DriveStream.createDriveStream(canvas,{lanes:DriveStream.lanesFor(driveTag(node)),height,motion:()=>state.motion,
       source:()=>{const s=diskSample(node);return {readBps:s.r,writeBps:s.w,readOps:s.ro,writeOps:s.wo,queueDepth:s.q,busy:s.busy}}});
     return;
   }

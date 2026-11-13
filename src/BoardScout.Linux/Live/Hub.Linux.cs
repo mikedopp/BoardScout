@@ -154,6 +154,15 @@ internal sealed partial class Hub
                 Broadcast("shell", FirmwareJson(_firmware));
                 if (_firmware.Updates.Count > 0) PublishFromCapture();
                 break;
+            case ("fill", "drives"):
+                Fill.SendDrives();
+                break;
+            case ("fill", "storagescan"):
+                Fill.Start(message.TryGetProperty("drive", out var storageDrive) ? storageDrive.GetString() : null);
+                break;
+            case ("fill", "storagecancel"):
+                Fill.Cancel();
+                break;
             case ("connections", "refresh"):
                 await LoadAsync(rediscover: true);
                 break;
@@ -182,11 +191,13 @@ internal sealed partial class Hub
         url = ListenUrl,
         user = Environment.UserName,
         root = _capture?.Root ?? false,
-        kernel = Sys.Read("/proc/sys/kernel/osrelease") ?? "",
+        kernel = _capture?.Kernel ?? Sys.Read("/proc/sys/kernel/osrelease") ?? "",
         distro = Distro.Read().PrettyName,
         agent = Agent?.Label,
         ssh = Agent is null ? SshTool.Describe() : null,
-        tools = new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
+        tools = OperatingSystem.IsMacOS()
+            ? new[] { "system_profiler", "diskutil", "ioreg", "netstat", "scutil", "ssh" }.Select(n => new { name = n, path = Tools.Find(n) }).ToList()
+            : new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
             .Select(n => new { name = n, path = Tools.Find(n) }).Where(t => t.path is not null || t.name is "iw" or "nmcli" or "bluetoothctl" or "udisksctl" or "fwupdmgr" or "systemctl").ToList()
     };
 
@@ -246,7 +257,7 @@ internal sealed partial class Hub
         return (Telemetry.HeaderJson(header), Telemetry.FlowJson(flow));
     }
 
-    private static string DeviceSignature() => string.Join("|", new[]
+    private static string DeviceSignature() => OperatingSystem.IsMacOS() ? BoardScout.Platform.Mac.MacCapture.DeviceSignature() : string.Join("|", new[]
     {
         string.Join(",", Sys.Children("/sys/bus/usb/devices")),
         string.Join(",", Sys.Children("/sys/block")),
@@ -269,10 +280,10 @@ internal sealed partial class Hub
         var capture = _capture;
         var lines = new List<string>
         {
-            $"BoardScout for Linux {AppInfo.Version}{(AppInfo.Commit is { } commit ? $" ({commit})" : "")}",
+            $"BoardScout for {(OperatingSystem.IsMacOS() ? "macOS" : "Linux")} {AppInfo.Version}{(AppInfo.Commit is { } commit ? $" ({commit})" : "")}",
             $".NET {Environment.Version} · {System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}",
             $"Distribution: {Distro.Read().PrettyName}",
-            $"Kernel: {Sys.Read("/proc/sys/kernel/osrelease")}",
+            $"Kernel: {capture?.Kernel ?? Sys.Read("/proc/sys/kernel/osrelease")}",
             $"Running as root: {(capture?.Root == true ? "yes" : "no")}",
             $"Started by: {(Agent is null ? "this computer" : "another BoardScout over SSH")}",
             $"Data folder: {DataFolder.Root}",

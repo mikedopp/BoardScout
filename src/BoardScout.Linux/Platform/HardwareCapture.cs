@@ -38,6 +38,7 @@ internal sealed record HardwareCapture(
 
     public static HardwareCapture Read()
     {
+        if (OperatingSystem.IsMacOS()) return Mac.MacCapture.Read();
         var watch = Stopwatch.StartNew();
         // The network probe pings the router and asks DNS for names: run it alongside the hardware walk.
         var network = Task.Run(NetworkProbe.Capture);

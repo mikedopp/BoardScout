@@ -59,7 +59,7 @@ internal static class Program
     {
         try
         {
-            var service = new DriverScoutService();
+            var service = new DriverEngine();
             service.OutputReceived += (_, line) => Console.WriteLine(line);
 
             var scanPath = service.GetLatestScanPath();
@@ -95,7 +95,7 @@ internal static class Program
     {
         try
         {
-            var service = new DriverScoutService();
+            var service = new DriverEngine();
             var scanPath = service.GetLatestScanPath();
             var scan = scanPath is null ? null : await service.LoadScanAsync(scanPath, CancellationToken.None);
             Console.WriteLine(await SystemInfoService.GatherJsonAsync(scan));
@@ -177,7 +177,7 @@ internal static class Program
         if (!agent) UseParentConsole();
         try
         {
-            var dataRoot = DriverScoutService.ResolveWritableDataRoot();
+            var dataRoot = DriverEngine.ResolveWritableDataRoot();
             AppSettings.Load(dataRoot);
             Privacy.Learn(null);
             if (agent && Has(args, "--privacy")) AppSettings.Current.PrivacyMode = true;
@@ -213,7 +213,7 @@ internal static class Program
     {
         try
         {
-            AppSettings.Load(DriverScoutService.ResolveWritableDataRoot());
+            AppSettings.Load(DriverEngine.ResolveWritableDataRoot());
             Privacy.Learn(null);
             var summary = await Views.WindowsOverview.SummaryAsync(privacy || AppSettings.Current.PrivacyMode);
             Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(summary, Remote.MachineSummaries.Ascii));
@@ -231,7 +231,7 @@ internal static class Program
     {
         UseParentConsole();
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-        var dataRoot = DriverScoutService.ResolveWritableDataRoot();
+        var dataRoot = DriverEngine.ResolveWritableDataRoot();
         AppSettings.Load(dataRoot);
         Privacy.Learn(null);
         var command = Has(args, "--machines") ? "machines" : Value(args, "--check") is not null ? "check" : "connect";
@@ -243,7 +243,7 @@ internal static class Program
     {
         try
         {
-            var path = Path.Combine(DriverScoutService.ResolveWritableDataRoot(), "crash.log");
+            var path = Path.Combine(DriverEngine.ResolveWritableDataRoot(), "crash.log");
             File.AppendAllText(path,
                 $"[{DateTimeOffset.Now:O}] BoardScout {VersionButton.AppVersion} on .NET {Environment.Version}{Environment.NewLine}" +
                 $"{exception}{Environment.NewLine}{Environment.NewLine}");

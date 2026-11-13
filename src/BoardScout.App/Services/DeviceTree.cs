@@ -23,7 +23,7 @@ internal sealed class DeviceNode
     public int? HubPorts { get; set; }
 
     /// <summary>For hubs: what each port supports (bit 0 USB 1.1, bit 1 USB 2, bit 2 USB 3) and whether it is in use.</summary>
-    public List<(int Port, int Protocols, bool InUse)> PortMap { get; } = [];
+    public List<(int Port, int Protocols, bool InUse)> PortSlots { get; } = [];
 
     /// <summary>For hubs: ports where something is plugged in but Windows couldn't use it. Status is the hub's
     /// USB_CONNECTION_STATUS: 2 failed to start, 3 general failure, 4 over-current, 5 not enough power,
@@ -197,7 +197,7 @@ internal static partial class DeviceTree
             for (var port = 1; port <= ports; port++)
             {
                 var connection = ConnectionInfo(handle, port, out var protocols, out var status);
-                hub.PortMap.Add((port, protocols, connection is not null));
+                hub.PortSlots.Add((port, protocols, connection is not null));
                 if (status is >= 2 and <= 8) hub.PortProblems.Add((port, status));
                 if (connection is null) continue;
                 var driverKey = PortDriverKey(handle, port);

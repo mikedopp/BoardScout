@@ -148,11 +148,11 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         var selected = Array.IndexOf(intervals, settings.TelemetryIntervalMs);
         Add(new GlassSegmented(["0.5 s", "1 s", "2 s", "5 s"], selected < 0 ? 1 : selected,
             index => AppSettings.Update(s => s.TelemetryIntervalMs = intervals[index])) { AccessibleName = "Live telemetry refresh" });
-        Add(Detail("Skitter crawlers on the Connections map", AppTheme.Muted));
+        Add(Detail("Crawler crawlers on the Connections map", AppTheme.Muted));
         int[] crawlers = [0, 2, 4, 8];
         var crawlerIndex = Array.IndexOf(crawlers, settings.Crawlers);
         Add(new GlassSegmented(["Off", "2", "4", "8"], crawlerIndex < 0 ? 0 : crawlerIndex,
-            index => AppSettings.Update(s => s.Crawlers = crawlers[index])) { AccessibleName = "Skitter crawlers" });
+            index => AppSettings.Update(s => s.Crawlers = crawlers[index])) { AccessibleName = "Crawler crawlers" });
         Add(Detail("Spiders walk over the cards and hunt links running below what the device supports. " +
                    "Move the pointer near one to shoo it. Needs Motion on.",
             width: PopoutWidth - 44));
