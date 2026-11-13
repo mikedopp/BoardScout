@@ -44,7 +44,8 @@ public enum ScanFlavor { Windows, Linux, Mac }
 public sealed record CacheRoot(string Path, long Bytes);
 
 /// <summary>
-/// Reads a drive's folder tree (read-only: it only lists names and sizes, never opens or changes a file) on several
+/// Reads a drive's folder tree (read-only: it lists names and sizes and never reads or changes a file's contents; under
+/// a drive's Windows folder it opens each file for its attributes only, to count a hard-linked file once) on several
 /// threads and adds every file's size to a bucket. Folder rules decide the bucket first (Recycle Bin, caches,
 /// developer folders, Windows, Program Files, /usr, /opt); otherwise the extension does.
 /// It can also take the same tree from a listing made elsewhere (a server's <c>find</c>), see <see cref="ReadListingAsync"/>.
