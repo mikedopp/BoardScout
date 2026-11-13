@@ -6,7 +6,7 @@
 <title>BoardScout · What fills a drive</title>
 <style>
 :root {
-    --surface: #0c1620; --text: #e8edf4; --muted: #8a9bb2; --faint: #4a6080;
+    --surface: #0c1620; --text: #e8edf4; --muted: #8a9bb2; --faint: #8093ab;
     --accent: #3d9eff; --good: #10b981; --warning: #f59e0b;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,6 +30,7 @@ ul.legend { list-style: none; display: grid; grid-template-columns: repeat(auto-
 .legend li { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .legend i { width: 14px; height: 14px; border-radius: 4px; background: var(--c); flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.18) inset; }
 .legend span { flex: 1; }
+.legend i.hollow { background: rgba(255,255,255,.03); box-shadow: 0 0 0 1.5px rgba(148,163,184,.75) inset; }
 .legend em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
 #tip { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
 details { margin-top: 8px; color: var(--muted); font-size: 12.5px; }
@@ -62,7 +63,7 @@ details code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; f
 const $ = id => document.getElementById(id);
 const CATS = [
   ['Apps', '#4f8cff'], ['Developer', '#2dd4bf'], ['Photos', '#f472b6'], ['Movies', '#a78bfa'], ['Documents', '#fbbf24'],
-  ['Music', '#4ade80'], ['System data', '#94a3b8'], ['Caches', '#fb923c'], ['Trash', '#f87171'], ['Other', '#64748b']
+  ['Music', '#4ade80'], ['System data', '#94a3b8'], ['Caches', '#fb923c'], ['Trash', '#f87171'], ['Other', '#c2a878']
 ];
 const st = { reading: false, bytes: new Array(10).fill(0), shown: 0, target: 0 };
 const host = window.chrome && window.chrome.webview;
@@ -70,6 +71,7 @@ const send = m => host && host.postMessage(m);
 
 function fmt(b) {
   const g = b / 1073741824;
+  if (g >= 1024) return (g / 1024).toFixed(2) + ' TB';
   if (g >= 100) return g.toFixed(0) + ' GB';
   if (g >= 1) return g.toFixed(1) + ' GB';
   const m = b / 1048576;
@@ -88,6 +90,17 @@ CATS.forEach(([name, color], i) => {
   li.append(chip, text('span', name), size);
   $('legend').append(li);
 });
+// Used space the read could not get to: hollow cells in the bar, and a line of its own here once a read finishes.
+const unread = document.createElement('li');
+{
+  const chip = document.createElement('i');
+  chip.className = 'hollow';
+  const size = text('em', '');
+  size.id = 'szUnread';
+  unread.append(chip, text('span', "Couldn't be read"), size);
+  unread.hidden = true;
+  $('legend').append(unread);
+}
 const bar = CellBar.create($('bar'), { colors: CATS.map(c => c[1]) });
 
 function show() {
@@ -129,6 +142,7 @@ function onMessage(m) {
       $('of').textContent = 'of ' + fmt(m.total) + ' used';
       $('tip').textContent = '';
       $('caches').hidden = true;
+      unread.hidden = true;
       $('status').textContent = 'Reading ' + m.drive;
       break;
     case 'progress':
@@ -141,6 +155,8 @@ function onMessage(m) {
       st.reading = false;
       const used = m.total - m.free, gap = used - sum(m.bytes);
       bar.finish(m.bytes, used);
+      unread.hidden = gap <= 1073741824;
+      $('szUnread').textContent = fmt(Math.max(0, gap));
       st.target = Math.max(used, sum(m.bytes));
       $('go').textContent = 'Read again';
       $('status').textContent = `Read ${m.files.toLocaleString()} files in ${m.secs < 90 ? Math.round(m.secs) + ' s' : (m.secs / 60).toFixed(1) + ' min'}.`

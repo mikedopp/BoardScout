@@ -8,7 +8,7 @@
 /* Same colors and glass as the other views, so the page and the window read as one surface. */
 :root {
     --bg: #060b10; --surface: #0c1620; --raised: #111e2c; --border: #1c2a3c; --border-soft: rgba(255,255,255,.06);
-    --text: #e8edf4; --muted: #8a9bb2; --faint: #4a6080;
+    --text: #e8edf4; --muted: #8a9bb2; --faint: #8093ab;
     --accent: #3d9eff; --accent-soft: rgba(61,158,255,.13);
     --good: #10b981; --warning: #f59e0b; --critical: #ef4444; --purple: #a78bfa; --teal: #2dd4bf;
     --glass-a: .62; --glass-blur: 14px;
@@ -102,7 +102,7 @@ details.more[open] summary { margin-bottom: 10px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid; white-space: nowrap; }
 .chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .chip.idle { color: var(--muted); border-color: rgba(138,155,178,.3); background: rgba(138,155,178,.08); }
-.chip.idle::before { background: var(--faint); }
+.chip.idle::before { background: #5a7090; }
 .chip.working { color: var(--accent); border-color: rgba(61,158,255,.4); background: rgba(61,158,255,.12); }
 .chip.working::before { animation: pulse 1s ease-in-out infinite; }
 .chip.open { color: var(--good); border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.12); }

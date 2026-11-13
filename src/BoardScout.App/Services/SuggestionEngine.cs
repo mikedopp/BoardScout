@@ -64,7 +64,7 @@ public static class SuggestionEngine
                 output.Add(new(
                     SuggestionSeverity.Critical,
                     $"{volume.Letter} is {volume.UsedPercent:0}% full",
-                    $"Only {freeGb:0.#} GB remains on {volume.DiskModel ?? volume.Label ?? "this volume"}. Very low free space can reduce update reliability and SSD performance.",
+                    $"Only {freeGb:0.#} GB remains on {volume.DiskModel ?? volume.Label ?? "this volume"}. Very low free space can make updates fail and slows the drive down.",
                     "Move large files, remove safe temporary data, or expand the volume.",
                     "Storage"));
             }

@@ -3,7 +3,7 @@
  *   const bar = CellBar.create(canvas, { colors: ["#4f8cff", ...] });   // one colour per bucket, in order
  *   bar.begin(totalBytes);          // a scan starts: empty bar for a drive of this size
  *   bar.progress(bytesPerBucket);   // while scanning: new cells take the colour of what was just found
- *   bar.finish(bytesPerBucket, usedBytes);  // done: cells sort into blocks, largest first; used space nobody read is dim grey
+ *   bar.finish(bytesPerBucket, usedBytes);  // done: cells sort into blocks, largest first; used space nobody read is hollow outlines
  *   bar.clear();  bar.destroy();
  *
  * It draws only while the canvas is on screen and the page is visible, shimmers at ~11 fps when idle, and stops by
@@ -114,10 +114,17 @@
         const tw = reduceMotion ? 0.9 : 0.8 + 0.2 * Math.sin(now * 0.0016 + c.seed * 6.283);
         const behind = assigned - (col * ROWS + row);
         const boost = scanning && now < flashUntil && behind >= 0 && behind < 24 ? 0.45 : 0;
-        const unacc = c.to === N && c.from === N;
+        const unacc = c.to === N && p >= 1; // settled on "nobody could read it"
+        if (unacc) {
+          // used space nobody could read: a hollow cell, so it reads as neither a grey bucket nor free space
+          g.fillStyle = "rgba(255,255,255,0.03)"; rr(x, y);
+          g.strokeStyle = `rgba(148,163,184,${0.75 * a})`; g.lineWidth = 1.2;
+          g.beginPath(); g.roundRect(x + 0.6, y + 0.6, CELL - 1.2, CELL - 1.2, 2); g.stroke();
+          continue;
+        }
         const col3 = `${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0}`;
-        g.fillStyle = `rgba(${col3},${Math.min(1, (unacc ? 0.32 : tw) * a + boost)})`;
-        if (boost > 0 || (!unacc && tw > 0.97)) { g.shadowColor = `rgba(${col3},0.9)`; g.shadowBlur = 8; }
+        g.fillStyle = `rgba(${col3},${Math.min(1, tw * a + boost)})`;
+        if (boost > 0 || tw > 0.97) { g.shadowColor = `rgba(${col3},0.9)`; g.shadowBlur = 8; }
         rr(x, y);
         g.shadowBlur = 0;
       }

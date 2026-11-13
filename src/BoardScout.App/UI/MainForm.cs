@@ -2106,12 +2106,17 @@ public sealed class MainForm : Form
         if (_overviewFans >= 0 && BoardFans(telemetry) != _overviewFans) _ = PostOverviewAsync();
     }
 
+    /// <summary>
+    /// A network rate in bits per second, the unit the board's Ethernet part, the Connections map and the browser
+    /// dashboard use (and the one internet plans are sold in), so the same traffic reads the same in every view.
+    /// </summary>
     private static string FormatRate(double bytesPerSec)
     {
-        if (bytesPerSec >= 1_073_741_824) return $"{bytesPerSec / 1_073_741_824:0.0} GB/s";
-        if (bytesPerSec >= 1_048_576) return $"{bytesPerSec / 1_048_576:0.0} MB/s";
-        if (bytesPerSec >= 1024) return $"{bytesPerSec / 1024:0} KB/s";
-        return $"{bytesPerSec:0} B/s";
+        var bits = bytesPerSec * 8;
+        if (bits >= 1e9) return $"{bits / 1e9:0.00} Gbps";
+        if (bits >= 1e6) return bits >= 1e8 ? $"{bits / 1e6:0} Mbps" : $"{bits / 1e6:0.0} Mbps";
+        if (bits >= 1e3) return $"{bits / 1e3:0} Kbps";
+        return $"{bits:0} bps";
     }
 
     private void ServiceOnOutputReceived(object? sender, string line)
@@ -2143,6 +2148,6 @@ public sealed class MainForm : Form
         string[] units = ["B", "KB", "MB", "GB", "TB"];
         var unit = 0;
         while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
-        return $"{value:0.#} {units[unit]}";
+        return unit == 4 ? $"{value:0.00} TB" : $"{value:0.#} {units[unit]}";
     }
 }

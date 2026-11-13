@@ -3,7 +3,7 @@
 :root {
   color-scheme: dark;
   --bg: #060b10; --surface: #0c1620; --raised: #111e2c; --border: #1c2a3c;
-  --text: #e8edf4; --muted: #8a9bb2; --faint: #5a7090;
+  --text: #e8edf4; --muted: #8a9bb2; --faint: #8093ab;
   --accent: #3d9eff; --good: #10b981; --warn: #f59e0b; --bad: #ef4444; --purple: #a78bfa; --teal: #2dd4bf; --lime: #a3e635;
   /* Glass: the settings drive these two. */
   --glass-a: .62;
@@ -80,7 +80,7 @@ body.solid .glass { background: var(--raised); border-color: var(--border); box-
 body.privacy #privacyChip { display: inline-block; }
 #healthChip { border-radius: 999px; padding: 4px 11px 4px 9px; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
   color: var(--muted); background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12); }
-#healthChip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+#healthChip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #5a7090; }
 #healthChip.good { color: #a7f3d0; border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.1); }
 #healthChip.good::before { background: var(--good); }
 #healthChip.warn { color: #fde3b5; border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.1); }
@@ -120,6 +120,11 @@ body.agent [data-mode="local"], body:not(.agent) [data-mode="agent"] { display: 
 .tile .v small { font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .tile .line { display: flex; align-items: flex-end; gap: 12px; }
 .tile .line .v { flex: 1; min-width: 0; }
+/* Network: download and upload side by side while they fit, one above the other when they don't; never cut off. */
+#tNet .v { font-size: 15.5px; white-space: normal; overflow: visible; line-height: 1.25; }
+#tNet .v .pair { display: flex; flex-wrap: wrap; column-gap: 12px; }
+#tNet .v .pair span { white-space: nowrap; }
+#tNet .spark { width: 30%; }
 .spark { width: 42%; max-width: 140px; height: 26px; flex: none; overflow: visible; }
 .spark .stroke { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
 .spark .area { fill: rgba(61,158,255,.14); stroke: none; }

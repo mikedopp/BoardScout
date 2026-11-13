@@ -44,12 +44,16 @@ function post(view, message) {
 
 // ---- Formatting ------------------------------------------------------------------------------------
 
+// Sizes use the same 1024 steps as Windows Explorer, the Windows app and the "what fills a drive" card, so one drive
+// reads the same everywhere (a "512 GB" drive is 476 GB).
 function fmtBytes(n) {
   n = n || 0;
-  if (n >= 1e12) return (n / 1e12).toFixed(2) + ' TB';
-  if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e11 ? 0 : 1) + ' GB';
-  if (n >= 1e6) return Math.round(n / 1e6) + ' MB';
-  return Math.round(n / 1e3) + ' KB';
+  const g = n / 1073741824;
+  if (g >= 1024) return (g / 1024).toFixed(2) + ' TB';
+  if (g >= 100) return g.toFixed(0) + ' GB';
+  if (g >= 1) return g.toFixed(1) + ' GB';
+  if (n >= 1048576) return Math.round(n / 1048576) + ' MB';
+  return Math.round(n / 1024) + ' KB';
 }
 function fmtRate(b) {
   if (!b || b < 1) return '0 B/s';
@@ -110,7 +114,8 @@ window.addEventListener('message', e => {
   const frame = state.frames.fill;
   if (!frame || e.source !== frame.contentWindow) return;
   const card = frame.closest('.fillframe');
-  if (card) card.style.height = Math.max(160, Math.min(1200, e.data.fillheight + 12)) + 'px';
+  // the card's own padding and border sit around the frame: leave them out and the frame is a pixel or two short
+  if (card) card.style.height = Math.max(160, Math.min(1200, e.data.fillheight + (card.offsetHeight - frame.offsetHeight))) + 'px';
 });
 
 // ---- Event stream ------------------------------------------------------------------------------------
@@ -297,7 +302,10 @@ function renderTelemetry() {
   const temp = t.cpuTemp ?? t.gpuTemp;
   if (temp != null) gauge('tTemp', `${Math.round(temp)}°C`, temp >= 95 ? 'bad' : temp >= 85 ? 'warn' : 'good', t.cpuTemp != null ? 'CPU temp' : 'GPU temp', temp / 100);
   else gauge('tTemp', 'Not reported', null, 'Temperature', 0);
-  gauge('tNet', `↓ ${fmtBits(t.netIn)}  ↑ ${fmtBits(t.netOut)}`, null);
+  // two parts that wrap onto a second line in a narrow tile, instead of the upload being cut off
+  const net = el('span', 'pair');
+  net.append(el('span', null, `↓ ${fmtBits(t.netIn)}`), el('span', null, `↑ ${fmtBits(t.netOut)}`));
+  gauge('tNet', net, null);
   spark('tNet', state.history.net, 12500);
 }
 
@@ -379,7 +387,7 @@ function renderDrivers() {
       link.href = r.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
       status.append(link);
     }
-    tr.append(device, el('td', null, r.category), el('td', 'num', r.driver), el('td', null, [r.version, r.source].filter(Boolean).join(' · ')),
+    tr.append(device, el('td', null, kindLabel(r.category)), el('td', 'num', r.driver), el('td', null, [r.version, r.source].filter(Boolean).join(' · ')),
       el('td', 'num', (windows() ? r.latest : r.firmware) || ''), status);
     body.append(tr);
   }
@@ -389,6 +397,16 @@ function renderDrivers() {
     td.colSpan = 6; tr.append(td); body.append(tr);
   }
   table.append(body);
+}
+
+// The Kind column in words: the inventory's short codes ("bios", "gpu") read as raw data next to "Firmware".
+const KIND_LABELS = { bios: 'BIOS', gpu: 'Graphics', network: 'Network', storage: 'Storage', audio: 'Audio', usb: 'USB', chipset: 'Chipset',
+  bluetooth: 'Bluetooth', wifi: 'Wi-Fi', input: 'Input', display: 'Display', firmware: 'Firmware', system: 'System', other: 'Other' };
+function kindLabel(kind) {
+  if (!kind) return '';
+  const known = KIND_LABELS[kind.toLowerCase()];
+  if (known) return known;
+  return kind === kind.toLowerCase() ? kind.charAt(0).toUpperCase() + kind.slice(1) : kind;
 }
 
 // Windows: the header's button checks drivers (the driver engine) instead of fwupd firmware.

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.8.1 — 2026-11-12
+
+Display fixes from a page-by-page look at 2.8.0.
+
+### Fixed
+- **Network tile (browser dashboard).** Download and upload no longer get cut off: they sit side by side while they
+  fit and one above the other in a narrow tile or on a phone.
+- **One size for one drive.** The browser dashboard's drive cards and tables now count sizes the way Windows
+  Explorer, the Windows app and the "What fills a drive" card do (a "512 GB" drive reads 476 GB everywhere). Drives
+  of 1 TB and up read in TB (7.28 TB, not 7452 GB).
+- **One unit for network speed.** The Windows window's Network tile now reads in Kbps and Mbps, like the board's
+  Ethernet part, the Connections map and the browser dashboard. It used to read in KB/s.
+- **What fills a drive.** Used space that couldn't be read shows as hollow cells and has its own line in the legend;
+  Other is tan. Both used to be dim grey, close to each other and to free space. The card in the browser dashboard
+  no longer shows a scrollbar it doesn't need.
+- **Overview (browser dashboard).** In a narrower pane the first-run hint is no longer half covered by the lane
+  legend; the legend shows once the hint is dismissed.
+- **Small grey text** (sidebar sub-labels, helper text, "Disabled", section labels) is lighter, so it meets the
+  usual 4.5:1 contrast.
+- **Drivers.** The Kind column reads "BIOS", "Graphics", "Network" and "Storage" instead of the raw lowercase codes.
+- **Efficiency.** The nearly-full warning no longer talks about SSD performance on drives that aren't SSDs.
+- **Topology.** A wide tree now spreads its rows to use the height of the pane instead of sitting small at the top.
+
 ## 2.8.0 — 2026-11-12
 
 An untested macOS build.
