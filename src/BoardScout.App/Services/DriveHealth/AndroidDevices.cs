@@ -95,6 +95,8 @@ public static class AndroidDevices
         for f in /sys/block/mmcblk0/device/life_time /sys/block/mmcblk0/device/pre_eol_info /sys/block/mmcblk0/device/type; do [ -r "$f" ] && echo "$f=$(cat "$f" 2>/dev/null)"; done
         for d in /sys/devices/platform/*/health_descriptor /sys/devices/platform/*/*/health_descriptor; do [ -d "$d" ] || continue; for n in life_time_estimation_a life_time_estimation_b eol_info; do [ -r "$d/$n" ] && echo "$d/$n=$(cat "$d/$n" 2>/dev/null)"; done; break; done
         for b in /sys/block/mmcblk[0-9] /sys/block/sd[a-z]; do [ -r "$b/size" ] && echo "size:${b##*/}=$(cat "$b/size")"; done
+        echo "##partitions"
+        cat /proc/partitions 2>/dev/null
         echo "##diskstats"
         cat /proc/diskstats 2>/dev/null
         echo "##df"
@@ -138,6 +140,14 @@ public static class AndroidDevices
         // block devices: mmcblk0 is eMMC; sda, sdb ... are the LUNs of a UFS chip
         var sizes = kv.Where(p => p.Key.StartsWith("size:", StringComparison.Ordinal))
                       .ToDictionary(p => p.Key[5..], p => long.TryParse(p.Value, out var s) ? s * 512 : 0);
+        // some builds close /sys/block/*/size to the shell (Android 17 on a Galaxy S23); /proc/partitions lists the same disks in 1 KiB blocks
+        if (sections.TryGetValue("partitions", out var parts))
+            foreach (var line in parts)
+            {
+                var f = Regex.Split(line.Trim(), @"\s+");
+                if (f.Length == 4 && Regex.IsMatch(f[3], @"^(mmcblk\d+|sd[a-z]+)$") && long.TryParse(f[2], out long kb) && kb > 0)
+                    sizes.TryAdd(f[3], kb * 1024);
+            }
         bool emmc = sizes.ContainsKey("mmcblk0") && !(kv.GetValueOrDefault("bootdevice") ?? "").Contains("ufs", StringComparison.OrdinalIgnoreCase);
         bool ufs = !emmc && (sizes.Keys.Any(k => k.StartsWith("sd", StringComparison.Ordinal)) || kv.Keys.Any(k => k.Contains("health_descriptor")));
         r.Bus = r.Protocol = emmc ? "eMMC" : ufs ? "UFS" : null;
@@ -180,7 +190,9 @@ public static class AndroidDevices
 
         string name = Blank(kv.GetValueOrDefault("name")) is string n && n != "null" ? n : r.Model + (r.Serial is string s2 && s2.Length >= 4 ? " " + s2[^4..] : "");
         r.Machine = name;
-        if (sections.TryGetValue("df", out var df) && df.LastOrDefault(l => l.Trim().EndsWith("/data", StringComparison.Ordinal)) is string row)
+        // df names the mount /data on most devices and /data/user/0 on some (Android 17 on a Galaxy S23)
+        if (sections.TryGetValue("df", out var df) && df.LastOrDefault(l => Regex.Split(l.Trim(), @"\s+") is { Length: >= 6 } c
+                && (c[5] == "/data" || c[5].StartsWith("/data/", StringComparison.Ordinal))) is string row)
         {
             var f = Regex.Split(row.Trim(), @"\s+");
             if (f.Length >= 6 && long.TryParse(f[1], out long totalK) && long.TryParse(f[3], out long freeK) && totalK > 0)
