@@ -63,7 +63,7 @@ internal sealed record LaunchOptions
                 "--privacy" => options with { Privacy = true },
                 "--sweep" => options with { Sweep = true },
                 "--profile" => options with { Profile = true },
-                "--connections-json" or "--plan-json" or "--system-json" or "--scan-json" or "--summary-json" or "--diagnostics" or "--install" or "--uninstall" or "--machines" => options with { Command = arg[2..] },
+                "--connections-json" or "--plan-json" or "--system-json" or "--scan-json" or "--summary-json" or "--diagnostics" or "--install" or "--uninstall" or "--machines" or "--drive-health" => options with { Command = arg[2..] },
                 "--selftest" => Next() is { } directory ? options with { Command = "selftest", Directory = directory } : options with { Error = "--selftest needs a folder to write into" },
                 "--check" or "--connect" => Next() is { } machine && !machine.StartsWith('-') ? options with { Command = arg[2..], Machine = machine } : options with { Error = $"{arg} needs a machine: a name from --machines, a Host from ~/.ssh/config, or user@host" },
                 "--trust" => options with { Trust = true },
@@ -120,6 +120,8 @@ internal static class Program
           --diagnostics         Print what an issue report needs (always masked)
           --selftest DIR        Write all of the above into DIR, for checking a machine without a browser
           --summary-json        Print this machine's one-line health summary
+          --drive-health        Read every drive's own health counters now, keep the reading, and print each
+                                drive's verdict (SMART needs root: sudo boardscout --drive-health)
 
         Other machines, over SSH (your keys and ~/.ssh/config; BoardScout never asks for a password):
           --machines            List the machines on the Machines page
@@ -165,6 +167,11 @@ internal static class Program
 
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         if (options.Data is not null) Environment.SetEnvironmentVariable("BOARDSCOUT_DATA", Path.GetFullPath(options.Data));
+        else if (options.Command == "drive-health" && DriveHealthCli.SudoUserData() is { } userData)
+            Environment.SetEnvironmentVariable("BOARDSCOUT_DATA", userData);
+        // under sudo, folders root is about to create in the user's home are noted, to hand back after the reading
+        if (options.Command == "drive-health" && Environment.GetEnvironmentVariable("BOARDSCOUT_DATA") is { Length: > 0 } chosen)
+            DriveHealthCli.NoteMissing(chosen);
         AppSettings.Load(DataFolder.Root);
         Privacy.Learn(null);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrashLog(e.ExceptionObject as Exception);
@@ -199,6 +206,8 @@ internal static class Program
                 case "summary-json":
                     Console.WriteLine(JsonSerializer.Serialize(await SummaryAsync(privacy), MachineSummaries.Ascii));
                     return 0;
+                case "drive-health":
+                    return await DriveHealthCli.RunAsync(DataFolder.Root, privacy);
                 case "machines" or "check" or "connect":
                     return await RemoteCli.RunAsync(options.Command, options.Machine, DataFolder.Root, privacy, options.Trust, options.Key,
                         options.OpenBrowser && AppSettings.Current.OpenBrowser ? Desktop.OpenBrowser : null);

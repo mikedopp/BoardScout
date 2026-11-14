@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.10.0 — 2026-11-14
+
+Drive health on Linux and macOS.
+
+### Added
+- **Drive health (Linux and macOS).** The browser dashboard reads every drive once a day too, with the same engine as
+  Windows: smartctl when smartmontools is installed, plus what the system knows on its own (lsblk and the kernel's
+  drive temperatures on Linux, `diskutil` and macOS's own SMART verdict on a Mac). Readings are kept in the data
+  folder's `DriveHealth`, one line per drive, and judged from their whole history.
+- **Storage › Drives** (both editions' dashboard): **Health** and **Life** columns, findings on hover. They appear once
+  a drive has at least one reading.
+- **`boardscout --drive-health`** reads every drive now and prints each one's verdict and findings. SMART needs root,
+  so this is the one command meant for sudo: `sudo boardscout --drive-health` writes into your own data folder (not
+  root's) and hands the files back to you, so the dashboard you run without sudo shows it. Exit code 3 when a drive
+  needs acting on.
+- Efficiency on Linux lists drive findings that need doing something about, and says when every drive was locked
+  out (no root yet).
+- Settings › Daily drive health reading in the dashboard (both editions); smartctl and lsblk in Dependencies.
+
+### Changed
+- The drive-health engine now reads Linux and macOS disks as well as Windows ones (lsblk, `diskutil`), and Android
+  devices' flash wear for apps that ask it to; BoardScout itself reads only this computer's drives.
+
+### Notes
+- Without root a Linux reading has each drive's temperature and free space but no SMART counters; the verdict says
+  "Needs root to read".
+- The macOS half is checked against sample `diskutil` output only; it hasn't run on a Mac.
+
 ## 2.9.0 — 2026-11-14
 
 Drive health over time.
@@ -20,7 +48,7 @@ Drive health over time.
 - Drives are known by model and serial number, never by letter or disk number, so a USB drive keeps its history when
   it comes back under another letter.
 - USB drives need BoardScout started as administrator to be read. Sleeping hard disks are left asleep.
-- The Linux and macOS editions don't read drive health yet.
+- The Linux and macOS editions don't read drive health yet (added in 2.10.0).
 
 ## 2.8.1 — 2026-11-12
 

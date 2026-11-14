@@ -242,6 +242,7 @@ function applySettings(s) {
   $('sBlurValue').textContent = s.glassBlur + ' px';
   $('sRefresh').value = String(s.refreshMs);
   $('sCrawlers').value = String([0, 1, 2, 4, 8].reduce((a, b) => Math.abs(b - s.crawlers) < Math.abs(a - s.crawlers) ? b : a));
+  if ($('sDriveHealth')) $('sDriveHealth').checked = s.driveHealth !== false;
   $('sOpacity').disabled = $('sBlur').disabled = !s.glass;
 }
 
@@ -488,7 +489,8 @@ function renderStorage() {
   const table = $('disksTable');
   table.replaceChildren();
   const head = el('tr');
-  for (const h of ['Drive', 'Model', 'Type', 'Bus', 'Size', 'Firmware', 'Temperature']) head.append(el('th', null, h));
+  const health = o.disks.some(d => d.health);
+  for (const h of ['Drive', 'Model', 'Type', 'Bus', 'Size', 'Firmware', 'Temperature'].concat(health ? ['Health', 'Life'] : [])) head.append(el('th', null, h));
   table.append(head);
   for (const d of o.disks) {
     const tr = el('tr');
@@ -496,6 +498,12 @@ function renderStorage() {
     if (d.node) { name.style.cursor = 'pointer'; name.title = 'Show on the Connections map'; name.onclick = () => showOnMap(d.node); }
     tr.append(name, el('td', null, d.model), el('td', null, d.kind), el('td', null, d.bus.toUpperCase()), el('td', 'num', fmtBytes(d.sizeBytes)),
       el('td', 'num', d.firmware || ''), el('td', 'num', d.temperatureC != null ? Math.round(d.temperatureC) + '°C' : '—'));
+    if (health) {
+      // the drive's own counters over time: its verdict, and hover for what it found
+      const verdict = el('td', 'health ' + (d.health || 'none'), d.healthLabel || '—');
+      if (d.healthTip) verdict.title = d.healthTip;
+      tr.append(verdict, el('td', 'num', d.life || ''));
+    }
     table.append(tr);
   }
 }
@@ -551,7 +559,9 @@ function renderMeta() {
     rpm: 'Installed packages (Fedora, RHEL, openSUSE)', snap: 'Installed snaps', flatpak: 'Installed Flatpak apps', dotnet: '.NET runtimes and SDKs on this computer',
     udevadm: 'Memory slots, on systems where udev\'s cache isn\'t readable', dnf: 'Updates waiting, from dnf\'s cached metadata (Fedora, RHEL)',
     zypper: 'Updates waiting, from cached repositories (openSUSE)', pacman: 'Installed packages and updates waiting against the last sync (Arch)',
-    apk: 'Installed packages and updates waiting (Alpine)'
+    apk: 'Installed packages and updates waiting (Alpine)',
+    smartctl: 'Drive health: each drive\'s own SMART counters, read once a day (needs root; sudo boardscout --drive-health)',
+    lsblk: 'Drives, serials and mount points for drive health (util-linux)', diskutil: 'Disks, volumes and macOS\'s own SMART verdict'
   };
   for (const t of m.tools) row(t.name, `${t.path ? t.path : 'not installed'} — ${what[t.name] || ''}`);
   row('Bundled data', 'IEEE OUI registry (oui.tsv), PCI ID Repository (pci.ids), USB ID Repository (usb.ids), inside the app');
@@ -662,6 +672,7 @@ function init() {
   $('sBrowser').onchange = () => saveSetting({ openBrowser: $('sBrowser').checked });
   $('sRefresh').onchange = () => saveSetting({ refreshMs: +$('sRefresh').value });
   $('sCrawlers').onchange = () => saveSetting({ crawlers: +$('sCrawlers').value });
+  $('sDriveHealth').onchange = () => saveSetting({ driveHealth: $('sDriveHealth').checked });
   slider('sOpacity', v => ({ glassOpacity: v / 100 }));
   slider('sBlur', v => ({ glassBlur: v }));
   $('sResetGlass').onclick = () => post('shell', { type: 'settings', resetGlass: true });

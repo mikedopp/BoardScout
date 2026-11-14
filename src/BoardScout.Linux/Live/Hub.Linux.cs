@@ -112,10 +112,34 @@ internal sealed partial class Hub
         _map = map;
         Publish("connections", $"{{\"type\":\"connections\",\"data\":{LinuxConnections.ToJson(map.Snapshot)}}}");
         var plan = LinuxPlan.Build(capture, map, new CoreSample([]), null, privacy);
+        RefreshDriveHealth();
         var overview = LinuxOverview.Build(capture, map, plan, privacy, _firmware);
         PublishOverview($"{{\"type\":\"overview\",\"data\":{JsonSerializer.Serialize(overview, Json.Options)}}}");
         Publish("topology", $"{{\"type\":\"scan\",\"scan\":{LinuxOverview.ScanJson(capture, privacy, indented: false)}}}");
         if (!_payloads.ContainsKey("system")) _ = LoadSystemAsync();
+    }
+
+    private int _driveHealthRunning;
+
+    // Loads the kept drive history and, once a day, reads every drive (SMART needs root; without it the temperatures
+    // and free space still go in). When something new arrived the overview is built again.
+    private void RefreshDriveHealth()
+    {
+        if (!AppSettings.Current.DriveHealth || Interlocked.Exchange(ref _driveHealthRunning, 1) == 1) return;
+        var before = DriveHealthService.LastPass;
+        var count = DriveHealthService.Reports.Count;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await DriveHealthService.RefreshAsync(DataFolder.Root, force: false);
+                if (DriveHealthService.LastResult is { } result && DriveHealthService.LastPass != before)
+                    Log($"DRIVE HEALTH: {result.Drives.Count} drives read ({string.Join(", ", result.Drives.GroupBy(d => d.Status).Select(g => $"{g.Count()} {g.Key}"))}) in {result.Took.TotalSeconds:0.0} s.");
+            }
+            catch (Exception ex) { Log("DRIVE HEALTH: " + ex.Message); }
+            finally { Interlocked.Exchange(ref _driveHealthRunning, 0); }
+            if (DriveHealthService.LastPass != before || DriveHealthService.Reports.Count != count) PublishFromCapture();
+        });
     }
 
     private async Task LoadSystemAsync()
@@ -196,9 +220,9 @@ internal sealed partial class Hub
         agent = Agent?.Label,
         ssh = Agent is null ? SshTool.Describe() : null,
         tools = OperatingSystem.IsMacOS()
-            ? new[] { "system_profiler", "diskutil", "ioreg", "netstat", "scutil", "ssh" }.Select(n => new { name = n, path = Tools.Find(n) }).ToList()
-            : new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
-            .Select(n => new { name = n, path = Tools.Find(n) }).Where(t => t.path is not null || t.name is "iw" or "nmcli" or "bluetoothctl" or "udisksctl" or "fwupdmgr" or "systemctl").ToList()
+            ? new[] { "system_profiler", "diskutil", "ioreg", "netstat", "scutil", "ssh", "smartctl" }.Select(n => new { name = n, path = Tools.Find(n) }).ToList()
+            : new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "smartctl", "lsblk", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
+            .Select(n => new { name = n, path = Tools.Find(n) }).Where(t => t.path is not null || t.name is "iw" or "nmcli" or "bluetoothctl" or "udisksctl" or "fwupdmgr" or "systemctl" or "smartctl").ToList()
     };
 
     private static string FirmwareJson(FirmwareReport report) =>

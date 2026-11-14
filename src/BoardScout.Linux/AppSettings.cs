@@ -28,6 +28,9 @@ internal sealed class AppSettings
     /// <summary>Open the dashboard in the browser when BoardScout starts on a desktop.</summary>
     public bool OpenBrowser { get; set; } = true;
 
+    /// <summary>Read every drive's own health counters once a day and keep each reading in the data folder's DriveHealth.</summary>
+    public bool DriveHealth { get; set; } = true;
+
     /// <summary>The local port the dashboard is served on.</summary>
     public int Port { get; set; } = 8797;
 

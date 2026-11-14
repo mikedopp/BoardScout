@@ -44,6 +44,7 @@ BoardScout prints a link and opens it in your browser. Settings live in
 | Bluetooth | `system_profiler SPBluetoothDataType` |
 | Live load | Processor time from the Mach host, memory from `vm_stat`, disk traffic from `ioreg` (IOBlockStorageDriver statistics) |
 | macOS version | `sw_vers` |
+| Drive health | `smartctl` when smartmontools is installed (`brew install smartmontools`; `sudo boardscout --drive-health` for full counters), else `diskutil`'s SMART verdict, kept as a daily history |
 | What fills a drive | the storage scanner's Mac rules: `/Applications` and Homebrew are Apps, `~/Library/Caches` is Caches, `~/.Trash` is Trash, Xcode's `~/Library/Developer` is Developer |
 
 ## What it doesn't do on a Mac

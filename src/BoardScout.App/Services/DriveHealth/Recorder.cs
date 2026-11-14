@@ -17,6 +17,10 @@ public sealed class RecordOptions
     /// <summary>The app that wrote latest.json, for whoever reads it.</summary>
     public string App { get; set; } = "";
     public string Version { get; set; } = "";
+    /// <summary>Also read phones, tablets and TVs over adb: the ones plugged in, and these addresses (host:port) once each.</summary>
+    public bool ReadAndroid { get; set; }
+    public string? AdbPath { get; set; }
+    public List<string> AndroidAddresses { get; set; } = new();
 }
 
 public sealed record PassLine(string Key, string Name, string Status, string? Note, bool Saved);
@@ -44,22 +48,20 @@ public static class Recorder
         using var gate = store.TryLock();
         if (gate == null) { result.Busy = true; result.Notes.Add("Another reading is already running."); return result; }
 
-        WindowsInventory? inv = null;
-        if (OperatingSystem.IsWindows())
-        {
-            progress?.Invoke("Asking Windows about the disks");
-            inv = await WindowsInventory.ReadAsync(ct);
-            if (inv.Error != null) result.Notes.Add("Windows storage cmdlets: " + inv.Error);
-        }
+        string os = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux";
+        progress?.Invoke($"Asking {os} about the disks");
+        Inventory? inv = await Inventory.ReadAsync(ct);
+        if (inv?.Error != null) result.Notes.Add($"{inv.OsName}'s disk list: " + inv.Error);
+        string source = inv?.Source ?? "os";
         result.Elevated = inv?.Elevated ?? Environment.IsPrivilegedProcess;
         var notes = store.LoadDevices();
         string machine = Environment.MachineName;
         var found = new List<(DriveReading Reading, string? Raw)>();
-        var covered = new HashSet<int>();
+        var covered = new HashSet<Inventory.Disk>();
 
         string? exe = Smartctl.Locate(opt.SmartctlPath);
         result.Smartctl = exe;
-        if (exe == null) result.Notes.Add("smartctl not found: only Windows' own disk details were recorded.");
+        if (exe == null) result.Notes.Add($"smartctl not found: only {os}'s own disk details were recorded.");
         else
         {
             progress?.Invoke("Finding drives");
@@ -68,15 +70,14 @@ public static class Recorder
             foreach (var dev in devices)
             {
                 ct.ThrowIfCancellationRequested();
-                int? diskNo = dev.DiskNumber;
-                var win = inv?.Disks.FirstOrDefault(d => d.Number == diskNo);
-                if (diskNo is int n) covered.Add(n);
+                var win = inv?.Match(dev);
+                if (win != null) covered.Add(win);
                 var known = KnownFor(notes, win);
                 try
                 {
                 if (dev.OpenError != null)
                 {
-                    var r0 = FromWindows(win, started, dev.NeedsAdmin ? "needs-admin" : "error", dev.NeedsAdmin ? "Needs admin rights to read." : dev.OpenError);
+                    var r0 = FromOs(win, source, started, dev.NeedsAdmin ? "needs-admin" : "error", dev.NeedsAdmin ? NeedsAdminNote : dev.OpenError);
                     r0.Device = dev.Name; r0.DeviceType = dev.Type; r0.Protocol = dev.Protocol;
                     r0.Key = known.Key ?? r0.Key;
                     found.Add((r0, null));
@@ -93,7 +94,7 @@ public static class Recorder
                 string? raw = run.Output;
                 if (run.TimedOut || string.IsNullOrWhiteSpace(run.Output))
                 {
-                    r = FromWindows(win, started, "error", run.TimedOut ? "smartctl timed out" : "smartctl returned nothing");
+                    r = FromOs(win, source, started, "error", run.TimedOut ? "smartctl timed out" : "smartctl returned nothing");
                     raw = null;
                 }
                 else
@@ -101,7 +102,7 @@ public static class Recorder
                     try { r = Smartctl.Parse(run.Output, started); }
                     catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
                     {
-                        r = FromWindows(win, started, "error", "smartctl's reply couldn't be read: " + ex.Message);
+                        r = FromOs(win, source, started, "error", "smartctl's reply couldn't be read: " + ex.Message);
                         raw = null;
                     }
                 }
@@ -139,7 +140,7 @@ public static class Recorder
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     // one drive that can't be read never costs the others their reading
-                    var bad = FromWindows(win, started, "error", ex.Message);
+                    var bad = FromOs(win, source, started, "error", ex.Message);
                     bad.Device = dev.Name;
                     bad.Key = known.Key ?? bad.Key;
                     found.Add((bad, null));
@@ -147,25 +148,30 @@ public static class Recorder
             }
         }
 
-        // disks Windows sees that smartctl didn't list
+        // disks the OS sees that smartctl didn't list
         if (inv != null)
-            foreach (var win in inv.Disks.Where(d => !covered.Contains(d.Number)))
+            foreach (var win in inv.Disks.Where(d => !covered.Contains(d)))
             {
                 string status = win.HasCounters ? "partial" : exe == null ? "no-tool" : result.Elevated ? "no-smart" : "needs-admin";
+                string counters = source == "windows" ? "hours, temperature, start/stops" : "temperature";
                 string? note = exe == null
-                    ? "smartctl isn't installed" + (win.HasCounters ? ", so only Windows' own counters (hours, temperature, start/stops) are known." : ".")
-                    : win.HasCounters ? null : "smartctl didn't list this disk.";
-                var r = FromWindows(win, started, status, note);
+                    ? "smartctl isn't installed" + (win.HasCounters ? $", so only {inv.OsName}'s own counters ({counters}) are known." : ".")
+                    : !win.HasCounters ? "smartctl didn't list this disk."
+                    : source == "windows" ? null : $"smartctl didn't list this disk; only the temperature {inv.OsName} shows is known.";
+                var r = FromOs(win, source, started, status, note);
                 r.Key = KnownFor(notes, win).Key ?? r.Key;
                 found.Add((r, null));
             }
 
-        // letters and volumes
+        // phones, tablets and TVs over adb
         var volumes = new List<VolumeReading>();
+        if (opt.ReadAndroid) await ReadAndroidAsync(opt, started, found, volumes, result, progress, ct);
+
+        // letters (mount points elsewhere) and volumes
         if (inv != null)
         {
             foreach (var (r, _) in found)
-                if (r.DiskNumber is int d)
+                if (r.DiskNumber is int d && r.Source != "adb")
                 {
                     var letters = inv.Volumes.Where(v => v.Disk == d && v.Letter.Length > 0).Select(v => v.Letter).OrderBy(x => x).ToArray();
                     if (letters.Length > 0) r.Letters = letters;
@@ -193,12 +199,13 @@ public static class Recorder
             bool full = Analysis.IsFull(r);
             // without admin rights, a USB drive that an admin pass already reads in full adds only noise
             bool skip = r.Status is "needs-admin" && note?.LastFullReading != null;
+            note ??= new Store.DeviceNote();
+            if (r.Source == "adb") AndroidDevices.Accumulate(r, note);
             if (!skip)
             {
                 store.Append(r);
                 if (raw != null && r.Status != "asleep") store.AppendRaw(r.Key, started, raw);
             }
-            note ??= new Store.DeviceNote();
             if (full)
             {
                 note.LastFullReading = started;
@@ -224,7 +231,7 @@ public static class Recorder
         (r.Model ?? "Unknown drive") + (r.Letters is { Length: > 0 } l ? " (" + string.Join(" ", l) + ")" : "");
 
     /// <summary>The key and notes of a drive seen before through this Windows disk (matched by Windows' serial).</summary>
-    internal static (string? Key, Store.DeviceNote? Note) KnownFor(Dictionary<string, Store.DeviceNote> notes, WindowsInventory.Disk? win)
+    internal static (string? Key, Store.DeviceNote? Note) KnownFor(Dictionary<string, Store.DeviceNote> notes, Inventory.Disk? win)
     {
         if (win == null) return (null, null);
         // a junk serial ("0123456789ABCDEF", all zeros) shared by two enclosures must never merge their drives; such a
@@ -248,24 +255,89 @@ public static class Recorder
     internal static bool SameSize(long? a, long? b) =>
         a is long x && b is long y && x > 0 && y > 0 && Math.Abs(x - y) <= Math.Max(x, y) / 100;
 
-    static string? UsableWindowsSerial(WindowsInventory.Disk? win) =>
+    static string? UsableWindowsSerial(Inventory.Disk? win) =>
         win != null && Store.UsableSerial(win.Serial) ? win.Serial!.Trim() : null;
 
     const string AdapterNote = "From Windows' own counters: the USB adapter doesn't pass SMART readings through, so only hours, temperature and start/stop counts are known.";
 
-    static DriveReading FromWindows(WindowsInventory.Disk? win, DateTimeOffset at, string status, string? note)
+    static string NeedsAdminNote => OperatingSystem.IsWindows() ? "Needs admin rights to read." : "Needs root to read (run the reading with sudo).";
+
+    /// <summary>A reading from what the OS knows alone (source: windows, linux or macos).</summary>
+    static DriveReading FromOs(Inventory.Disk? win, string source, DateTimeOffset at, string status, string? note)
     {
-        var r = new DriveReading { At = at, Source = "windows", Status = status, Note = note };
+        var r = new DriveReading { At = at, Source = source, Status = status, Note = note };
         Merge(r, win);
         r.Model = win?.Name;
         r.Capacity = win?.Size;
+        r.Device ??= win?.Path;
         r.Key = Store.KeyFor(win?.Name ?? "disk", win?.Serial, win?.Size);
-        if (status == "partial" && note == null) r.Note = AdapterNote;
+        if (status == "partial" && note == null && source == "windows") r.Note = AdapterNote;
         return r;
     }
 
+    static async Task ReadAndroidAsync(RecordOptions opt, DateTimeOffset started, List<(DriveReading Reading, string? Raw)> found,
+                                       List<VolumeReading> volumes, RecordResult result, Action<string>? progress, CancellationToken ct)
+    {
+        string? adb = AndroidDevices.LocateAdb(opt.AdbPath);
+        if (adb == null) { result.Notes.Add("adb not found: phones, tablets and TVs weren't read."); return; }
+        foreach (var address in opt.AndroidAddresses.Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).Distinct())
+        {
+            progress?.Invoke("Connecting to " + address);
+            if (!await AndroidDevices.ConnectAsync(adb, address, ct)) result.Notes.Add($"{address}: no answer over adb (off, asleep or not allowing debugging).");
+        }
+        foreach (var dev in await AndroidDevices.ListAsync(adb, ct))
+        {
+            string who = dev.Model ?? dev.Serial;
+            if (dev.State != "device")
+            {
+                result.Notes.Add($"{who}: adb says {dev.State}" + (dev.State == "unauthorized" ? " (allow this computer on the device's screen)." : "."));
+                continue;
+            }
+            progress?.Invoke("Reading " + who);
+            try
+            {
+                string? output = await AndroidDevices.ProbeAsync(adb, dev.Serial, ct);
+                if (output == null) { result.Notes.Add($"{who}: no reply over adb."); continue; }
+                var probe = AndroidDevices.ParseProbe(output, started);
+                // two connections to one device (USB and Wi-Fi) are one reading
+                if (found.Any(f => f.Reading.Key == probe.Reading.Key)) continue;
+                found.Add((probe.Reading, null));
+                volumes.AddRange(probe.Volumes);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { result.Notes.Add($"{who}: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>
+    /// A reading a device's own app sent to the hub. Waits briefly for a pass that holds the store; false when it
+    /// stays busy (the app retries later).
+    /// </summary>
+    public static async Task<bool> RecordAppAsync(Store store, RecordOptions opt, AndroidDevices.Probe probe, CancellationToken ct = default)
+    {
+        FileStream? gate = null;
+        for (int i = 0; i < 10 && (gate = store.TryLock()) == null; i++) await Task.Delay(500, ct);
+        if (gate == null) return false;
+        using (gate)
+        {
+            var notes = store.LoadDevices();
+            var r = probe.Reading;
+            notes.TryGetValue(r.Key, out var note);
+            note ??= new Store.DeviceNote();
+            AndroidDevices.Accumulate(r, note);
+            store.Append(r);
+            store.AppendVolumes(probe.Volumes);
+            if (Analysis.IsFull(r)) note.LastFullReading = r.At;
+            note.Capacity = r.Capacity ?? note.Capacity;
+            notes[r.Key] = note;
+            store.SaveDevices(notes);
+            try { WriteLatest(store, opt, null); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* refreshed on the next pass */ }
+        }
+        return true;
+    }
+
     /// <summary>Windows knows the bus, the media type, its own health verdict and, with admin rights, a few counters.</summary>
-    static void Merge(DriveReading r, WindowsInventory.Disk? win)
+    static void Merge(DriveReading r, Inventory.Disk? win)
     {
         if (win == null) return;
         r.DiskNumber = win.Number;
@@ -281,7 +353,8 @@ public static class Recorder
             r.StartStops ??= win.StartStops;
             r.LoadCycles ??= win.LoadCycles;
             if (win.ReadErrors is long re && re > 0) r.Uncorrectable ??= re;
-            if (r.Status == "no-smart")
+            // Windows' counters stand in for SMART; a temperature alone (Linux) doesn't
+            if (r.Status == "no-smart" && OperatingSystem.IsWindows())
             {
                 r.Status = "partial";
                 r.Source = "windows";

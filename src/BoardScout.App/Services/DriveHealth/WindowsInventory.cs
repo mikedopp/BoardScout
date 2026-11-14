@@ -14,47 +14,8 @@ namespace BoardScout.DriveHealth;
 /// Get-Partition) plus, with admin rights, Windows' own reliability counters, which answer for some USB drives
 /// that smartctl can't reach. One PowerShell call per pass.
 /// </summary>
-public sealed class WindowsInventory
+public static class WindowsInventory
 {
-    public sealed class Disk
-    {
-        public int Number { get; set; }
-        public string? Name { get; set; }
-        public string? Serial { get; set; }
-        public string? Media { get; set; }
-        public string? Bus { get; set; }
-        public string? Health { get; set; }
-        public string? Status { get; set; }
-        public long Size { get; set; }
-        // reliability counters (admin only); null when Windows doesn't have them for this disk
-        public int? Temp { get; set; }
-        public int? TempMax { get; set; }
-        public long? PowerOnHours { get; set; }
-        public int? Wear { get; set; }
-        public long? ReadErrors { get; set; }
-        public long? WriteErrors { get; set; }
-        public long? StartStops { get; set; }
-        public long? LoadCycles { get; set; }
-        public bool HasCounters { get; set; }
-    }
-
-    public sealed class Volume
-    {
-        public string Letter { get; set; } = "";
-        public string? Label { get; set; }
-        public string? FileSystem { get; set; }
-        public long Size { get; set; }
-        public long Free { get; set; }
-        public string? Health { get; set; }
-        public string? Status { get; set; }
-        public int Disk { get; set; } = -1;
-    }
-
-    public List<Disk> Disks { get; } = new();
-    public List<Volume> Volumes { get; } = new();
-    public bool Elevated { get; set; }
-    public string? Error { get; set; }
-
     internal const string Script = @"
 $ErrorActionPreference = 'SilentlyContinue'
 $disks = @(Get-PhysicalDisk | ForEach-Object { [pscustomobject]@{ n = [int]$_.DeviceId; name = $_.FriendlyName; serial = ""$($_.SerialNumber)"".Trim(); media = ""$($_.MediaType)""; bus = ""$($_.BusType)""; health = ""$($_.HealthStatus)""; status = ($_.OperationalStatus -join ', '); size = [int64]$_.Size } })
@@ -68,9 +29,9 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 [pscustomobject]@{ disks = $disks; reliability = $rel; volumes = $vols; elevated = $admin } | ConvertTo-Json -Depth 4 -Compress
 ";
 
-    public static async Task<WindowsInventory> ReadAsync(CancellationToken ct = default)
+    public static async Task<Inventory> ReadAsync(CancellationToken ct = default)
     {
-        var inv = new WindowsInventory();
+        var inv = new Inventory { Source = "windows" };
         try
         {
             var psi = new ProcessStartInfo("powershell.exe")
@@ -98,14 +59,15 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         return inv;
     }
 
-    public static void Parse(string json, WindowsInventory inv)
+    public static void Parse(string json, Inventory inv)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
+        inv.Source = "windows";
         inv.Elevated = root.TryGetProperty("elevated", out var el) && el.ValueKind == JsonValueKind.True;
         foreach (var d in Items(root, "disks"))
         {
-            inv.Disks.Add(new Disk
+            inv.Disks.Add(new Inventory.Disk
             {
                 Number = Smartctl.Int(d, "n") ?? -1,
                 Name = Smartctl.Str(d, "name"),
@@ -134,7 +96,7 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         }
         foreach (var v in Items(root, "volumes"))
         {
-            inv.Volumes.Add(new Volume
+            inv.Volumes.Add(new Inventory.Volume
             {
                 Letter = Smartctl.Str(v, "letter") ?? "",
                 Label = Blank(Smartctl.Str(v, "label")),
@@ -148,7 +110,7 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         }
     }
 
-    static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    internal static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     /// <summary>ConvertTo-Json writes a one-item array as a bare object; take either.</summary>
     static IEnumerable<JsonElement> Items(JsonElement root, string name)

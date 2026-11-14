@@ -62,6 +62,9 @@
     <Compile Include="..\BoardScout.App\Services\StorageFill.cs" Link="Shared\Services\StorageFill.cs" />
     <Compile Include="..\BoardScout.App\Services\StorageScan\Scanner.cs" Link="Shared\Services\StorageScan\Scanner.cs" />
     <Compile Include="..\BoardScout.App\Web\Hub.Storage.cs" Link="Shared\Web\Hub.Storage.cs" />
+    <!-- Storage › drive health: every drive's own counters, kept as a daily history (the same engine as Windows) -->
+    <Compile Include="..\BoardScout.App\Services\DriveHealth\*.cs" LinkBase="Shared\Services\DriveHealth" />
+    <Compile Include="..\BoardScout.App\Services\DriveHealthService.cs" Link="Shared\Services\DriveHealthService.cs" />
   </ItemGroup>
 
   <!-- The browser dashboard's server and engine (Live\Hub.Linux.cs is this edition's half), and the Machines

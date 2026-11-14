@@ -304,8 +304,12 @@ internal static partial class WindowsOverview
             var name = node?.Name ?? $"{facts.Vendor} {facts.Product}".Trim();
             var bus = facts.Bus switch { 17 => "nvme", 11 => "sata", 7 => "usb", 12 => "sd", 8 => "raid", 10 => "sas", 14 => "virtual", _ => node?.Link?.Bus ?? "other" };
             var spinning = facts.Spinning ?? DriveModels.SpinningFromModelNumber(facts.Vendor, facts.Product);
+            var health = DriveHealthService.ForDiskNumber(number);
             rows.Add(new DiskRow($"Disk {number}", privacy ? Privacy.Scrub(name) : name, bus, facts.SizeBytes ?? 0,
-                spinning == true ? "HDD" : bus == "nvme" ? "NVMe SSD" : spinning == false ? "SSD" : "Disk", facts.Firmware, facts.TemperatureC, node?.Id));
+                spinning == true ? "HDD" : bus == "nvme" ? "NVMe SSD" : spinning == false ? "SSD" : "Disk", facts.Firmware, facts.TemperatureC, node?.Id,
+                health?.Verdict, health is null ? null : DriveHealthService.VerdictLabel(health.Verdict),
+                health is null ? null : privacy ? Privacy.Scrub(DriveHealthService.Tooltip(health)) : DriveHealthService.Tooltip(health),
+                health is null ? null : DriveHealthService.LifeLine(health)));
         }
         return rows;
     }

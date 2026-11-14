@@ -184,6 +184,11 @@ table.grid td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.04
 table.grid tr:hover td { background: rgba(61,158,255,.05); }
 table.grid .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tone-good { color: #6ee7b7; } .tone-warn { color: var(--warn); } .tone-info { color: var(--muted); } .tone-bad { color: #fca5a5; }
+/* Storage › drive health verdicts (the drive's own counters over time) */
+table.grid td.health { white-space: nowrap; font-weight: 600; }
+table.grid td.health[title] { cursor: help; text-decoration: underline dotted rgba(255,255,255,.25); text-underline-offset: 3px; }
+td.health.healthy { color: #6ee7b7; } td.health.watch { color: var(--muted); } td.health.attention { color: var(--warn); }
+td.health.act { color: #fca5a5; } td.health.none, td.health.unknown { color: var(--faint); font-weight: 500; }
 .vols { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .vol { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); }
 .vol b { display: block; font-size: 14px; overflow-wrap: anywhere; }

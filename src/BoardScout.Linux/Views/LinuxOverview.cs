@@ -59,9 +59,16 @@ internal static class LinuxOverview
                 v.FileSystem, v.SizeBytes, v.FreeBytes,
                 v.SizeBytes > 0 ? Math.Round((v.SizeBytes - v.FreeBytes) * 100d / v.SizeBytes, 1) : 0,
                 string.Join(", ", v.Disks), v.Lvm, v.ReadOnly)).ToList(),
-            capture.Disks.Select(d => new DiskRow(d.Name, privacy ? Privacy.Scrub(d.DisplayName) : d.DisplayName, d.Transport, d.SizeBytes,
-                d.Optical ? "Optical" : d.DriveType().Spinning switch { true => "HDD", false => d.Nvme ? "NVMe SSD" : "SSD", _ => "Disk" },
-                d.Firmware, d.TemperatureC, LinuxConnections.Walk(map.Snapshot.Root).FirstOrDefault(n => n.Disk == d.Index)?.Id)).ToList(),
+            capture.Disks.Select(d =>
+            {
+                var health = d.Optical ? null : DriveHealthService.ForDevice(d.Name);
+                return new DiskRow(d.Name, privacy ? Privacy.Scrub(d.DisplayName) : d.DisplayName, d.Transport, d.SizeBytes,
+                    d.Optical ? "Optical" : d.DriveType().Spinning switch { true => "HDD", false => d.Nvme ? "NVMe SSD" : "SSD", _ => "Disk" },
+                    d.Firmware, d.TemperatureC, LinuxConnections.Walk(map.Snapshot.Root).FirstOrDefault(n => n.Disk == d.Index)?.Id,
+                    health?.Verdict, health is null ? null : DriveHealthService.VerdictLabel(health.Verdict),
+                    health is null ? null : privacy ? Privacy.Scrub(DriveHealthService.Tooltip(health)) : DriveHealthService.Tooltip(health),
+                    health is null ? null : DriveHealthService.LifeLine(health));
+            }).ToList(),
             Suggestions(capture, plan, firmware),
             Math.Round(total / 1_073_741_824d, 1),
             capture.Pci.Count(d => !d.IsBridge && d.BaseClass != 0x06) + capture.UsbDevices.Count(d => !d.IsRootHub) + capture.Disks.Count,
@@ -236,6 +243,12 @@ internal static class LinuxOverview
     private static List<Suggestion> Suggestions(HardwareCapture capture, OptimizationPlan plan, Live.FirmwareReport? firmware)
     {
         var list = new List<Suggestion>();
+        // drive health: the drives' own counters, from the kept daily readings
+        foreach (var p in DriveHealthService.Problems())
+            list.Add(new Suggestion("warning", p.Title, p.Detail, p.Advice, "Drive health"));
+        if (DriveHealthService.AllLocked)
+            list.Add(new Suggestion("info", "Drive health needs root", "Without root, only each drive's temperature and free space are recorded.",
+                "Run sudo boardscout --drive-health once; it adds to the history this dashboard shows.", "Drive health"));
         foreach (var update in firmware?.Updates ?? [])
         {
             var system = update.Device.Contains("System Firmware", StringComparison.OrdinalIgnoreCase);

@@ -77,6 +77,24 @@ public sealed class DriveReading
     public bool? SelfTestPassed { get; set; }
     public long? SelfTestHours { get; set; }
     public List<AtaAttribute>? Attributes { get; set; }
+
+    // flash in phones, tablets and TVs (eMMC or UFS), read over adb
+    /// <summary>
+    /// Life used as the flash chip itself estimates it, in 10% steps: 1 = 0-10% used ... 10 = 90-100%, 11 = past its
+    /// rated life. A and B are two kinds of memory cells in the chip; the worse one counts.
+    /// </summary>
+    public int? FlashLifeA { get; set; }
+    public int? FlashLifeB { get; set; }
+    /// <summary>The chip's spare-block level: 1 normal, 2 warning (80% of its reserve used), 3 urgent.</summary>
+    public int? FlashPreEol { get; set; }
+    /// <summary>
+    /// Bytes written since the device last started, and which start that was (Linux boot id). A device keeps no
+    /// lifetime total, so <see cref="BytesWritten"/> is added up from these, starting at the first reading.
+    /// </summary>
+    public long? WrittenSinceBoot { get; set; }
+    public string? BootId { get; set; }
+    /// <summary>Android version, for devices read over adb.</summary>
+    public string? OsVersion { get; set; }
 }
 
 public sealed class AtaAttribute

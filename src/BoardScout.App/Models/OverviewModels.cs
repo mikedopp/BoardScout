@@ -25,7 +25,8 @@ internal sealed record DriverRow(string Device, string Category, string Driver, 
 
 internal sealed record VolumeRow(string MountPoint, string? Label, string FileSystem, long SizeBytes, long FreeBytes, double UsedPercent, string Disks, bool Lvm, bool ReadOnly);
 
-internal sealed record DiskRow(string Name, string Model, string Bus, long SizeBytes, string Kind, string? Firmware, double? TemperatureC, string? Node);
+internal sealed record DiskRow(string Name, string Model, string Bus, long SizeBytes, string Kind, string? Firmware, double? TemperatureC, string? Node,
+    string? Health = null, string? HealthLabel = null, string? HealthTip = null, string? Life = null);
 
 internal sealed record Suggestion(string Severity, string Title, string Detail, string? Action, string Category);
 

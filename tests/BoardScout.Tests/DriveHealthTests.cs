@@ -70,10 +70,10 @@ public class DriveHealthTests
             Assert.Contains("1,272 h on", DriveHealthService.LifeLine(report));
             Assert.Contains("10 readings since", DriveHealthService.Tooltip(report));
 
-            var suggestions = DriveHealthService.Suggestions().ToList();
-            Assert.NotEmpty(suggestions);
-            Assert.All(suggestions, s => Assert.Equal("Drive health", s.Category));
-            Assert.Contains(suggestions, s => s.Severity == SuggestionSeverity.Critical && s.Title.StartsWith("Example NVMe 1TB (X:)", StringComparison.Ordinal));
+            var problems = DriveHealthService.Problems().ToList();
+            Assert.NotEmpty(problems);
+            Assert.Contains(problems, p => p.Finding.Severity == "critical" && p.Title.StartsWith("Example NVMe 1TB (X:)", StringComparison.Ordinal));
+            Assert.DoesNotContain(problems, p => p.Finding.Code == "vol-full");
         }
         finally
         {

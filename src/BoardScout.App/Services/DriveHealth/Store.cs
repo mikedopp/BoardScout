@@ -126,6 +126,10 @@ public sealed class Store
         public DateTimeOffset? LastFullReading { get; set; }
         /// <summary>Size in bytes: with the disk number, it links a drive whose USB adapter reports a junk serial.</summary>
         public long? Capacity { get; set; }
+        /// <summary>Devices read over adb keep no lifetime write total: the running total, and the boot it was last counted in.</summary>
+        public long? WrittenTotal { get; set; }
+        public long? WrittenSinceBoot { get; set; }
+        public string? BootId { get; set; }
     }
 
     public Dictionary<string, DeviceNote> LoadDevices()

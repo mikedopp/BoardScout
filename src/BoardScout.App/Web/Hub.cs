@@ -153,6 +153,7 @@ internal sealed partial class Hub
             ["privacy"] = s.PrivacyMode,
             ["crawlers"] = s.Crawlers,
             ["refreshMs"] = s.TelemetryIntervalMs,
+            ["driveHealth"] = s.DriveHealth,
             ["agent"] = Current.Agent is not null,
             ["remoteName"] = Current.Agent?.Label
         };
@@ -176,6 +177,7 @@ internal sealed partial class Hub
             if (message.TryGetProperty("privacy", out var privacy) && privacy.ValueKind is JsonValueKind.True or JsonValueKind.False) s.PrivacyMode = privacy.GetBoolean();
             if (message.TryGetProperty("crawlers", out var crawlers) && crawlers.TryGetInt32(out var c)) s.Crawlers = c;
             if (message.TryGetProperty("refreshMs", out var refresh) && refresh.TryGetInt32(out var r)) s.TelemetryIntervalMs = r;
+            if (message.TryGetProperty("driveHealth", out var health) && health.ValueKind is JsonValueKind.True or JsonValueKind.False) s.DriveHealth = health.GetBoolean();
             ApplyPlatformSettings(s, message);
         });
         if (message.TryGetProperty("resetGlass", out var reset) && reset.ValueKind == JsonValueKind.True) AppSettings.ResetGlass();

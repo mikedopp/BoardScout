@@ -140,6 +140,19 @@ As root (`sudo boardscout`), the power table adds:
 - **NVMe power states**: each drive's own idle, busy, and sleep watts from its Identify data, asked through
   `/dev/nvmeN`, which only root may open. Identify only reads; it changes nothing on the drive.
 
+## Drive health
+
+Once a day the dashboard reads every drive's own counters (when smartmontools is installed: `sudo apt install
+smartmontools`) and keeps each reading in `DriveHealth` in the data folder, so wear, data written, and damage counters
+that grow show as trends. Storage › Drives adds **Health** (Healthy, Watch, Needs a look, Act now; hover for the
+findings) and **Life** (hours on, wear, written, written per day, temperature).
+
+Linux lets only root read a drive's SMART counters. As an ordinary user the dashboard records each drive's temperature
+and free space and says "Needs root to read". Run `sudo boardscout --drive-health` once, or daily from a root cron job or
+systemd timer: it reads everything, writes into your own data folder (not root's), hands the files back to you, and
+prints each drive's verdict. The reads are read-only (no self-test is started, nothing is written to a drive) and a
+sleeping disk is left asleep.
+
 ## Differences from Windows
 
 - **Interrupts**: Linux shows every user how many interrupts each device raises, so the plan's
@@ -176,6 +189,7 @@ key printed at start. Settings, the log, and the running dashboard's address liv
     boardscout --scan-json            the hardware scan (what Export saves)
     boardscout --selftest DIR         all of the above into DIR, for checking a machine over SSH
     boardscout --summary-json         this machine's one-line health summary
+    sudo boardscout --drive-health    read every drive's health now (SMART needs root) and print each verdict
     boardscout --machines             the machines on the Machines tab
     boardscout --check NAME|all       a machine's health summary, over SSH (--trust, --key FILE)
     boardscout --connect NAME         open a machine's dashboard through an SSH tunnel; Ctrl+C disconnects

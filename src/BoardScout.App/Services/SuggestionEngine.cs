@@ -9,7 +9,8 @@ public static class SuggestionEngine
         var suggestions = new List<EfficiencySuggestion>();
         AddMemorySuggestions(scan, suggestions);
         AddStorageSuggestions(scan, suggestions);
-        suggestions.AddRange(DriveHealthService.Suggestions());
+        suggestions.AddRange(DriveHealthService.Problems().Select(p => new EfficiencySuggestion(
+            p.Finding.Severity == "critical" ? SuggestionSeverity.Critical : SuggestionSeverity.Warning, p.Title, p.Detail, p.Advice, "Drive health")));
         AddDeviceSuggestions(scan, suggestions);
         AddFirmwareSuggestions(scan, suggestions);
         AddDriverSuggestions(scan, report, suggestions);

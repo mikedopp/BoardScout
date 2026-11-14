@@ -71,6 +71,8 @@ public static class Analysis
     /// </summary>
     public static string DamagedFilesHint { get; set; } = "";
 
+    static string S(long n) => n == 1 ? "" : "s";
+
     static string WithHint(string advice) =>
         string.IsNullOrWhiteSpace(DamagedFilesHint) ? advice : advice + " " + DamagedFilesHint.Trim();
 
@@ -125,6 +127,7 @@ public static class Analysis
             e.Reallocated ??= p.Reallocated; e.Pending ??= p.Pending; e.Uncorrectable ??= p.Uncorrectable; e.CrcErrors ??= p.CrcErrors;
             if (e.SelfTest == null && p.SelfTest != null) { e.SelfTest = p.SelfTest; e.SelfTestPassed = p.SelfTestPassed; e.SelfTestHours = p.SelfTestHours; }
             e.Attributes ??= p.Attributes;
+            e.FlashLifeA ??= p.FlashLifeA; e.FlashLifeB ??= p.FlashLifeB; e.FlashPreEol ??= p.FlashPreEol;
         }
         return e;
     }
@@ -225,9 +228,11 @@ public static class Analysis
         if (L.PercentUsed is int used)
         {
             string pace = rep.Rates.WearOutYear is int y ? $" At its pace so far it reaches 100% around {y}." : "";
-            if (used >= 100) f.Add(F("critical", "worn-out", "Past its rated life", $"{used}% of its rated write life is used.{pace}", "It may keep working, but treat it as a drive that can stop any day: keep a copy of everything on it."));
-            else if (used >= 90) f.Add(F("warn", "wear-high", $"{used}% of its write life used", $"The maker's rated write life is nearly used up.{pace}", "Plan its replacement."));
-            else if (used >= 70) f.Add(F("watch", "wear", $"{used}% of its write life used", "Well into its rated write life." + pace));
+            // a phone's or TV's flash chip estimates its life in 10% steps: 70 means 70-80%
+            string share = L.FlashLifeA != null || L.FlashLifeB != null ? (used >= 100 ? "100%" : $"{used}-{used + 10}%") : $"{used}%";
+            if (used >= 100) f.Add(F("critical", "worn-out", "Past its rated life", $"{share} of its rated write life is used.{pace}", "It may keep working, but treat it as a drive that can stop any day: keep a copy of everything on it."));
+            else if (used >= 90) f.Add(F("warn", "wear-high", $"{share} of its write life used", $"The maker's rated write life is nearly used up.{pace}", "Plan its replacement."));
+            else if (used >= 70) f.Add(F("watch", "wear", $"{share} of its write life used", "Well into its rated write life." + pace));
             else if (rep.Rates.WearOutYear is int yy && yy - now.Year < 3)
                 f.Add(F("watch", "wear-fast", "Wearing fast", $"{used}% used, rising {rep.Rates.WearPerYear:0.#} points a year: about 100% around {yy}.", "Check what writes so much to it.", "trend"));
         }
@@ -237,19 +242,25 @@ public static class Analysis
             else if (sp < 100) f.Add(F(sp - st < 20 ? "warn" : "watch", "spare", $"Using its spare blocks ({sp}% left)", $"It has replaced worn-out blocks from its reserve; its limit is {st}%."));
         }
 
+        // flash in phones, tablets and TVs: the chip's own spare-block level (pre-EOL)
+        if (L.FlashPreEol is int eol && eol >= 2)
+            f.Add(eol >= 3
+                ? F("critical", "flash-eol", "Its storage chip is nearly out of spare blocks", "The flash reports its reserve as urgent (pre-EOL level 3).", "Copy anything you need off it now: the device may slow down, turn read-only or stop starting.")
+                : F("warn", "flash-eol", "Its storage chip has used most of its spare blocks", "The flash reports 80% of its reserve used (pre-EOL level 2).", "Back up the device and plan its replacement."));
+
         // damage counters
         if (L.MediaErrors is long me && me > 0)
-            f.Add(F("warn", "media-errors", $"{me:N0} data integrity errors", "The drive found data it couldn't read back correctly (NVMe media errors).", "Back up now; if the number grows, replace it."));
+            f.Add(F("warn", "media-errors", $"{me:N0} data integrity error{S(me)}", "The drive found data it couldn't read back correctly (NVMe media errors).", "Back up now; if the number grows, replace it."));
         if (L.Pending is long pe && pe > 0)
-            f.Add(F("warn", "pending", $"{pe:N0} sectors it couldn't read", "Sectors waiting to be re-tested or replaced (pending). Files sitting on them may already be damaged.", WithHint("Back up now.")));
+            f.Add(F("warn", "pending", $"{pe:N0} sector{S(pe)} it couldn't read", "Sectors waiting to be re-tested or replaced (pending). Files sitting on them may already be damaged.", WithHint("Back up now.")));
         if (L.Uncorrectable is long un && un > 0)
-            f.Add(F("warn", "uncorrectable", $"{un:N0} uncorrectable errors", "Reads the drive could not correct, over its life.", "Back up now and watch whether the number grows."));
+            f.Add(F("warn", "uncorrectable", $"{un:N0} uncorrectable error{S(un)}", "Reads the drive could not correct, over its life.", "Back up now and watch whether the number grows."));
         if (L.Reallocated is long re && re > 0)
-            f.Add(F(re >= 100 ? "warn" : "watch", "reallocated", $"{re:N0} sectors replaced", "The drive retired bad areas and moved their data to spares.", re >= 100 ? "Many replaced sectors: back up and plan a replacement." : "A few are normal for an old drive; what matters is whether the number grows."));
+            f.Add(F(re >= 100 ? "warn" : "watch", "reallocated", $"{re:N0} sector{S(re)} replaced", "The drive retired bad areas and moved their data to spares.", re >= 100 ? "Many replaced sectors: back up and plan a replacement." : "A few are normal for an old drive; what matters is whether the number grows."));
         if (L.AtaErrors is long ae && ae > 0)
-            f.Add(F("watch", "ata-errors", $"{ae:N0} errors in the drive's error log", "Commands that failed inside the drive, over its life.", "If the number grows, back up and check the cable or adapter."));
+            f.Add(F("watch", "ata-errors", $"{ae:N0} error{S(ae)} in the drive's error log", "Commands that failed inside the drive, over its life.", "If the number grows, back up and check the cable or adapter."));
         if (L.CrcErrors is long crc && crc > 0)
-            f.Add(F("info", "crc", $"{crc:N0} cable errors over its life", "Data garbled between the drive and the PC: a cable, connector or USB adapter problem, not the disk itself.", "Only matters if it keeps growing."));
+            f.Add(F("info", "crc", $"{crc:N0} cable error{S(crc)} over its life", "Data garbled between the drive and the PC: a cable, connector or USB adapter problem, not the disk itself.", "Only matters if it keeps growing."));
         if (L.ErrorLogEntries is long el && el > 0 && (L.MediaErrors ?? 0) == 0)
             f.Add(F("info", "error-log", $"{el:N0} entries in the NVMe error log", "With no media errors, these are usually commands the drive turned down (Windows asks for features some drives don't support), not damage."));
 
@@ -276,8 +287,8 @@ public static class Analysis
             if (us > pc)
                 f.Add(F("info", "retract-count", $"Its retract counter ({us:N0}) is above its power cycles ({pc:N0})",
                     "On this drive the counter also counts head retracts that aren't power losses, so it can't say how many power-offs were unsafe."));
-            else if (share >= 0.5) f.Add(F("warn", "unsafe-power", $"{us:N0} of {pc:N0} power-offs were unsafe", $"{share:P0} of the times it lost power were {what}: unplugged without ejecting, or an enclosure that cuts power before the drive finishes.{link}", "Eject it before unplugging. If you already do, the enclosure or hub may be cutting power: try another one."));
-            else if (share >= 0.15) f.Add(F("watch", "unsafe-power", $"{us:N0} of {pc:N0} power-offs were unsafe", $"{share:P0} of power-offs were {what}.{link}", "Eject it before unplugging."));
+            else if (share >= 0.5) f.Add(F("warn", "unsafe-power", $"{us:N0} of {pc:N0} power-offs were unsafe", $"{Math.Round(share * 100):0}% of the times it lost power were {what}: unplugged without ejecting, or an enclosure that cuts power before the drive finishes.{link}", "Eject it before unplugging. If you already do, the enclosure or hub may be cutting power: try another one."));
+            else if (share >= 0.15) f.Add(F("watch", "unsafe-power", $"{us:N0} of {pc:N0} power-offs were unsafe", $"{Math.Round(share * 100):0}% of power-offs were {what}.{link}", "Eject it before unplugging."));
         }
         if (hdd && L.LoadCycles is long lc)
         {
