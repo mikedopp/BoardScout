@@ -30,6 +30,9 @@ public sealed class VolumeReport
     public string? Health { get; set; }
     public string? Status { get; set; }
     public DateTimeOffset At { get; set; }
+    /// <summary>False when a newer pass read this volume's drive and the volume wasn't in it (removed, renamed, or a
+    /// mount the reading should never have counted); it keeps its history, but says nothing new.</summary>
+    public bool Present { get; set; } = true;
     public double? FreePerDay { get; set; }
     public DateTimeOffset? FullAround { get; set; }
     public List<double[]> Points { get; set; } = new();
@@ -281,7 +284,7 @@ public static class Analysis
         if (L.UnsafeShutdowns is long us && L.PowerCycles is long pc && pc >= 20)
         {
             double share = (double)us / pc;
-            bool repairNeeded = rep.Volumes.Any(v => (v.Status ?? "").Contains("Repair", StringComparison.OrdinalIgnoreCase));
+            bool repairNeeded = rep.Volumes.Any(v => v.Present && (v.Status ?? "").Contains("Repair", StringComparison.OrdinalIgnoreCase));
             string what = hdd ? "emergency head retracts (power cut while spinning)" : "unsafe power-offs";
             string link = repairNeeded ? " That fits Windows reporting that its file system needs repair." : "";
             if (us > pc)
@@ -445,6 +448,11 @@ public static class Analysis
     public static List<VolumeReport> VolumesOf(IReadOnlyList<VolumeReading> all, DateTimeOffset now)
     {
         var reports = new List<VolumeReport>();
+        // the newest pass that saw each drive: a volume missing from it is gone (an unplugged drive keeps its volumes,
+        // since no newer pass saw that drive at all). Passes stamp their volumes alike; a phone's own clock may be a
+        // little off, hence the two minutes. A volume tied to no drive (a phone's SD card, a volume Windows maps to no
+        // disk) comes from passes that don't all see it, so it is never called gone.
+        var newest = all.Where(v => v.DriveKey != null).GroupBy(v => v.DriveKey!).ToDictionary(g => g.Key, g => g.Max(v => v.At));
         foreach (var g in all.GroupBy(v => v.Letter, StringComparer.OrdinalIgnoreCase))
         {
             var list = g.OrderBy(v => v.At).ToList();
@@ -456,8 +464,11 @@ public static class Analysis
                 Letter = last.Letter, Label = last.Label, FileSystem = last.FileSystem, Size = last.Size, Free = last.Free,
                 UsedPct = last.Size > 0 ? Math.Round(100.0 * (last.Size - last.Free) / last.Size, 1) : 0,
                 DriveKey = last.DriveKey, Health = last.Health, Status = last.Status, At = last.At,
+                Present = last.DriveKey == null || last.At >= newest[last.DriveKey].AddMinutes(-2),
                 Points = same.Select(v => new[] { v.At.ToUnixTimeMilliseconds(), v.Size > 0 ? Math.Round(100.0 * (v.Size - v.Free) / v.Size, 2) : 0 }).ToList(),
             };
+            // a volume that is gone keeps its history but warns about nothing: it can't fill up or need a repair now
+            if (!rep.Present) { reports.Add(rep); continue; }
             var recent = same.Where(v => (last.At - v.At).TotalDays <= 60).ToList();
             if (recent.Count >= 2 && (recent[^1].At - recent[0].At).TotalDays >= 1)
             {

@@ -433,7 +433,7 @@ public static class Recorder
             }),
             volumes = volumes.Select(v => new
             {
-                letter = v.Letter, label = v.Label, size = v.Size, free = v.Free, usedPct = v.UsedPct, driveKey = v.DriveKey,
+                letter = v.Letter, label = v.Label, size = v.Size, free = v.Free, usedPct = v.UsedPct, driveKey = v.DriveKey, present = v.Present, at = v.At,
                 freePerDay = v.FreePerDay, fullAround = v.FullAround, status = v.Status, health = v.Health,
                 findings = v.Findings.Select(f => new { severity = f.Severity, code = f.Code, title = f.Title, detail = f.Detail, advice = f.Advice }),
             }),

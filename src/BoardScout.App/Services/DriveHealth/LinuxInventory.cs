@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -61,16 +62,19 @@ public static class LinuxInventory
             inv.Disks.Add(disk);
 
             foreach (var part in SelfAndBelow(d))
-                foreach (var mp in Mounts(part))
+            {
+                // one volume per file system, at its shortest mount point: bind mounts (a systemd service's sandbox,
+                // containers) show the same file system again at /var/lib/<app>, /var/tmp and so on
+                string? mp = Mounts(part).Where(m => !SkipMounts.Contains(m) && !m.StartsWith("/snap/", StringComparison.Ordinal))
+                                         .OrderBy(m => m.Length).ThenBy(m => m, StringComparer.Ordinal).FirstOrDefault();
+                if (mp == null || !seen.Add(mp)) continue;
+                if (space(mp) is not (long sz, long free)) continue;
+                inv.Volumes.Add(new Inventory.Volume
                 {
-                    if (SkipMounts.Contains(mp) || mp.StartsWith("/snap/", StringComparison.Ordinal) || !seen.Add(mp)) continue;
-                    if (space(mp) is not (long sz, long free)) continue;
-                    inv.Volumes.Add(new Inventory.Volume
-                    {
-                        Letter = mp, Label = WindowsInventory.Blank(Smartctl.Str(part, "label")),
-                        FileSystem = WindowsInventory.Blank(Smartctl.Str(part, "fstype")), Size = sz, Free = free, Disk = disk.Number,
-                    });
-                }
+                    Letter = mp, Label = WindowsInventory.Blank(Smartctl.Str(part, "label")),
+                    FileSystem = WindowsInventory.Blank(Smartctl.Str(part, "fstype")), Size = sz, Free = free, Disk = disk.Number,
+                });
+            }
         }
     }
 
