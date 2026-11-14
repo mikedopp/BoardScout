@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.9.0 — 2026-11-14
+
+Drive health over time.
+
+### Added
+- **Drive health (Windows).** Once a day BoardScout reads every drive's own counters through smartctl (when
+  smartmontools is installed) and Windows' storage counters, and keeps each reading in `Data\DriveHealth`, one line per
+  drive. Each drive is judged from its whole history: today's figures (SMART status, NVMe critical warnings, wear,
+  spare blocks, media errors, pending and replaced sectors, temperature against the drive's own limit, unsafe
+  power-offs, head parks, the last self-test, Windows' verdict) and what changed between readings (a damage counter
+  that grows, the hour counter going backwards, spare blocks dropping, written per day, wear per year).
+- **Storage tab:** Drive health and Drive life columns for every volume, with the findings on hover.
+- **Suggestions and the health chip** include drive findings that need doing something about.
+- **More › Read drive health now**, and Settings › Daily drive health reading (on by default).
+- The version pop-out's Dependencies list where smartctl was found, or that it wasn't.
+
+### Notes
+- Drives are known by model and serial number, never by letter or disk number, so a USB drive keeps its history when
+  it comes back under another letter.
+- USB drives need BoardScout started as administrator to be read. Sleeping hard disks are left asleep.
+- The Linux and macOS editions don't read drive health yet.
+
 ## 2.8.1 — 2026-11-12
 
 Display fixes from a page-by-page look at 2.8.0.

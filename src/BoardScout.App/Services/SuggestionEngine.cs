@@ -9,6 +9,7 @@ public static class SuggestionEngine
         var suggestions = new List<EfficiencySuggestion>();
         AddMemorySuggestions(scan, suggestions);
         AddStorageSuggestions(scan, suggestions);
+        suggestions.AddRange(DriveHealthService.Suggestions());
         AddDeviceSuggestions(scan, suggestions);
         AddFirmwareSuggestions(scan, suggestions);
         AddDriverSuggestions(scan, report, suggestions);
@@ -18,7 +19,7 @@ public static class SuggestionEngine
             suggestions.Add(new(
                 SuggestionSeverity.Info,
                 "No immediate efficiency issues detected",
-                "BoardScout did not find a low-space volume, device error, memory-speed mismatch, or known driver update.",
+                "BoardScout did not find a low-space volume, drive health problem, device error, memory-speed mismatch, or known driver update.",
                 "Run Check Drivers periodically for vendor and OEM updates.",
                 "System"));
         }

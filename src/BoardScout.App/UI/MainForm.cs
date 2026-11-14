@@ -464,7 +464,14 @@ public sealed class MainForm : Form
         _importItem.Click += async (_, _) => await LoadScanFromFileAsync();
         _exportItem.Click += (_, _) => ExportScan();
         _exportItem.ToolTipText = "A spec sheet, an upgrade planner, or the raw scan as JSON.";
-        _moreMenu.Items.AddRange([_exportItem, _importItem]);
+        var healthItem = new ToolStripMenuItem("Read drive health now", null, async (_, _) =>
+        {
+            await RefreshDriveHealthAsync(force: true);
+            SelectTab("Storage");
+        });
+        healthItem.ToolTipText = "Read every drive's own counters (hours, data written, wear, errors) and keep the reading. " +
+                                 "BoardScout also does this once a day by itself. USB drives need BoardScout started as administrator.";
+        _moreMenu.Items.AddRange([_exportItem, _importItem, new ToolStripSeparator(), healthItem]);
         foreach (var menu in new[] { _driversMenu, _moreMenu })
         {
             menu.Renderer = new DarkMenuRenderer();
@@ -708,6 +715,29 @@ public sealed class MainForm : Form
     }
 
     /// <summary>Builds the Overview from what was last read, with the current privacy setting (no new read).</summary>
+    // Reads every drive's health counters once a day (Data\DriveHealth keeps each reading), then shows the
+    // verdicts on the Storage tab and adds what needs doing to the suggestions.
+    private async Task RefreshDriveHealthAsync(bool force)
+    {
+        if (!force && !AppSettings.Current.DriveHealth) return;
+        try
+        {
+            await DriveHealthService.RefreshAsync(_service.DataRoot, force);
+            if (DriveHealthService.LastResult is { } pass && force)
+                AppendLog($"Drive health: {pass.Drives.Count} drives read in {pass.Took.TotalSeconds:0.#} s" +
+                          (pass.Elevated ? "" : " (USB drives need admin rights)") + ".");
+        }
+        catch (Exception ex)
+        {
+            AppendLog("DRIVE HEALTH: " + ex.Message);
+        }
+        OnUiThread(() =>
+        {
+            BindStorage();
+            _ = PostOverviewAsync();
+        });
+    }
+
     private async Task PostOverviewAsync()
     {
         if (_connectionsCapture is not { } capture) return;
@@ -1121,8 +1151,10 @@ public sealed class MainForm : Form
     {
         var page = NewPage("Storage");
         ConfigureGrid(_storage,
-            ("Volume", 75), ("Physical disk", 315), ("Bus", 80), ("File system", 90),
-            ("Capacity", 110), ("Free", 110), ("Used", 100));
+            ("Volume", 70), ("Physical disk", 250), ("Bus", 70), ("File system", 95),
+            ("Capacity", 95), ("Free", 95), ("Used", 70), ("Drive health", 110), ("Drive life", 200));
+        _storage.ShowCellToolTips = true;
+        _storage.Columns[7].ToolTipText = "Read from the drive's own counters once a day and judged from all its readings.";
         page.Controls.Add(Card(_storage));
         // the view is added after the grid so the grid keeps the room below it (docking runs back to front)
         _fillWebView.DefaultBackgroundColor = AppTheme.Surface;
@@ -1524,6 +1556,7 @@ public sealed class MainForm : Form
         BindDrivers();
         BindStorage();
         BindSuggestions();
+        _ = RefreshDriveHealthAsync(force: false);
         _ = LoadSystemInfoAsync();
         _checkDriversItem.Enabled = true;
         _downloadDriversItem.Enabled = _report is not null;
@@ -1631,12 +1664,28 @@ public sealed class MainForm : Form
             // Volume labels are names people pick ("Mike's backups"); privacy mode shows the letter instead.
             var name = volume.DiskModel ??
                        (Privacy.Enabled || string.IsNullOrWhiteSpace(volume.Label) ? $"Volume {volume.Letter}" : volume.Label);
+            var health = DriveHealthService.ForLetter(volume.Letter);
             var rowIndex = _storage.Rows.Add(volume.Letter, name,
                 volume.BusType ?? "Unknown", volume.FileSystem, FormatBytes(volume.SizeBytes),
-                FormatBytes(volume.FreeBytes), $"{volume.UsedPercent:0}%");
-            _storage.Rows[rowIndex].Cells[6].Style.ForeColor =
+                FormatBytes(volume.FreeBytes), $"{volume.UsedPercent:0}%",
+                health is null ? (DriveHealthService.Reading ? "Reading…" : "Not read") : DriveHealthService.VerdictLabel(health.Verdict),
+                health is null ? "" : DriveHealthService.LifeLine(health));
+            var row = _storage.Rows[rowIndex];
+            row.Cells[6].Style.ForeColor =
                 volume.UsedPercent >= 95 ? AppTheme.Critical :
                 volume.UsedPercent >= 85 ? AppTheme.Warning : AppTheme.Good;
+            row.Cells[7].Style.ForeColor = health?.Verdict switch
+            {
+                "act" => AppTheme.Critical,
+                "attention" => AppTheme.Warning,
+                "watch" => AppTheme.Accent,
+                "healthy" => AppTheme.Good,
+                _ => AppTheme.Muted
+            };
+            if (health is not null) row.Cells[7].ToolTipText = row.Cells[8].ToolTipText = DriveHealthService.Tooltip(health);
+            else row.Cells[7].ToolTipText = DriveHealthService.Smartctl is null
+                ? "No reading yet. Installing smartmontools (smartmontools.org) gives the full counters; without it only Windows' own counters are read."
+                : "No reading of this drive yet.";
         }
     }
 
@@ -1740,7 +1789,10 @@ public sealed class MainForm : Form
             .AppendLine($"CPU: {(_scan is null ? "unknown" : _scan.Cpu.Name)}")
             .AppendLine($"Last scan: {_scan?.Scan.TimestampUtc?.ToLocalTime():g} · driver report: {(_report is null ? "none" : "loaded")}")
             .AppendLine($"Data folder: {_service.DataRoot}")
-            .AppendLine($"Settings: glass {(settings.GlassEffects ? "on" : "off")}, motion {(settings.Motion ? "on" : "off")}, refresh {settings.TelemetryIntervalMs} ms, tray {(settings.MinimizeToTray ? "on" : "off")}")
+            .AppendLine($"Settings: glass {(settings.GlassEffects ? "on" : "off")}, motion {(settings.Motion ? "on" : "off")}, refresh {settings.TelemetryIntervalMs} ms, tray {(settings.MinimizeToTray ? "on" : "off")}, drive health {(settings.DriveHealth ? "on" : "off")}")
+            .AppendLine($"Drive health: {DriveHealthService.Reports.Count} drives, last pass {DriveHealthService.LastPass?.ToString("g") ?? "never"}" +
+                        (DriveHealthService.LastResult is { } pass ? $" ({(pass.Elevated ? "admin" : "no admin")}, {pass.Took.TotalSeconds:0.#} s)" : "") +
+                        $", smartctl {(DriveHealthService.Smartctl is null ? "not found" : "found")}")
             .ToString();
         try
         {
@@ -1807,6 +1859,12 @@ public sealed class MainForm : Form
                 await SaveSnapshotAsync(Path.Combine(directory, "overview-pinned.png"));
                 await _overviewWebView.CoreWebView2.ExecuteScriptAsync("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))");
             }
+            // The Storage tab's drive health columns, once a reading in progress has finished (up to 90 s).
+            _tabs.SelectedTab = _tabs.TabPages["Storage"];
+            for (var i = 0; i < 90 && DriveHealthService.Reading; i++) await Task.Delay(1000);
+            await Task.Delay(1500);
+            await SaveSnapshotAsync(Path.Combine(directory, "storage-health.png"));
+            _tabs.SelectedTab = _tabs.TabPages[0];
             // Only with BOARDSCOUT_SNAPSHOT_STORAGE=1: a real read of the system drive in the Storage tab (about a minute).
             if (Environment.GetEnvironmentVariable("BOARDSCOUT_SNAPSHOT_STORAGE") == "1" && _fillWebView.CoreWebView2 is not null)
             {

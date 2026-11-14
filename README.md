@@ -190,6 +190,19 @@ storage are Apps, `/var/cache` and `~/.cache` are Caches.
 
 ![Storage tab: what fills a drive, with a real read of a 476 GB system drive](docs/screenshots/storage-fill.png)
 
+**Drive health over time** (Windows) — once a day BoardScout asks every drive for its own counters: hours powered on,
+power cycles and unsafe power-offs, data written and read, wear and spare blocks (SSDs), temperature against the
+drive's own limit, replaced, pending and uncorrectable sectors, media and cable (CRC) errors, head parks (hard disks)
+and the last self-test. Each reading is kept, one line per drive per day, so a counter that grows shows as a trend
+instead of a single number. The Storage tab adds **Drive health** (Healthy, Watch, Needs a look, Act now) and **Drive
+life** (hours, wear, written, written per day, temperature) to each volume; hover for the findings. Findings that need
+doing something about (new unreadable sectors, media errors, wear past 90%, a failed self-test, Windows saying a
+volume needs repair, a volume filling up within a month) join Efficiency's suggestions and the health chip. **More ›
+Read drive health now** reads at once. The readings come from smartctl when [smartmontools](https://www.smartmontools.org/)
+is installed (it isn't shipped with BoardScout); without it only Windows' own counters are read. Windows only lets a
+program read a USB drive's health with administrator rights: start BoardScout as administrator once and that reading
+is kept. Settings › Daily drive health reading turns it off.
+
 **Version button** — the version on a orb badge (aurora, the same orb as the browser
 dashboard's). The orb thinks while a scan, driver check, or download runs, turns mint for a moment when it
 finishes, and stays red after a failure until the next run or a click. It opens runtime details, sensor
@@ -266,7 +279,7 @@ when you click it twice: it asks Windows to stop that USB drive, exactly as Safe
 (Windows writes out anything cached first, and refuses while a file is open).
 
 - **Your files are never read.** It never reads the contents of a volume or file outside its own `Data`
-  folder, and never formats, repairs, defragments, TRIMs, or sends SMART commands to a drive. The only
+  folder, and never formats, repairs, defragments, TRIMs, or changes a setting on a drive. The only
   files it opens are under the drive's `Windows` folder, during **What fills a drive**, and only to read
   their attributes (attribute-only access, no data), so a file listed under two names is counted once.
 - **Drives are opened with no access rights**, which can't read or write data, to ask Windows for the
@@ -278,7 +291,12 @@ when you click it twice: it asks Windows to stop that USB drive, exactly as Safe
   much power it needs, once per session. Phones and cameras are never asked, so BoardScout stays off the
   link they copy files over, and a drive is asked only while Windows' counters show it idle, never in
   the middle of a copy.
-- **Its own writes** go only to its `Data` folder: scans, reports, settings, and the web views' profile.
+- **Drive health readings** (once a day, unless turned off) ask each drive for its health counters and logs
+  through smartctl (`smartctl -x`: SMART READ DATA and log reads on SATA, Get Log Page on NVMe). These are read-only
+  commands: no self-test is started, no setting is changed, and a hard disk that has spun down is left asleep unless
+  it has gone a week without a reading.
+- **Its own writes** go only to its `Data` folder: scans, reports, settings, drive health readings
+  (`DriveHealth`), and the web views' profile.
 - **The interrupt measurement** (administrator) is a kernel trace kept in memory; nothing is saved.
 
 Copying from a phone? Windows doesn't double-check files copied over MTP. For big copies, plug the

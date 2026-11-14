@@ -18,6 +18,9 @@ internal sealed class AppSettings
     public int GlassBlur { get; set; } = DefaultGlassBlur;
 
     public bool Motion { get; set; } = true;
+
+    /// <summary>Read every drive's own health counters once a day and keep each reading in Data\DriveHealth.</summary>
+    public bool DriveHealth { get; set; } = true;
     public int TelemetryIntervalMs { get; set; } = 1000;
     public bool MinimizeToTray { get; set; } = true;
     public bool PrivacyMode { get; set; }

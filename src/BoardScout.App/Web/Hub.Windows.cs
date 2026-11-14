@@ -142,6 +142,10 @@ internal sealed partial class Hub
             _scanPath = path;
             _report = report;
             Log($"SCAN: {scan.Components.Count} components from the inventory of {scan.Scan.TimestampUtc?.ToLocalTime():yyyy-MM-dd HH:mm}.");
+            // Drive health readings (once a day) feed the suggestions the next time the overview is built.
+            if (AppSettings.Current.DriveHealth)
+                _ = DriveHealthService.RefreshAsync(Scout.DataRoot, force: false)
+                    .ContinueWith(t => Log("DRIVE HEALTH: " + t.Exception?.GetBaseException().Message), TaskContinuationOptions.OnlyOnFaulted);
             PublishTopology();
             PublishFromCapture();
             _ = LoadSystemAsync();

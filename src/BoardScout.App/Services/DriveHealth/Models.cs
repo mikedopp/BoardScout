@@ -1,0 +1,148 @@
+using System;
+using System.Collections.Generic;
+
+namespace BoardScout.DriveHealth;
+
+/// <summary>
+/// One reading of one drive at one moment. Every number is optional: drives report different things,
+/// and a reading taken without admin rights or through a USB bridge may hold only a few of them.
+/// Written as one JSON line per reading in drives\&lt;key&gt;.jsonl, oldest first.
+/// </summary>
+public sealed class DriveReading
+{
+    public DriveReading Copy() => (DriveReading)MemberwiseClone();
+
+    public DateTimeOffset At { get; set; }
+    public string Key { get; set; } = "";
+    public string? Machine { get; set; }
+    /// <summary>smartctl, or windows when only Windows' own storage counters answered.</summary>
+    public string Source { get; set; } = "smartctl";
+    /// <summary>ok | partial | asleep | needs-admin | no-smart | no-tool | error</summary>
+    public string Status { get; set; } = "ok";
+    public string? Note { get; set; }
+    /// <summary>True when the pass ran with admin rights (USB drives can only be read then).</summary>
+    public bool Elevated { get; set; }
+
+    // who the drive is
+    public string? Model { get; set; }
+    public string? Family { get; set; }
+    public string? Serial { get; set; }
+    public string? WindowsSerial { get; set; }
+    public string? Firmware { get; set; }
+    public long? Capacity { get; set; }
+    /// <summary>ATA, NVMe or SCSI, as smartctl talks to it.</summary>
+    public string? Protocol { get; set; }
+    /// <summary>The smartctl -d type that answered: ata, nvme, sat, sntrealtek, scsi...</summary>
+    public string? DeviceType { get; set; }
+    public string? Device { get; set; }
+    public int? DiskNumber { get; set; }
+    /// <summary>From Windows: NVMe, SATA, USB...</summary>
+    public string? Bus { get; set; }
+    /// <summary>SSD or HDD.</summary>
+    public string? Media { get; set; }
+    public int? Rpm { get; set; }
+    public string[]? Letters { get; set; }
+    public string? WindowsHealth { get; set; }
+    public bool InDriveDatabase { get; set; }
+
+    // health and the counters that only go up
+    public bool? SmartPassed { get; set; }
+    public int? CriticalWarning { get; set; }
+    public long? PowerOnHours { get; set; }
+    public long? PowerCycles { get; set; }
+    public long? UnsafeShutdowns { get; set; }
+    public int? Temp { get; set; }
+    public int? TempLimit { get; set; }
+    public int? TempLifetimeMax { get; set; }
+    public long? BytesWritten { get; set; }
+    public long? BytesRead { get; set; }
+    /// <summary>When the drive counts writes in a unit smartctl doesn't know: the raw count, and WriteUnit = "unknown".</summary>
+    public long? WriteUnits { get; set; }
+    public string? WriteUnit { get; set; }
+    public int? PercentUsed { get; set; }
+    public int? Spare { get; set; }
+    public int? SpareThreshold { get; set; }
+    public long? MediaErrors { get; set; }
+    public long? ErrorLogEntries { get; set; }
+    public long? AtaErrors { get; set; }
+    public long? WarningTempMinutes { get; set; }
+    public long? CriticalTempMinutes { get; set; }
+    public long? LoadCycles { get; set; }
+    public long? StartStops { get; set; }
+    public long? Reallocated { get; set; }
+    public long? Pending { get; set; }
+    public long? Uncorrectable { get; set; }
+    public long? CrcErrors { get; set; }
+    public string? SelfTest { get; set; }
+    public bool? SelfTestPassed { get; set; }
+    public long? SelfTestHours { get; set; }
+    public List<AtaAttribute>? Attributes { get; set; }
+}
+
+public sealed class AtaAttribute
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public int Value { get; set; }
+    public int Worst { get; set; }
+    public int? Thresh { get; set; }
+    public long Raw { get; set; }
+    public string? RawText { get; set; }
+    /// <summary>"now" or "past" when the normalized value reached the threshold.</summary>
+    public string? WhenFailed { get; set; }
+}
+
+/// <summary>How full one volume was at one moment. One line per volume per pass in volumes.jsonl.</summary>
+public sealed class VolumeReading
+{
+    public DateTimeOffset At { get; set; }
+    public string Letter { get; set; } = "";
+    public string? Label { get; set; }
+    public string? FileSystem { get; set; }
+    public long Size { get; set; }
+    public long Free { get; set; }
+    public int? DiskNumber { get; set; }
+    public string? DriveKey { get; set; }
+    public string? Health { get; set; }
+    public string? Status { get; set; }
+}
+
+/// <summary>Something worth saying about a drive or a volume, worst first: critical, warn, watch, info.</summary>
+public sealed class Finding
+{
+    public string Severity { get; set; } = "info";
+    public string Code { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string? Advice { get; set; }
+    /// <summary>"today" when one reading says it, "trend" when it comes from comparing readings.</summary>
+    public string Basis { get; set; } = "today";
+    public DateTimeOffset? Since { get; set; }
+
+    public static int Rank(string severity) => severity switch { "critical" => 4, "warn" => 3, "watch" => 2, "info" => 1, _ => 0 };
+}
+
+/// <summary>A change between two readings, for the "what changed" timeline.</summary>
+public sealed class DriveEvent
+{
+    public DateTimeOffset At { get; set; }
+    public string Severity { get; set; } = "info";
+    public string Text { get; set; } = "";
+}
+
+/// <summary>One calendar month: what the counters did between its first and last reading (or the last reading before it).</summary>
+public sealed class MonthRow
+{
+    public string Month { get; set; } = "";
+    public int Readings { get; set; }
+    public long? Hours { get; set; }
+    public long? Written { get; set; }
+    public long? Read { get; set; }
+    public long? WriteUnits { get; set; }
+    public int? WearFrom { get; set; }
+    public int? WearTo { get; set; }
+    public int? TempMax { get; set; }
+    public long? NewProblems { get; set; }
+    public long? UnsafeShutdowns { get; set; }
+    public long? LoadCycles { get; set; }
+}

@@ -143,6 +143,11 @@ internal sealed class VersionPopout : Panel, IMessageFilter
             on => AppSettings.Update(s => s.Motion = on)) { AccessibleDescription = "Gliding selection, hover fades, animated zoom and topology flow" });
         Add(new GlassToggle("Minimize to tray", settings.MinimizeToTray,
             on => AppSettings.Update(s => s.MinimizeToTray = on)));
+        Add(new GlassToggle("Daily drive health reading", settings.DriveHealth,
+            on => AppSettings.Update(s => s.DriveHealth = on)) { AccessibleDescription = "Reads every drive's own counters once a day and keeps the history" });
+        Add(Detail("Once a day, asks each drive for its own counters (hours, data written, wear, errors) and keeps every " +
+                   "reading, so a counter that grows shows as a trend. Read-only; a sleeping hard disk is left asleep.",
+            width: PopoutWidth - 44));
         Add(Detail("Live telemetry refresh", AppTheme.Muted));
         int[] intervals = [500, 1000, 2000, 5000];
         var selected = Array.IndexOf(intervals, settings.TelemetryIntervalMs);
@@ -160,6 +165,11 @@ internal sealed class VersionPopout : Panel, IMessageFilter
         Add(Section("Dependencies"));
         foreach (var (name, version, license) in Dependencies)
             Add(Detail($"{name} {version} ({license})"));
+        Add(Detail(Services.DriveHealthService.Smartctl is { } smartctl
+                ? $"smartmontools (smartctl), for drive health: {smartctl}"
+                : "smartmontools (smartctl), for drive health: not installed. Optional: without it only Windows' own drive counters are read. smartmontools.org",
+            width: PopoutWidth - 44));
+        Add(Detail(@"Drive health history: DriveHealth in the data folder (one line per reading per drive)", width: PopoutWidth - 44));
         Add(Detail("Credentials: none. Machines signs in with your own SSH keys; BoardScout never asks for or keeps a password.",
             width: PopoutWidth - 44));
 
