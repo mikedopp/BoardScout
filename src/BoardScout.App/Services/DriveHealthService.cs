@@ -94,7 +94,7 @@ internal static class DriveHealthService
         var r = report.LatestFull ?? report.Latest;
         var parts = new List<string>();
         if (r.PowerOnHours is long hours) parts.Add($"{hours.ToString("N0", CultureInfo.InvariantCulture)} h on");
-        if (r.PercentUsed is int used) parts.Add($"{used}% worn");
+        if (r.PercentUsed is int used) parts.Add(r.PercentUsedEstimated == true ? $"~{used}% worn" : $"{used}% worn");
         if (r.BytesWritten is long written) parts.Add($"{Analysis.Bytes(written)} written");
         if (report.Rates.WrittenPerDay is double perDay && report.Readings > 1) parts.Add($"{Analysis.Bytes((long)perDay)}/day");
         if (r.Temp is int temp) parts.Add($"{temp} °C");
@@ -107,6 +107,11 @@ internal static class DriveHealthService
         var lines = new List<string> { $"{report.Latest.Model}: {VerdictLabel(report.Verdict)}" };
         foreach (var f in report.Findings.OrderByDescending(f => Finding.Rank(f.Severity)).Take(6))
             lines.Add($"• {f.Title}" + (f.Basis == "trend" ? " (trend)" : ""));
+        var reading = report.LatestFull ?? report.Latest;
+        if (reading.BytesRead is long read) lines.Add($"{Analysis.Bytes(read)} read over its lifetime");
+        if (reading.TempLifetimeMax is int hottest) lines.Add($"Recorded maximum temperature {hottest} °C");
+        if (reading.Media == "HDD" && reading.StartStops is long starts) lines.Add($"{starts:N0} spindle start/stop cycles");
+        if (reading.Media == "HDD" && reading.LoadCycles is long parks) lines.Add($"{parks:N0} head parks");
         lines.Add(report.Readings == 1
             ? "One reading so far; trends start with the next day's reading."
             : $"{report.Readings} readings since {report.First.LocalDateTime:d MMM yyyy}.");

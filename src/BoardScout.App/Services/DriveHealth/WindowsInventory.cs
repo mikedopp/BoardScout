@@ -29,6 +29,91 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 [pscustomobject]@{ disks = $disks; reliability = $rel; volumes = $vols; elevated = $admin } | ConvertTo-Json -Depth 4 -Compress
 ";
 
+    // Disk numbers can be reused on reconnect or reboot. Only take an identity from a
+    // Partition/Diagnostic record for that number at or before the fault, in the same boot.
+    internal const string DiskEventsScript = """
+        $ErrorActionPreference = 'Stop'
+        function Read-Events($filter, $limit) {
+            try { Get-WinEvent -FilterHashtable $filter -MaxEvents $limit }
+            catch { if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound,*') { throw } }
+        }
+        $since = (Get-Date).AddDays(-7)
+        $faults = [Collections.Generic.List[object]]::new()
+        foreach ($event in @(Read-Events @{ LogName='System'; ProviderName='disk'; Id=7,11,51,153,154,157; StartTime=$since } 25000)) {
+            if (!$event.Properties.Count -or [string]$event.Properties[0].Value -notmatch '^\\Device\\Harddisk(\d+)\\DR\d+$') { continue }
+            $faults.Add([pscustomobject]@{ id = $event.Id; disk = [int]$Matches[1]; at = $event.TimeCreated.ToUniversalTime().ToString('o') })
+        }
+        if (!$faults.Count) { '{"faults":[]}'; return }
+        $boots = @(Read-Events @{ LogName='System'; ProviderName='Microsoft-Windows-Kernel-General'; Id=12 } 100 |
+            ForEach-Object { $_.TimeCreated.ToUniversalTime().ToString('o') })
+        $attaches = [Collections.Generic.List[object]]::new()
+        try {
+            foreach ($event in (Read-Events @{ LogName='Microsoft-Windows-Partition/Diagnostic'; Id=1006 } 2000)) {
+                # Some USB serials contain control bytes that are illegal in XML 1.0.
+                try { $xml = [xml]($event.ToXml() -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', [string][char]0xFFFD) }
+                catch { continue }
+                $fields = @{}
+                foreach ($data in $xml.Event.EventData.Data) { if ($data.Name) { $fields[$data.Name] = $data.'#text' } }
+                if (![string]$fields.DiskNumber) { continue }
+                $attaches.Add([pscustomobject]@{
+                    disk = [int]$fields.DiskNumber
+                    at = $event.TimeCreated.ToUniversalTime().ToString('o')
+                    serial = ([string]$fields.SerialNumber).Trim()
+                    model = ("$($fields.Manufacturer) $($fields.Model)").Trim()
+                })
+            }
+        } catch { $attaches.Clear() }
+        [pscustomobject]@{ faults = $faults; boots = @($boots); attaches = $attaches } | ConvertTo-Json -Depth 3 -Compress
+        """;
+
+    public static async Task<List<DiskIncident>> ReadDiskEventsAsync(CancellationToken ct = default)
+    {
+        string script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n" + DiskEventsScript;
+        string command = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        var run = await Smartctl.RunAsync("powershell.exe", new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", command },
+            TimeSpan.FromSeconds(60), ct);
+        ct.ThrowIfCancellationRequested();
+        if (run.TimedOut) throw new TimeoutException("Windows disk event log read timed out.");
+        if (run.Exit != 0) throw new InvalidOperationException("Windows disk event log could not be read.");
+        return GroupDiskEvents(JsonSerializer.Deserialize<DiskEventLog>(run.Output, Store.Json) ?? new());
+    }
+
+    /// <summary>A disk can start failing while Windows is still attaching it: its attach record may come just after the first fault.</summary>
+    internal static readonly TimeSpan AttachGrace = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Group faults by event ID and the drive Windows had attached under that disk number at the time.
+    /// Disk numbers are reused on reconnect or reboot, so a fault only takes an identity from an attach record
+    /// for its disk number in the same boot: the newest one at or before the fault, or failing that, the first
+    /// one within <see cref="AttachGrace"/> after it. Faults with no boot record before them stay unidentified.
+    /// </summary>
+    public static List<DiskIncident> GroupDiskEvents(DiskEventLog log)
+    {
+        var boots = log.Boots.OrderBy(b => b).ToList();
+        var attaches = log.Attaches.GroupBy(a => a.Disk).ToDictionary(g => g.Key, g => g.OrderBy(a => a.At).ToList());
+        var groups = new Dictionary<(int, int, string?, string?), DiskIncident>();
+        foreach (var f in log.Faults)
+        {
+            DiskAttach? who = null;
+            int bi = boots.FindLastIndex(b => b <= f.At);
+            if (bi >= 0 && attaches.TryGetValue(f.Disk, out var list))
+            {
+                DateTimeOffset bootAt = boots[bi], nextBoot = bi + 1 < boots.Count ? boots[bi + 1] : DateTimeOffset.MaxValue;
+                who = list.LastOrDefault(a => a.At >= bootAt && a.At <= f.At)
+                   ?? list.FirstOrDefault(a => a.At > f.At && a.At < nextBoot && a.At - f.At <= AttachGrace);
+            }
+            string? serial = string.IsNullOrWhiteSpace(who?.Serial) ? null : who!.Serial!.Trim();
+            string? model = string.IsNullOrWhiteSpace(who?.Model) ? null : who!.Model!.Trim();
+            var key = (f.Id, f.Disk, serial, model);
+            if (!groups.TryGetValue(key, out var g))
+                groups[key] = g = new DiskIncident { EventId = f.Id, DiskNumber = f.Disk, WindowsSerial = serial, Model = model, First = f.At, Last = f.At };
+            g.Count++;
+            if (f.At < g.First) g.First = f.At;
+            if (f.At > g.Last) g.Last = f.At;
+        }
+        return groups.Values.OrderByDescending(i => i.Last).ToList();
+    }
+
     public static async Task<Inventory> ReadAsync(CancellationToken ct = default)
     {
         var inv = new Inventory { Source = "windows" };

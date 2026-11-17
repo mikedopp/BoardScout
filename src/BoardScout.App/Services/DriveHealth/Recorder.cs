@@ -48,6 +48,11 @@ public static class Recorder
         using var gate = store.TryLock();
         if (gate == null) { result.Busy = true; result.Notes.Add("Another reading is already running."); return result; }
 
+        if (OperatingSystem.IsWindows())
+        {
+            try { await SaveWindowsDiskEventsAsync(store, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { result.Notes.Add(ex.Message); }
+        }
         string os = OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux";
         progress?.Invoke($"Asking {os} about the disks");
         Inventory? inv = await Inventory.ReadAsync(ct);
@@ -365,10 +370,21 @@ public static class Recorder
 
     // ------------------------------------------------------------------ latest.json
 
-    public static List<DriveReport> Reports(Store store, DateTimeOffset now) => Reports(store.LoadAll(), store.LoadVolumes(), now);
+    // The normal record pass already holds this lock. The event-only command uses the
+    // same lock and reads no disk devices.
+    internal static async Task<int> SaveWindowsDiskEventsAsync(Store store, CancellationToken ct = default)
+    {
+        var incidents = await WindowsInventory.ReadDiskEventsAsync(ct);
+        store.SaveDiskIncidents(incidents);
+        return incidents.Sum(i => i.Count);
+    }
+
+    public static List<DriveReport> Reports(Store store, DateTimeOffset now) =>
+        Reports(store.LoadAll(), store.LoadVolumes(), now, store.LoadDiskIncidents(now));
 
     /// <summary>Every drive judged, from one load of the files (a pass that adds a drive meanwhile can't split them).</summary>
-    public static List<DriveReport> Reports(Dictionary<string, List<DriveReading>> all, IReadOnlyList<VolumeReading> volumes, DateTimeOffset now)
+    public static List<DriveReport> Reports(Dictionary<string, List<DriveReading>> all, IReadOnlyList<VolumeReading> volumes,
+        DateTimeOffset now, IReadOnlyList<DiskIncident>? incidents = null)
     {
         // a drive first seen without admin rights under Windows' name, later read in full under its own name: show it once
         var fullSerials = all.Where(kv => kv.Value.Any(Analysis.IsFull)).Select(kv => kv.Value.Last(Analysis.IsFull).WindowsSerial)
@@ -386,13 +402,35 @@ public static class Recorder
             if (shadow) continue;
             reports.Add(Analysis.Analyze(key, list, volumes, now));
         }
+        // one finding per drive and event ID, even when a replug gave the drive a different disk number
+        if (incidents != null)
+            foreach (var g in incidents.Select(i => (match: MatchDiskIncident(reports, i), i)).Where(x => x.match != null)
+                                       .GroupBy(x => (x.match!, x.i.EventId)))
+            {
+                var same = g.Select(x => x.i).ToList();
+                Analysis.AddDiskIncident(g.Key.Item1, same.Count == 1 ? same[0] : new DiskIncident
+                {
+                    EventId = g.Key.EventId, DiskNumber = same[0].DiskNumber, Model = same[0].Model, WindowsSerial = same[0].WindowsSerial,
+                    Count = same.Sum(i => i.Count), First = same.Min(i => i.First), Last = same.Max(i => i.Last),
+                });
+            }
         return reports.OrderBy(r => r.Latest.Letters?.FirstOrDefault() ?? "~").ThenBy(r => r.Latest.Model).ToList();
+    }
+
+    internal static DriveReport? MatchDiskIncident(IReadOnlyList<DriveReport> reports, DiskIncident incident)
+    {
+        if (!Store.UsableSerial(incident.WindowsSerial)) return null;
+        var matches = reports.Where(r => string.Equals(r.Latest.WindowsSerial ?? r.LatestFull?.WindowsSerial,
+            incident.WindowsSerial, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     public static object LatestDocument(Store store, RecordOptions opt, RecordResult? pass, DateTimeOffset now)
     {
-        var reports = Reports(store, now);
-        var volumes = Analysis.VolumesOf(store.LoadVolumes(), now);
+        var incidents = store.LoadDiskIncidents(now);
+        var readings = store.LoadVolumes();
+        var reports = Reports(store.LoadAll(), readings, now, incidents);
+        var volumes = Analysis.VolumesOf(readings, now);
         return new
         {
             app = opt.App,
@@ -400,6 +438,7 @@ public static class Recorder
             written = now,
             machine = Environment.MachineName,
             pass = pass == null ? null : new { at = pass.At, elevated = pass.Elevated, smartctl = pass.SmartctlVersion, seconds = Math.Round(pass.Took.TotalSeconds, 1) },
+            windowsDiskIncidents = incidents.Select(i => new { i.DiskNumber, i.Model, i.EventId, i.Description, i.Count, i.First, i.Last, i.Severity }),
             drives = reports.Select(r =>
             {
                 var L = r.LatestFull ?? r.Latest;
@@ -420,13 +459,32 @@ public static class Recorder
                     readings = r.Readings,
                     powerOnHours = L.PowerOnHours,
                     bytesWritten = L.BytesWritten,
+                    bytesRead = L.BytesRead,
+                    writeUnits = L.WriteUnits,
+                    readUnits = L.ReadUnits,
+                    rpm = L.Rpm,
+                    startStops = L.StartStops,
+                    loadCycles = L.LoadCycles,
                     percentUsed = L.PercentUsed,
+                    percentUsedEstimated = L.PercentUsedEstimated,
+                    spare = L.Spare,
+                    spareThreshold = L.SpareThreshold,
                     temp = L.Temp,
+                    tempLifetimeMax = L.TempLifetimeMax,
+                    warningTempMinutes = L.WarningTempMinutes,
+                    criticalTempMinutes = L.CriticalTempMinutes,
+                    controllerBusyMinutes = L.ControllerBusyMinutes,
                     reallocated = L.Reallocated,
                     pending = L.Pending,
+                    uncorrectable = L.Uncorrectable,
+                    crcErrors = L.CrcErrors,
                     mediaErrors = L.MediaErrors,
+                    errorLogEntries = L.ErrorLogEntries,
                     unsafeShutdowns = L.UnsafeShutdowns,
                     powerCycles = L.PowerCycles,
+                    selfTest = L.SelfTest,
+                    selfTestPassed = L.SelfTestPassed,
+                    selfTestHours = L.SelfTestHours,
                     writtenPerDay = r.Rates.WrittenPerDay,
                     findings = r.Findings.Where(f => !f.Code.StartsWith("vol-")).Select(f => new { severity = f.Severity, code = f.Code, title = f.Title, detail = f.Detail, advice = f.Advice, basis = f.Basis }),
                 };

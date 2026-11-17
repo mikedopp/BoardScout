@@ -27,6 +27,7 @@ public sealed class Store
     public string VolumesPath => Path.Combine(Folder, "volumes.jsonl");
     public string DevicesPath => Path.Combine(Folder, "devices.json");
     public string LatestPath => Path.Combine(Folder, "latest.json");
+    public string DiskIncidentsPath => Path.Combine(Folder, "windows-disk-incidents.json");
     public string LockPath => Path.Combine(Folder, "record.lock");
 
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -146,6 +147,22 @@ public sealed class Store
     public void SaveDevices(Dictionary<string, DeviceNote> devices) => WriteAtomic(DevicesPath, JsonSerializer.Serialize(devices, Pretty));
 
     public void WriteLatest(object latest) => WriteAtomic(LatestPath, JsonSerializer.Serialize(latest, Pretty));
+
+    public List<DiskIncident> LoadDiskIncidents(DateTimeOffset now)
+    {
+        try
+        {
+            if (File.Exists(DiskIncidentsPath))
+                return (JsonSerializer.Deserialize<List<DiskIncident>>(File.ReadAllText(DiskIncidentsPath), Json) ?? new())
+                    .Where(i => i.Last >= now.AddDays(-7)).ToList();
+        }
+        catch (JsonException) { /* rebuilt on the next read */ }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* the event cache is optional */ }
+        return new();
+    }
+
+    public void SaveDiskIncidents(List<DiskIncident> incidents) =>
+        WriteAtomic(DiskIncidentsPath, JsonSerializer.Serialize(incidents, Json));
 
     // ---- one writer at a time (the app and the scheduled task can both record)
 

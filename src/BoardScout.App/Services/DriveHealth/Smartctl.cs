@@ -191,6 +191,7 @@ public static class Smartctl
             r.ErrorLogEntries = Long(nv, "num_err_log_entries");
             r.WarningTempMinutes = Long(nv, "warning_temp_time");
             r.CriticalTempMinutes = Long(nv, "critical_comp_time");
+            r.ControllerBusyMinutes = Long(nv, "controller_busy_time");
             r.PowerOnHours ??= Long(nv, "power_on_hours");
             r.PowerCycles ??= Long(nv, "power_cycles");
             r.Temp ??= Int(nv, "temperature");
@@ -217,6 +218,7 @@ public static class Smartctl
             ApplyAttributes(r);
         }
 
+        bool hasAtaEnduranceStatistic = false;
         // ATA device statistics: the standard place for sectors written/read on newer drives
         if (Get(j, "ata_device_statistics", "pages") is { ValueKind: JsonValueKind.Array } pages)
         {
@@ -226,19 +228,24 @@ public static class Smartctl
                 if (Get(page, "table") is not { ValueKind: JsonValueKind.Array } rows) continue;
                 foreach (var row in rows.EnumerateArray())
                 {
-                    if (Get(row, "valid") is { ValueKind: JsonValueKind.False }) continue;
+                    if (Get(row, "valid") is { ValueKind: JsonValueKind.False } ||
+                        Get(row, "flags", "valid") is { ValueKind: JsonValueKind.False }) continue;
                     long? v = Long(row, "value");
                     switch (Str(row, "name"))
                     {
                         case "Logical Sectors Written" when v is long sw: r.BytesWritten = sw * block; r.WriteUnits = null; r.WriteUnit = null; break;
                         case "Logical Sectors Read" when v is long sr: r.BytesRead = sr * block; break;
-                        case "Percentage Used Endurance Indicator" when v is long pu && !spinning: r.PercentUsed ??= (int)pu; break;
+                        case "Percentage Used Endurance Indicator" when v is long pu && !spinning:
+                            r.PercentUsed = (int)pu;
+                            hasAtaEnduranceStatistic = true;
+                            break;
                         case "Highest Temperature" when v is long ht && ht > 0: r.TempLifetimeMax ??= (int)ht; break;
                         case "Number of Reported Uncorrectable Errors" when v is long ue: r.Uncorrectable ??= ue; break;
                     }
                 }
             }
         }
+        if (r.PercentUsed != null && r.Protocol == "ATA") r.PercentUsedEstimated = !hasAtaEnduranceStatistic;
 
         r.AtaErrors = Long(j, "ata_smart_error_log", "extended", "count") ?? Long(j, "ata_smart_error_log", "summary", "count");
 
@@ -333,7 +340,7 @@ public static class Smartctl
         foreach (var (name, unit) in reads)
         {
             if (ByName(name) is not { } a) continue;
-            if (name == "Total_LBAs_Read" && !r.InDriveDatabase) break;
+            if (name == "Total_LBAs_Read" && !r.InDriveDatabase) { r.ReadUnits = a.Raw; break; }
             r.BytesRead = a.Raw * unit;
             break;
         }

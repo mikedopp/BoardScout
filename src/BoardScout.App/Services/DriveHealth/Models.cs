@@ -58,8 +58,10 @@ public sealed class DriveReading
     public long? BytesRead { get; set; }
     /// <summary>When the drive counts writes in a unit smartctl doesn't know: the raw count, and WriteUnit = "unknown".</summary>
     public long? WriteUnits { get; set; }
+    public long? ReadUnits { get; set; }
     public string? WriteUnit { get; set; }
     public int? PercentUsed { get; set; }
+    public bool? PercentUsedEstimated { get; set; }
     public int? Spare { get; set; }
     public int? SpareThreshold { get; set; }
     public long? MediaErrors { get; set; }
@@ -67,6 +69,7 @@ public sealed class DriveReading
     public long? AtaErrors { get; set; }
     public long? WarningTempMinutes { get; set; }
     public long? CriticalTempMinutes { get; set; }
+    public long? ControllerBusyMinutes { get; set; }
     public long? LoadCycles { get; set; }
     public long? StartStops { get; set; }
     public long? Reallocated { get; set; }
@@ -95,6 +98,57 @@ public sealed class DriveReading
     public string? BootId { get; set; }
     /// <summary>Android version, for devices read over adb.</summary>
     public string? OsVersion { get; set; }
+}
+
+/// <summary>Windows System log events grouped by disk identity and event ID.</summary>
+public sealed class DiskIncident
+{
+    public int EventId { get; set; }
+    public int DiskNumber { get; set; }
+    public string? Model { get; set; }
+    public string? WindowsSerial { get; set; }
+    public int Count { get; set; }
+    public DateTimeOffset First { get; set; }
+    public DateTimeOffset Last { get; set; }
+
+    public string Description => EventId switch
+    {
+        7 => "bad blocks",
+        11 => "controller errors",
+        51 => "I/O errors during paging",
+        153 => "I/O retries",
+        154 => "hardware I/O errors",
+        157 => "unexpected removals",
+        _ => "disk events",
+    };
+
+    // an unexpected removal is usually a USB drive pulled without ejecting: worth watching, not a failing drive
+    public string Severity => EventId switch { 7 or 154 => "critical", 153 or 157 => "watch", _ => "warn" };
+}
+
+/// <summary>The raw Windows log records <see cref="WindowsInventory.GroupDiskEvents"/> turns into incidents.</summary>
+public sealed class DiskEventLog
+{
+    public List<DiskFault> Faults { get; set; } = new();
+    public List<DateTimeOffset> Boots { get; set; } = new();
+    public List<DiskAttach> Attaches { get; set; } = new();
+}
+
+/// <summary>One System log disk fault: event ID, the disk number Windows used, when.</summary>
+public sealed class DiskFault
+{
+    public int Id { get; set; }
+    public int Disk { get; set; }
+    public DateTimeOffset At { get; set; }
+}
+
+/// <summary>A Partition/Diagnostic 1006 record: which drive Windows attached under a disk number, and when.</summary>
+public sealed class DiskAttach
+{
+    public int Disk { get; set; }
+    public DateTimeOffset At { get; set; }
+    public string? Serial { get; set; }
+    public string? Model { get; set; }
 }
 
 public sealed class AtaAttribute

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.11.0 (2026-11-16)
+
+- Windows drive health incorporates recent disk faults and unexpected removals from the System log when Windows can associate the event with a drive's recorded identity.
+- Storage tooltips show lifetime I/O and mechanical cycle counts when the drive reports them.
+- A disk fault logged while Windows is still attaching the drive counts for that drive. Unexpected removals (often a USB drive pulled without ejecting) are rated watch rather than warn.
+
 ## 2.10.0 — 2026-11-14
 
 Drive health on Linux and macOS.

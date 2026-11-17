@@ -100,12 +100,28 @@ public static class Analysis
         rep.Months = MonthsOf(full);
         if (volumes != null) rep.Volumes = VolumesOf(volumes, nowAt).Where(v => v.DriveKey == key).ToList();
         rep.Findings = FindingsOf(rep, full, nowAt);
+        SetVerdict(rep);
+        return rep;
+    }
+
+    internal static void AddDiskIncident(DriveReport report, DiskIncident incident)
+    {
+        string title = $"Windows logged {incident.Description}";
+        string detail = $"{incident.Count:N0} in the last 7 days (event {incident.EventId}). Last at {incident.Last.LocalDateTime:g}.";
+        report.Findings.Add(F(incident.Severity, $"win-disk-{incident.EventId}", title, detail, basis: "windows", since: incident.First));
+        report.Events.Add(new DriveEvent { At = incident.Last, Severity = incident.Severity, Text = $"{title} ({incident.Count:N0})" });
+        report.Findings = report.Findings.OrderByDescending(f => Finding.Rank(f.Severity)).ToList();
+        report.Events = report.Events.OrderByDescending(e => e.At).ToList();
+        SetVerdict(report);
+    }
+
+    static void SetVerdict(DriveReport rep)
+    {
         // the verdict is about the drive's health: a full or filling volume is listed, but it doesn't make a drive failing
         // (a file system Windows says needs repair does count)
         int worst = rep.Findings.Where(f => !f.Code.StartsWith("vol-", StringComparison.Ordinal) || f.Code == "vol-repair")
                                 .Select(f => Finding.Rank(f.Severity)).DefaultIfEmpty(0).Max();
-        rep.Verdict = rep.LatestFull == null ? "unknown" : worst switch { 4 => "act", 3 => "attention", 2 => "watch", _ => "healthy" };
-        return rep;
+        rep.Verdict = worst switch { 4 => "act", 3 => "attention", 2 => "watch", _ => rep.LatestFull == null ? "unknown" : "healthy" };
     }
 
     /// <summary>
@@ -121,9 +137,16 @@ public static class Analysis
             e.SmartPassed ??= p.SmartPassed; e.CriticalWarning ??= p.CriticalWarning;
             e.PowerOnHours ??= p.PowerOnHours; e.PowerCycles ??= p.PowerCycles; e.UnsafeShutdowns ??= p.UnsafeShutdowns;
             e.TempLimit ??= p.TempLimit; e.TempLifetimeMax ??= p.TempLifetimeMax;
+            e.ControllerBusyMinutes ??= p.ControllerBusyMinutes;
+            if (e.BytesRead == null) e.ReadUnits ??= p.ReadUnits;
             e.BytesWritten ??= p.BytesWritten; e.BytesRead ??= p.BytesRead;
             if (e.WriteUnits == null && p.WriteUnits != null) { e.WriteUnits = p.WriteUnits; e.WriteUnit = p.WriteUnit; }
-            e.PercentUsed ??= p.PercentUsed; e.Spare ??= p.Spare; e.SpareThreshold ??= p.SpareThreshold;
+            if (e.PercentUsed == null && p.PercentUsed != null)
+            {
+                e.PercentUsed = p.PercentUsed;
+                e.PercentUsedEstimated = p.PercentUsedEstimated;
+            }
+            e.Spare ??= p.Spare; e.SpareThreshold ??= p.SpareThreshold;
             e.MediaErrors ??= p.MediaErrors; e.ErrorLogEntries ??= p.ErrorLogEntries; e.AtaErrors ??= p.AtaErrors;
             e.WarningTempMinutes ??= p.WarningTempMinutes; e.CriticalTempMinutes ??= p.CriticalTempMinutes;
             e.LoadCycles ??= p.LoadCycles; e.StartStops ??= p.StartStops;
