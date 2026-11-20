@@ -2137,10 +2137,11 @@ public sealed class MainForm : Form
             menu.Close();
         }
 
-        foreach (var tab in new[] { "Drivers", "Efficiency", "Scan Log" })
+        // The native tabs draw at once; the web ones (Topology, Connections, System) get time to load and settle.
+        foreach (var tab in new[] { "Drivers", "Efficiency", "Scan Log", "Topology", "Connections", "System" })
         {
             SelectTab(tab);
-            await Task.Delay(700);
+            await Task.Delay(tab is "Topology" or "Connections" or "System" ? 9000 : 700);
             await SaveSnapshotAsync(Path.Combine(directory, $"tab-{tab.ToLowerInvariant().Replace(' ', '-')}.png"));
         }
         _tabs.SelectedIndex = 0;

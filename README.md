@@ -9,7 +9,7 @@ machine you reach with SSH ([Machines](docs/remote.md)).
 **Status:** v2.10.0 (2026-11-14) · Windows 10/11 and Linux (x64, arm64, arm, musl) · macOS (untested) · remote machines over SSH ·
 .NET 10 · MIT license · [Download](https://github.com/mikedopp/BoardScout/releases/latest) · [Changelog](CHANGELOG.md)
 
-![BoardScout Overview: the board with its printed slot names, live gauges, and the At a glance panel](docs/screenshots/overview.png)
+![BoardScout Overview: the rig's name and spec plates, four live instruments, the board with its printed slot names, and the At a glance panel](docs/screenshots/overview.png)
 
 ## What it's for
 
@@ -98,6 +98,8 @@ takes Scan's place. Keyboard: `F5` scan, `Esc` cancel, `Ctrl+1`–`Ctrl+9` the s
 order, `Ctrl+E` export, `Ctrl+O` import a scan, `Ctrl+U` upgrade planner, `F1` settings and help,
 `Ctrl+Shift+P` privacy mode, and `Alt` plus a button's underlined letter. The window opens where it was
 last closed, and fits a 1280 × 720 screen.
+
+![The header: the board's name, a plate for each headline part, and the CPU, memory, temperature, and network instruments](docs/screenshots/header.png)
 
 **Topology** — CPU-direct lanes versus devices behind the chipset uplink, with flowing links that
 move faster on wider buses. Board-specific slot names and lane sharing appear only for the verified
@@ -202,7 +204,9 @@ cache folders it found. It says how much of the used space it couldn't read. On 
 (never crossing into another mount) with Linux's own rules: `/usr` and `/boot` are System data, `/opt` and container
 storage are Apps, `/var/cache` and `~/.cache` are Caches.
 
-![Storage tab: what fills a drive, with a real read of a 476 GB system drive](docs/screenshots/storage-fill.png)
+![Drivers: each component's installed and latest version, its status as a coloured pill, and where the newer one was found](docs/screenshots/drivers.png)
+
+![Storage tab: what fills a drive, with a real read of a 476 GB system drive, above every drive's fill, health, and life](docs/screenshots/storage-fill.png)
 
 **Drive health over time** (Windows, Linux, macOS) — once a day BoardScout asks every drive for its own counters: hours powered on,
 power cycles and unsafe power-offs, data written and read, wear and spare blocks (SSDs), temperature against the
