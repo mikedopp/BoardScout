@@ -139,7 +139,8 @@ internal sealed class PhonesPage : Panel
             {
                 phone.Kind,
                 named.Length > 0 && named != _title.Text ? named : null,
-                phone.UptimeHours is { } hours ? hours >= 48 ? $"on for {hours / 24:0} days" : $"on for {hours:0} h" : null
+                phone.UptimeHours is { } hours ? hours >= 48 ? $"on for {hours / 24:0} days" : $"on for {hours:0} h" : null,
+                phone.BatteryFirstUse is { } first ? $"battery in use since {first.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)}" : null
             }.Where(part => part is not null));
             _about.Font = new Font("Segoe UI", 9.25f);
             _about.ForeColor = AppTheme.Muted;

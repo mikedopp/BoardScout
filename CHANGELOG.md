@@ -9,7 +9,8 @@ What is inside your phones.
   plates for the chip (with its cores and their top speeds), memory, storage, display (resolution and refresh
   rate), and Android version (with One UI and the security patch date on a Galaxy), and meters for battery
   level, battery temperature, and storage used. Where the phone reports them, as Samsung phones do, the
-  battery meter also shows its capacity against new and its charge cycles. Common Galaxy model numbers and
+  battery meter also shows its capacity against new and its charge cycles, and the card says when the battery
+  was first used. Checked against a real Galaxy S23 Ultra and a real Fire TV. Common Galaxy model numbers and
   flagship chips are shown by the names they are sold under.
 - **Only when asked.** Nothing is read until you press **Read phones**; one press runs one read-only command
   per device and is never repeated by itself. No serial number, IMEI, account, app list, message, or file is

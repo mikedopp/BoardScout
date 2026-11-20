@@ -68,6 +68,7 @@ public class PhoneInventoryTests
         Assert.Equal(31.2, phone.BatteryTempC!.Value, 3);
         Assert.Equal(91, phone.BatteryHealthPercent);
         Assert.Equal(412, phone.BatteryCycles);
+        Assert.Equal(new DateOnly(2023, 4, 2), phone.BatteryFirstUse);
         Assert.Equal("Charging", phone.BatteryState);
         Assert.Equal(478150656L * 1024, phone.StorageBytes);
         Assert.Equal(291110656L * 1024, phone.StorageFreeBytes);
@@ -115,8 +116,32 @@ public class PhoneInventoryTests
     [Fact]
     public void A_standard_cycle_count_is_used_when_the_phone_reports_one()
     {
-        var text = PhoneInventory.SampleProbe.Replace("mSavedBatteryUsage: 41250", "Cycle count: 280");
+        var text = PhoneInventory.SampleProbe.Replace("mSavedBatteryUsage: [41250]", "Cycle count: 280");
         Assert.Equal(280, PhoneInventory.Parse(text, "x").BatteryCycles);
+    }
+
+    [Fact]
+    public void The_newer_samsung_health_figure_wins_when_a_phone_reports_both()
+    {
+        var text = PhoneInventory.SampleProbe.Replace("mSavedBatteryUsage: [41250]", "mSavedBatteryUsage: [41250]\n  mSavedBatteryBsoh: 94");
+        Assert.Equal(94, PhoneInventory.Parse(text, "x").BatteryHealthPercent);
+    }
+
+    [Fact]
+    public void The_battery_log_lines_under_the_status_do_not_overwrite_it()
+    {
+        // The sample carries a log line with level:41 and temperature:266 after the live figures.
+        var phone = PhoneInventory.Parse(PhoneInventory.SampleProbe, "x");
+        Assert.Equal(78, phone.BatteryLevel);
+        Assert.Equal(31.2, phone.BatteryTempC!.Value, 3);
+        Assert.Equal(120, phone.RefreshHz);
+    }
+
+    [Fact]
+    public void A_first_use_date_that_is_not_a_date_is_left_out()
+    {
+        var text = PhoneInventory.SampleProbe.Replace("[20230402]", "[unsupported]");
+        Assert.Null(PhoneInventory.Parse(text, "x").BatteryFirstUse);
     }
 
     [Theory]

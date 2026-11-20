@@ -32,6 +32,8 @@ internal sealed record PhoneFacts
     /// <summary>The battery's capacity now as a share of new, where the maker reports it (Samsung does).</summary>
     public int? BatteryHealthPercent { get; init; }
     public int? BatteryCycles { get; init; }
+    /// <summary>The day the battery was first used, where the maker keeps it (Samsung does).</summary>
+    public DateOnly? BatteryFirstUse { get; init; }
     public string? BatteryState { get; init; }
     public string? BatteryCondition { get; init; }
     public double? UptimeHours { get; init; }
@@ -143,13 +145,20 @@ internal static class PhoneInventory
 
         var battery = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var line in Section("battery"))
-            if (Regex.Match(line, @"^\s*([A-Za-z][A-Za-z ]*?)\s*:\s*(.*)$") is { Success: true } b) battery.TryAdd(b.Groups[1].Value.Trim(), b.Groups[2].Value.Trim());
+            // Samsung writes its own figures in brackets ("mSavedBatteryAsoc: [90]"); the log lines further down start with a date and are skipped.
+            if (Regex.Match(line, @"^\s*([A-Za-z][A-Za-z ]*?)\s*:\s*(.*)$") is { Success: true } b)
+                battery.TryAdd(b.Groups[1].Value.Trim(), b.Groups[2].Value.Trim().TrimStart('[').TrimEnd(']').Trim());
         int? Number(string key) => battery.TryGetValue(key, out var v) && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : null;
         // A TV or a box reports a stand-in battery; only a device with a real one names its chemistry.
         var hasBattery = kind != "TV" && battery.GetValueOrDefault("present") == "true" && battery.GetValueOrDefault("technology") is { Length: > 0 };
         var level = Number("level") is { } l && Number("scale") is { } scale and > 0 ? (int)Math.Round(l * 100d / scale) : Number("level");
-        // Samsung keeps its own estimate of capacity against new, and a use counter in hundredths of a cycle.
-        var health = Number("mSavedBatteryAsoc") is { } asoc and > 0 and <= 100 ? asoc : (int?)null;
+        // Samsung keeps its own estimate of capacity against new (a newer figure on recent phones, an older one on all
+        // of them), a use counter in hundredths of a cycle, and the day the battery was first used.
+        var health = Number("mSavedBatteryBsoh") is { } bsoh and > 0 and <= 100 ? bsoh
+            : Number("mSavedBatteryAsoc") is { } asoc and > 0 and <= 100 ? asoc : (int?)null;
+        DateOnly? firstUse = battery.TryGetValue("battery FirstUseDate", out var used) &&
+                             DateOnly.TryParseExact(used, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) && day.Year >= 2008
+            ? day : null;
         var cycles = Number("Cycle count") is { } count and > 0 ? count
             : Number("mSavedBatteryUsage") is { } usage and > 0 ? usage / 100 : (int?)null; // whole cycles completed
         var powered = new[] { "AC powered", "USB powered", "Wireless powered", "Dock powered" }.Any(k => battery.GetValueOrDefault(k) == "true");
@@ -195,6 +204,7 @@ internal static class PhoneInventory
             BatteryTempC = hasBattery && Number("temperature") is { } tenths ? tenths / 10d : null,
             BatteryHealthPercent = hasBattery ? health : null,
             BatteryCycles = hasBattery ? cycles : null,
+            BatteryFirstUse = hasBattery ? firstUse : null,
             BatteryState = hasBattery ? state : null,
             BatteryCondition = hasBattery ? condition : null,
             UptimeHours = uptime
@@ -260,7 +270,7 @@ internal static class PhoneInventory
         };
     }
 
-    /// <summary>A made-up Galaxy in the shape a Samsung phone answers in, for the tests and the off-screen QA render.</summary>
+    /// <summary>A made-up Galaxy in the shape a real Galaxy S23 Ultra answered in, for the tests and the off-screen QA render.</summary>
     internal const string SampleProbe = """
         ##props
         [ro.board.platform]: [kalama]
@@ -287,7 +297,6 @@ internal static class PhoneInventory
         cpu6 2803200
         cpu7 3360000
         ##cpuinfo
-        Hardware	: Qualcomm Technologies, Inc SM8550
         ##battery
         Current Battery Service state:
           AC powered: false
@@ -302,11 +311,15 @@ internal static class PhoneInventory
           voltage: 4213
           temperature: 312
           technology: Li-ion
-          mSavedBatteryAsoc: 91
-          mSavedBatteryUsage: 41250
+          battery FirstUseDate: [20230402]
+          mSavedBatteryAsoc: [91]
+          mSavedBatteryUsage: [41250]
+
+        [BattActionChangedLogBuffer]
+        11-20 12:48:45.540  Sending ACTION_BATTERY_CHANGED: level:41, status:3, health:2, temperature:266, cycle_count:0, present:true, scale:100, technology:Li-ion
         ##display
         Physical size: 1440x3088
-          DisplayDeviceInfo{"Built-in Screen": uniqueId="local:0", 1440 x 3088, modeId 1, supportedModes [{id=1, width=1440, height=3088, fps=120.0}, {id=2, width=1440, height=3088, fps=60.0}]}
+          DisplayDeviceInfo{"Built-in Screen": uniqueId="local:0", 1440 x 3088, modeId 6, renderFrameRate 24.000002, supportedRefreshRates [120.00001, 60.000004, 24.000002], supportedModes [{id=1, width=1440, height=3088, fps=120.00001, vsync=120.00001}, {id=3, width=1440, height=3088, fps=60.000004}, {id=6, width=1440, height=3088, fps=24.000002}]}
         ##df
         Filesystem       1K-blocks      Used Available Use% Mounted on
         /dev/block/dm-52 478150656 187040000 291110656  40% /data/user/0
