@@ -24,6 +24,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
     private ulong? _previousKernel;
     private ulong? _previousUser;
     private double _lastCpuUsage;
+    private byte[]? _previousCores;
 
     private NetworkInterface[] _interfaces = [];
     private DateTime _interfacesReadUtc = DateTime.MinValue;
@@ -61,6 +62,9 @@ internal sealed partial class SystemTelemetryService : IDisposable
             var detailed = DetailedRates;
 
             var cpuUsage = SampleCpu();
+            var coreTimes = CoreLoads.Read();
+            double[] cores = coreTimes is not null && _previousCores is not null ? CoreLoads.Between(_previousCores, coreTimes) : [];
+            _previousCores = coreTimes;
             var (memTotal, memAvailable) = SampleMemory();
             var (thermals, fans, power) = SampleSensors();
             var network = SampleNetwork(now, elapsed, detailed);
@@ -78,6 +82,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 DiskQueues = disks.Queues,
                 DiskBusy = disks.Busy,
                 DiskDetail = disks.Detail,
+                CoreLoads = cores,
                 Power = power
             };
         }

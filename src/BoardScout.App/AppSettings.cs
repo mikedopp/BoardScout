@@ -27,6 +27,13 @@ internal sealed class AppSettings
     /// <summary>Crawler spiders crawling the Connections map; 0 turns them off.</summary>
     public int Crawlers { get; set; }
 
+    /// <summary>Where the window was when it was last closed, so it opens there again. A width of 0 means never saved.</summary>
+    public bool WindowMaximized { get; set; } = true;
+    public int WindowLeft { get; set; }
+    public int WindowTop { get; set; }
+    public int WindowWidth { get; set; }
+    public int WindowHeight { get; set; }
+
     private static readonly JsonSerializerOptions WriteOptions =
         new(BoardScoutJson.Default.Options) { WriteIndented = true };
 

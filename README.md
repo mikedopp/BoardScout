@@ -82,8 +82,22 @@ and header under the name printed on the board, empty ones included, with its la
 M2_2 turns SATA3_5 and SATA3_6 off; M2_3 is Key E for Wi-Fi only). Other boards get the parts
 Windows or Linux reports. The Windows app and the browser dashboard show the same Overview.
 
-Four live gauges sit in the header (CPU load, memory, temperature, network), beside one chip that
-says whether the PC is healthy or how many things are worth a look.
+The header is the rig at a glance. Under the board's name, a row of plates names its headline parts:
+processor (with cores and threads), graphics card, memory (sticks and speed), total storage, and Windows.
+Below them sit four live instruments (CPU load, memory, temperature, network). Each is a level meter whose lights
+climb through the reading's colours, the figure, and a graph of the last minute and a half with a mark
+held at its highest point. The CPU instrument adds a column of lights per thread; the network one has a
+meter column each for download and upload, and draws download above its graph's centre line and upload
+below. They are readouts, so nothing on them looks like a control. Clicking one opens the screen that
+explains it. Whether the PC is healthy, or how many things are worth a look, is a chip in the status bar
+at the bottom, next to the **Privacy on** chip when privacy mode is on.
+
+The command bar at the top right has one filled action, **Scan now**, the **Upgrade planner**, and two
+menus (**Drivers**, **More**); in a narrow window they fold to icons. While something runs, **Cancel**
+takes Scan's place. Keyboard: `F5` scan, `Esc` cancel, `Ctrl+1`–`Ctrl+9` the screens in the rail's
+order, `Ctrl+E` export, `Ctrl+O` import a scan, `Ctrl+U` upgrade planner, `F1` settings and help,
+`Ctrl+Shift+P` privacy mode, and `Alt` plus a button's underlined letter. The window opens where it was
+last closed, and fits a 1280 × 720 screen.
 
 **Topology** — CPU-direct lanes versus devices behind the chipset uplink, with flowing links that
 move faster on wider buses. Board-specific slot names and lane sharing appear only for the verified
@@ -312,7 +326,7 @@ memory serial numbers. Scans keep them on disk, and privacy mode keeps them out 
 
 Turn it on under the version button → Settings, or press **Ctrl+Shift+P**. While it is on:
 
-- A purple **Privacy on** chip appears in the header, so a screenshot shows it was taken masked.
+- A purple **Privacy on** chip appears in the status bar, so a screenshot shows it was taken masked.
   Click it to turn privacy mode off.
 - The System tab hides the installed-software, patch, and scheduled-task lists (counts stay).
 - The Scan Log shows `THIS-PC` and `%USERPROFILE%` instead of your PC name and user folder.
@@ -437,6 +451,6 @@ BoardScout reads hardware identifiers that Windows and firmware report, for diag
 informational purposes only. No proprietary firmware, drivers, or copyrighted vendor materials are
 bundled or distributed. Windows lifecycle dates reflect Microsoft's published pages as of
 2026-09-26 and can change; the Windows 11 readiness result is BoardScout's quick check, and
-Microsoft's PC Health Check app has the final word. Upgrade prices in the Pimp My Build report are
+Microsoft's PC Health Check app has the final word. Upgrade prices in the upgrade planner report are
 rough estimates, not offers. All product names and brands belong to their respective owners, and
 their use does not imply affiliation or endorsement.

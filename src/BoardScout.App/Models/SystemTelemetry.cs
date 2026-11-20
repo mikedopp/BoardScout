@@ -48,6 +48,9 @@ public sealed record SystemTelemetry(
     /// <summary>Time per request and totals since boot for each physical disk, when detailed rates are on.</summary>
     public IReadOnlyDictionary<int, DiskIoDetail>? DiskDetail { get; init; }
 
+    /// <summary>How busy each logical processor was over the last interval, 0 to 1 (empty until the second sample).</summary>
+    public IReadOnlyList<double> CoreLoads { get; init; } = [];
+
     /// <summary>CPU, GPU, and power supply readings, when the sensors report them.</summary>
     public IReadOnlyList<PowerReading> Power { get; init; } = [];
 

@@ -64,29 +64,33 @@ public sealed class MainForm : Form
     private bool _changedSinceRefresh;
     private readonly Dictionary<string, string> _netKeys = [];
     private readonly List<(TabPage Page, WebView2 View)> _webTabs = [];
-    private readonly GaugeTile _cpuGauge = new("CPU load", spark: true, Color.Empty) { SparkFloor = 25, Width = 188 };
-    private readonly GaugeTile _memoryGauge = new("Memory", spark: false, Color.Empty) { Width = 196 };
-    private readonly GaugeTile _tempGauge = new("Temperature", spark: false, Color.Empty) { Width = 188 };
-    private readonly GaugeTile _networkGauge = new("Network", spark: true, Color.Empty) { SparkFloor = 12_500, SparkShare = 0.27f, Width = 280 };
+    // The header's four instruments. A CPU graph scales to at least 25% and a network one to at least 100 Kbps,
+    // so an idle PC draws a low calm line instead of magnified noise.
+    private readonly GaugeTile _cpuGauge = new("CPU load", GaugeKind.Cpu) { GraphFloor = 0.25f };
+    private readonly GaugeTile _memoryGauge = new("Memory", GaugeKind.Memory);
+    private readonly GaugeTile _tempGauge = new("Temperature", GaugeKind.Temperature);
+    private readonly GaugeTile _networkGauge = new("Network", GaugeKind.Network) { GraphFloor = 12_500 };
     private readonly ToolTip _toolTip = new() { InitialDelay = 300, AutoPopDelay = 12000 };
-    private readonly RoundedButton _privacyChip = new();
+    private readonly CommandButton _privacyChip = new() { Kind = CommandKind.Chip };
     private readonly List<string> _logLines = [];
     private bool _privacyShown;
-    private readonly Label _title = new();
-    private readonly Label _subtitle = new();
-    private readonly FlowLayoutPanel _metrics = new();
+    private readonly HeaderLabel _title = new();
+    private readonly HeaderLabel _subtitle = new();
+    private readonly SpecStrip _specs = new() { Visible = false };
     private readonly DataGridView _drivers = new();
     private readonly DataGridView _storage = new();
     private readonly DataGridView _suggestions = new();
     private readonly TextBox _log = new();
-    private readonly Label _status = new();
-    private readonly ProgressBar _progress = new();
-    private readonly RoundedButton _scanButton = new();
-    private readonly RoundedButton _driversButton = new();
-    private readonly RoundedButton _moreButton = new();
-    private readonly RoundedButton _cancelButton = new();
-    private readonly RoundedButton _pimpButton = new();
-    private readonly RoundedButton _healthChip = new();
+    private readonly Label _logEmpty = new();
+    private readonly StatusLine _status = new();
+    private readonly BusyBar _busyBar = new();
+    // The command bar, left to right: the one filled action, the upgrade planner, then the two menus.
+    private readonly CommandButton _scanButton = new() { Kind = CommandKind.Primary, Glyph = CommandGlyph.Scan };
+    private readonly CommandButton _cancelButton = new() { Kind = CommandKind.Danger, Glyph = CommandGlyph.Stop };
+    private readonly CommandButton _upgradeButton = new() { Glyph = CommandGlyph.Upgrade };
+    private readonly CommandButton _driversButton = new() { Glyph = CommandGlyph.Drivers, DropDown = true };
+    private readonly CommandButton _moreButton = new() { Glyph = CommandGlyph.More, DropDown = true };
+    private readonly CommandButton _healthChip = new() { Kind = CommandKind.Chip };
     private readonly ContextMenuStrip _driversMenu = new();
     private readonly ContextMenuStrip _moreMenu = new();
     private readonly ToolStripMenuItem _checkDriversItem = new("Check for newer drivers");
@@ -98,7 +102,8 @@ public sealed class MainForm : Form
     private readonly VersionButton _versionButton = new();
     private readonly ContentTabControl _tabs = new();
     private readonly SidebarNavigationControl _navigation = new();
-    private readonly List<(Button Button, bool Primary)> _themedButtons = [];
+    private bool _busy;
+    private FormWindowState _stateBeforeMinimize = FormWindowState.Maximized;
 
     private readonly AuroraPanel _header = new();
     private readonly Panel _statusPanel = new();
@@ -134,9 +139,9 @@ public sealed class MainForm : Form
         AppTheme.SetDarkMode(true);
         Text = "BoardScout";
         Icon = AppTheme.CreateAppIcon();
-        MinimumSize = new Size(1440, 780);
+        // Small enough for a 1280 x 720 laptop screen; the header reflows and its buttons fold to icons to fit.
+        MinimumSize = new Size(1180, 700);
         Size = new Size(1540, 960);
-        WindowState = FormWindowState.Maximized;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = AppTheme.Background;
         ForeColor = AppTheme.Text;
@@ -150,6 +155,7 @@ public sealed class MainForm : Form
             ShowInTaskbar = false;
             Bounds = new Rectangle(SystemInformation.VirtualScreen.Right + 200, SystemInformation.VirtualScreen.Top, 1920, 1080);
         }
+        else RestoreWindowPlacement();
 
         BuildUi();
         BuildTrayIcon();
@@ -175,6 +181,7 @@ public sealed class MainForm : Form
         FormClosing += (_, _) =>
         {
             AppSettings.Changed -= OnSettingsChanged;
+            SaveWindowPlacement();
             _versionPopout?.Close();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
@@ -263,33 +270,118 @@ public sealed class MainForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open", null, (_, _) => RestoreFromTray());
         menu.Items.Add("Exit", null, (_, _) => { _trayIcon.Visible = false; Close(); });
+        DarkMenuRenderer.Apply(menu);
         _trayIcon.ContextMenuStrip = menu;
     }
 
+    // Back the way it was before it went to the tray: maximized if it was maximized, its own size if not.
     private void RestoreFromTray()
     {
         Show();
-        WindowState = FormWindowState.Maximized;
+        WindowState = _stateBeforeMinimize;
         _trayIcon.Visible = false;
         Activate();
     }
 
-    // Ctrl+Shift+P flips privacy mode from anywhere in the native UI, e.g. right before a screenshot.
-    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    // The window opens where it was closed: same screen, same size, maximized or not. A saved place that is no
+    // longer on any connected screen (an unplugged monitor) is ignored.
+    private void RestoreWindowPlacement()
     {
-        if (keyData == (Keys.Control | Keys.Shift | Keys.P))
+        var saved = AppSettings.Current;
+        var bounds = new Rectangle(saved.WindowLeft, saved.WindowTop, saved.WindowWidth, saved.WindowHeight);
+        if (bounds.Width >= MinimumSize.Width && bounds.Height >= MinimumSize.Height)
         {
-            AppSettings.Update(s => s.PrivacyMode = !s.PrivacyMode);
+            var titleBar = new Rectangle(bounds.X + 40, bounds.Y, bounds.Width - 80, 30);
+            if (Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(titleBar)))
+            {
+                StartPosition = FormStartPosition.Manual;
+                Bounds = bounds;
+            }
+        }
+        WindowState = saved.WindowMaximized ? FormWindowState.Maximized : FormWindowState.Normal;
+        _stateBeforeMinimize = WindowState;
+    }
+
+    private void SaveWindowPlacement()
+    {
+        if (_snapshotDir is not null) return;
+        var state = WindowState == FormWindowState.Minimized ? _stateBeforeMinimize : WindowState;
+        var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        if (bounds.Width < MinimumSize.Width || bounds.Height < MinimumSize.Height) return;
+        AppSettings.Update(s =>
+        {
+            s.WindowMaximized = state == FormWindowState.Maximized;
+            s.WindowLeft = bounds.Left;
+            s.WindowTop = bounds.Top;
+            s.WindowWidth = bounds.Width;
+            s.WindowHeight = bounds.Height;
+        });
+    }
+
+    // The --snapshot window is a tool window that never takes the focus: it stays out of the taskbar and Alt+Tab
+    // while it draws its renders off-screen.
+    protected override bool ShowWithoutActivation => _snapshotDir is not null;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            if (_snapshotDir is not null) parameters.ExStyle |= 0x80 | 0x08000000; // WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+            return parameters;
+        }
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) =>
+        HandleShortcut(keyData) || base.ProcessCmdKey(ref msg, keyData);
+
+    // The window's keyboard shortcuts. They arrive here from the native controls, and from each web view (which
+    // reports the keys it does not use itself), so they work wherever the focus is.
+    private bool HandleShortcut(Keys keyData)
+    {
+        switch (keyData)
+        {
+            // Flips privacy mode from anywhere, e.g. right before a screenshot.
+            case Keys.Control | Keys.Shift | Keys.P:
+                AppSettings.Update(s => s.PrivacyMode = !s.PrivacyMode);
+                return true;
+            case Keys.F5:
+                if (!_busy) _ = RunScanAsync();
+                return true;
+            case Keys.Escape when _busy:
+                _operationCts?.Cancel();
+                return true;
+            case Keys.Control | Keys.E when _exportItem.Enabled:
+                ExportScan();
+                return true;
+            case Keys.Control | Keys.O when _importItem.Enabled:
+                _ = LoadScanFromFileAsync();
+                return true;
+            case Keys.Control | Keys.U when _upgradeButton.Enabled:
+                OpenUpgradePlanner();
+                return true;
+            case Keys.F1:
+                ToggleVersionPopout();
+                return true;
+        }
+        // Ctrl+1 to Ctrl+9: the screens, in the navigation rail's order.
+        var digit = (keyData & Keys.KeyCode) - Keys.D1;
+        if ((keyData & Keys.Modifiers) == Keys.Control && digit >= 0 && digit < _tabs.TabCount)
+        {
+            _tabs.SelectedIndex = digit;
             return true;
         }
-        return base.ProcessCmdKey(ref msg, keyData);
+        return false;
     }
 
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
         SyncWebViewVisibility();
-        if (WindowState == FormWindowState.Minimized && AppSettings.Current.MinimizeToTray)
+        // The header's instruments are shorter in a short window, so a change of height alone is laid out too.
+        if (WindowState != FormWindowState.Minimized && _header.Parent is not null) LayoutHeader();
+        if (WindowState != FormWindowState.Minimized) _stateBeforeMinimize = WindowState;
+        else if (AppSettings.Current.MinimizeToTray)
         {
             _trayIcon.Visible = true;
             Hide();
@@ -321,7 +413,6 @@ public sealed class MainForm : Form
         BuildHeader();
         Controls.Add(_tabs);
         Controls.Add(_navigation);
-        Controls.Add(_progress);
         Controls.Add(BuildStatusBar());
         Controls.Add(_header);
 
@@ -357,112 +448,80 @@ public sealed class MainForm : Form
             if (OverviewVisible && _overviewStale) _ = LoadOverviewAsync(read: true);
         };
 
-        _progress.Dock = DockStyle.Bottom;
-        _progress.Height = 3;
-        _progress.Style = ProgressBarStyle.Marquee;
-        _progress.MarqueeAnimationSpeed = 25;
-        _progress.Visible = false;
         foreach (var scrolling in new Control[] { _drivers, _storage, _suggestions, _log })
             AppTheme.UseDarkScrollbars(scrolling);
         ApplyTheme();
     }
 
+    private const int HeaderHeight = 180;
+    private const int HeaderPad = 24;
+    private readonly Panel _commandDivider = new() { Size = new Size(1, 20), BackColor = Color.FromArgb(52, 64, 82) };
+    private GaugeTile[] Gauges => [_cpuGauge, _memoryGauge, _tempGauge, _networkGauge];
+
+    // Three rows on the header's glow: the rig's name (with the version) beside the command bar, its headline
+    // parts as a row of plates, then four live instruments across the full width. Everything is placed by
+    // LayoutHeader, so the rows stay aligned to one left edge and reflow when the window is resized.
     private void BuildHeader()
     {
         _header.Dock = DockStyle.Top;
-        _header.Height = 150;
+        _header.Height = HeaderHeight;
         _header.BackColor = AppTheme.Surface;
-        _header.Padding = new Padding(24, 16, 24, 14);
         _header.Tag = "surface";
 
-        // Transparent layers so the header's aurora shows through behind the text and gauges.
-        var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
         _title.Text = "BoardScout";
         _title.Font = new Font("Segoe UI Semibold", 20);
         _title.ForeColor = AppTheme.Text;
-        _title.BackColor = Color.Transparent;
-        _title.AutoSize = true;
-        _title.Location = new Point(0, 0);
         _title.Tag = "text";
+        _title.AccessibleRole = AccessibleRole.TitleBar;
+        _title.TextChanged += (_, _) => LayoutHeader();
 
         _subtitle.Text = "Portable motherboard, storage, and driver intelligence";
+        _subtitle.Font = new Font("Segoe UI", 9.25f);
         _subtitle.ForeColor = AppTheme.Muted;
-        _subtitle.BackColor = Color.Transparent;
-        _subtitle.AutoSize = true;
-        _subtitle.Location = new Point(2, 39);
         _subtitle.Tag = "muted";
-
-        // Four live gauges: what the PC is doing right now. Storage, drivers, and fixes live in the Overview's panel.
-        _metrics.AutoSize = true;
-        _metrics.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        _metrics.WrapContents = false;
-        _metrics.Location = new Point(0, 64);
-        _metrics.BackColor = Color.Transparent;
-        _metrics.Margin = new Padding(0);
-        _metrics.Controls.AddRange([_cpuGauge, _memoryGauge, _tempGauge, _networkGauge]);
-
-        _title.Resize += (_, _) => LayoutTitleRow();
-        textPanel.Controls.Add(_versionButton);
+        _subtitle.TextChanged += (_, _) => LayoutHeader();
 
         // How the PC is doing, in one chip; it opens the Efficiency tab.
-        _healthChip.Font = new Font("Segoe UI Semibold", 8.75f);
-        _healthChip.Height = 30;
-        _healthChip.Cursor = Cursors.Hand;
         _healthChip.Visible = false;
         _healthChip.Click += (_, _) => SelectTab("Efficiency");
-        textPanel.Controls.Add(_healthChip);
 
         // Visible whenever privacy mode is on, so a screenshot shows it was taken masked.
         _privacyChip.Text = "Privacy on";
-        _privacyChip.Font = new Font("Segoe UI Semibold", 8.5f);
-        _privacyChip.Size = new Size(104, 30);
-        _privacyChip.BackColor = Color.FromArgb(38, 28, 62);
-        _privacyChip.ForeColor = AppTheme.Purple;
-        _privacyChip.FlatAppearance.BorderColor = AppTheme.Purple;
-        _privacyChip.FlatAppearance.MouseOverBackColor = Color.FromArgb(56, 42, 90);
-        _privacyChip.FlatAppearance.MouseDownBackColor = Color.FromArgb(28, 20, 46);
-        _privacyChip.Cursor = Cursors.Hand;
+        _privacyChip.Tone = AppTheme.Purple;
         _privacyChip.Visible = Privacy.Enabled;
         _privacyChip.AccessibleName = "Privacy mode is on. Press to turn it off.";
         _privacyChip.Click += (_, _) => AppSettings.Update(s => s.PrivacyMode = false);
         _toolTip.SetToolTip(_privacyChip,
             "Privacy mode hides your PC name, Windows owner details, serial numbers, paths, and app lists " +
             "in screens and exports. Click to turn it off (Ctrl+Shift+P).");
-        textPanel.Controls.Add(_privacyChip);
-        textPanel.Controls.Add(_title);
-        textPanel.Controls.Add(_subtitle);
-        textPanel.Controls.Add(_metrics);
-        LayoutTitleRow();
 
-        var actions = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Right,
-            Width = 470,
-            FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = false,
-            Padding = new Padding(0, 4, 0, 0),
-            BackColor = Color.Transparent
-        };
-
-        // One primary action; the rest wait in two menus.
-        ConfigureButton(_scanButton, "Scan now", async (_, _) => await RunScanAsync(), primary: true);
-        ConfigureButton(_pimpButton, "Pimp My Build", (_, _) => OpenPimpMyBuild());
-        AppTheme.StyleFeatureButton(_pimpButton);
-        _pimpButton.Tag = "featureButton";
-        ConfigureButton(_driversButton, "Drivers  ▾", (_, _) => _driversMenu.Show(_driversButton, new Point(0, _driversButton.Height + 4)));
-        ConfigureButton(_moreButton, "More  ▾", (_, _) => _moreMenu.Show(_moreButton, new Point(0, _moreButton.Height + 4)));
-        ConfigureButton(_cancelButton, "Cancel", (_, _) => _operationCts?.Cancel());
-        _toolTip.SetToolTip(_scanButton, "Take a fresh hardware inventory (about half a minute). Only needed after hardware changes.");
-        _toolTip.SetToolTip(_pimpButton, "Open an upgrade report for this PC in your browser.");
+        // One filled action; the planner beside it; everything else waits in two menus. Cancel takes Scan's
+        // place while something runs, so the row never shifts.
+        _scanButton.Text = "&Scan now";
+        _scanButton.Click += async (_, _) => await RunScanAsync();
+        _cancelButton.Text = "&Cancel";
+        _cancelButton.Visible = false;
+        _cancelButton.Click += (_, _) => _operationCts?.Cancel();
+        _upgradeButton.Text = "&Upgrade planner";
+        _upgradeButton.Click += (_, _) => OpenUpgradePlanner();
+        _driversButton.Text = "&Drivers";
+        _moreButton.Text = "&More";
+        _toolTip.SetToolTip(_scanButton, "Take a fresh hardware inventory, about half a minute (F5). Only needed after hardware changes.");
+        _toolTip.SetToolTip(_cancelButton, "Stop what is running (Esc). Results already saved are kept.");
+        _toolTip.SetToolTip(_upgradeButton, "Open the upgrade planner for this PC in your browser (Ctrl+U).");
+        _toolTip.SetToolTip(_driversButton, "Check for newer drivers and download them.");
+        _toolTip.SetToolTip(_moreButton, "Export, import a scan, and read drive health.");
 
         _checkDriversItem.Click += async (_, _) => await RunDriverCheckAsync();
         _downloadDriversItem.Click += async (_, _) => await DownloadDriversAsync();
         _checkDriversItem.ToolTipText = "Ask vendor, OEM, and Windows Update catalog pages for newer drivers. Nothing is installed.";
         _downloadDriversItem.ToolTipText = "Download what the last check found, or open its official page.";
-        var driversTab = new ToolStripMenuItem("Open the Drivers tab", null, (_, _) => SelectTab("Drivers"));
+        var driversTab = new ToolStripMenuItem("Open the Drivers tab", null, (_, _) => SelectTab("Drivers")) { ShortcutKeyDisplayString = "Ctrl+4" };
         _driversMenu.Items.AddRange([_checkDriversItem, _downloadDriversItem, new ToolStripSeparator(), driversTab]);
         _importItem.Click += async (_, _) => await LoadScanFromFileAsync();
+        _importItem.ShortcutKeyDisplayString = "Ctrl+O";
         _exportItem.Click += (_, _) => ExportScan();
+        _exportItem.ShortcutKeyDisplayString = "Ctrl+E";
         _exportItem.ToolTipText = "A spec sheet, an upgrade planner, or the raw scan as JSON.";
         var healthItem = new ToolStripMenuItem("Read drive health now", null, async (_, _) =>
         {
@@ -471,42 +530,117 @@ public sealed class MainForm : Form
         });
         healthItem.ToolTipText = "Read every drive's own counters (hours, data written, wear, errors) and keep the reading. " +
                                  "BoardScout also does this once a day by itself. USB drives need BoardScout started as administrator.";
-        _moreMenu.Items.AddRange([_exportItem, _importItem, new ToolStripSeparator(), healthItem]);
-        foreach (var menu in new[] { _driversMenu, _moreMenu })
-        {
-            menu.Renderer = new DarkMenuRenderer();
-            menu.ShowItemToolTips = true;
-            menu.Font = new Font("Segoe UI", 9.5f);
-            menu.Padding = new Padding(4);
-            foreach (ToolStripItem item in menu.Items) item.Padding = new Padding(4, 5, 12, 5);
-        }
+        var settingsItem = new ToolStripMenuItem("Settings and help", null, (_, _) => ToggleVersionPopout()) { ShortcutKeyDisplayString = "F1" };
+        _moreMenu.Items.AddRange([_exportItem, _importItem, new ToolStripSeparator(), healthItem, new ToolStripSeparator(), settingsItem]);
+        DarkMenuRenderer.Apply(_driversMenu);
+        DarkMenuRenderer.Apply(_moreMenu);
+        WireMenu(_driversButton, _driversMenu);
+        WireMenu(_moreButton, _moreMenu);
 
-        _cancelButton.Visible = false;
         _checkDriversItem.Enabled = false;
         _downloadDriversItem.Enabled = false;
         _exportItem.Enabled = false;
-        _pimpButton.Enabled = false;
+        _upgradeButton.Enabled = false;
 
-        actions.Controls.AddRange([_moreButton, _driversButton, ToolbarSep(), _pimpButton, _scanButton, _cancelButton]);
+        // Each instrument opens the screen that explains its reading.
+        foreach (var (gauge, tab, what) in new[]
+                 {
+                     (_cpuGauge, "System", "what is running on this PC"),
+                     (_memoryGauge, "System", "what is running on this PC"),
+                     (_tempGauge, "Overview", "the board, with each part's temperature"),
+                     (_networkGauge, "Connections", "every link and its live traffic")
+                 })
+        {
+            gauge.Cursor = Cursors.Hand;
+            gauge.Click += (_, _) => SelectTab(tab);
+            gauge.AccessibleDescription = $"Opens {tab}: {what}.";
+        }
 
-        _header.Controls.Add(textPanel);
-        _header.Controls.Add(actions);
-        _header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = AppTheme.Border, Tag = "border" });
+        // Added in reading order, which is also the Tab order. (The health and privacy chips sit in the status bar.)
+        Control[] order = [_title, _versionButton, _scanButton, _cancelButton, _upgradeButton,
+            _commandDivider, _driversButton, _moreButton, _subtitle, _specs, .. Gauges];
+        for (var i = 0; i < order.Length; i++) order[i].TabIndex = i;
+        _header.Controls.AddRange(order);
+        _busyBar.Dock = DockStyle.Bottom;
+        _header.Controls.Add(_busyBar);
+        _header.Resize += (_, _) => LayoutHeader();
+        LayoutHeader();
     }
 
-    // The title, then the version button, the health chip, and the privacy chip, in one row.
-    private void LayoutTitleRow()
+    // A menu button stays lit while its menu is open, and the menu hangs from the button's right edge so it
+    // can never leave the window.
+    private static void WireMenu(CommandButton button, ContextMenuStrip menu)
     {
-        var x = _title.Left + _title.PreferredSize.Width + 10;
-        var top = _title.Top + (_title.PreferredSize.Height - _versionButton.Height) / 2;
-        _versionButton.Location = new Point(x, top);
-        x = _versionButton.Right + 8;
-        if (_healthChip.Visible)
+        var closedAt = 0L;
+        menu.Opened += (_, _) => button.Active = true;
+        menu.Closed += (_, _) =>
         {
-            _healthChip.Location = new Point(x, top);
-            x = _healthChip.Right + 8;
-        }
-        _privacyChip.Location = new Point(x, top);
+            button.Active = false;
+            closedAt = Environment.TickCount64;
+        };
+        button.Click += (_, _) =>
+        {
+            // Clicking the button while its menu is open closes the menu; that same click must not open it again.
+            if (Environment.TickCount64 - closedAt < 200) return;
+            menu.Show(button, new Point(button.Width, button.Height + 4), ToolStripDropDownDirection.BelowLeft);
+        };
+    }
+
+    // Row 1: title and version on the left; the command bar on the right. Row 2: the spec plates (or, before the
+    // first scan, one line saying how to take one). Row 3: the instruments, sharing the width. When the title
+    // would be squeezed, the command bar folds to icons.
+    private void LayoutHeader()
+    {
+        var right = _header.ClientSize.Width - HeaderPad;
+        if (right <= HeaderPad) return;
+        const int rowTop = 14, rowHeight = 38, gap = 8;
+        _header.SuspendLayout();
+
+        _scanButton.Visible = !_busy;
+        _cancelButton.Visible = _busy;
+        var lead = _busy ? _cancelButton : _scanButton;
+        CommandButton[] commands = [_scanButton, _cancelButton, _upgradeButton, _driversButton, _moreButton];
+
+        var chipY = rowTop + (rowHeight - _versionButton.Height) / 2;
+        var chips = _versionButton.Width;
+        var titleWidth = _title.PreferredWidth;
+        // Scan and Cancel share one slot, as wide as the wider of the two.
+        var leadWidth = Math.Max(_scanButton.FullWidth, _cancelButton.FullWidth);
+        var fullBar = leadWidth + _upgradeButton.FullWidth + _driversButton.FullWidth + _moreButton.FullWidth + gap * 2 + 21;
+        var compact = HeaderPad + titleWidth + 12 + chips + 28 + fullBar > right;
+        foreach (var command in commands) command.Compact = compact;
+        if (!compact) _scanButton.Width = _cancelButton.Width = leadWidth;
+
+        var commandY = rowTop + (rowHeight - CommandButton.CommandHeight) / 2;
+        var x = right;
+        x -= _moreButton.Width; _moreButton.Location = new Point(x, commandY);
+        x -= gap + _driversButton.Width; _driversButton.Location = new Point(x, commandY);
+        x -= 11; _commandDivider.Location = new Point(x, commandY + (CommandButton.CommandHeight - _commandDivider.Height) / 2);
+        x -= 10 + _upgradeButton.Width; _upgradeButton.Location = new Point(x, commandY);
+        x -= gap + lead.Width;
+        _scanButton.Location = _cancelButton.Location = new Point(x, commandY);
+
+        // The title gives way before anything else does: it ends in an ellipsis and keeps its full text as a tooltip.
+        var titleRoom = Math.Max(120, x - 28 - chips - 12 - HeaderPad);
+        _title.Bounds = new Rectangle(HeaderPad, rowTop, Math.Min(titleWidth, titleRoom), rowHeight);
+        _toolTip.SetToolTip(_title, titleWidth > titleRoom ? _title.Text : null);
+        var chipX = _title.Right + 12;
+        _versionButton.Location = new Point(chipX, chipY);
+
+        _subtitle.Bounds = _specs.Bounds = new Rectangle(HeaderPad, rowTop + rowHeight + 4, right - HeaderPad, 30);
+        _toolTip.SetToolTip(_subtitle, _subtitle.PreferredWidth > _subtitle.Width ? _subtitle.Text : null);
+
+        // Four gauges share the row equally, up to a width where a wider tile would only be empty space.
+        // A short window gets shorter instruments, so the screens below keep their room.
+        const int gaugeGap = 10, gaugeTop = 96;
+        var gaugeHeight = ClientSize.Height < 800 ? 60 : 72;
+        if (_header.Height != gaugeTop + gaugeHeight + 12) _header.Height = gaugeTop + gaugeHeight + 12;
+        var gauges = Gauges;
+        var each = Math.Min(560, (right - HeaderPad - gaugeGap * (gauges.Length - 1)) / gauges.Length);
+        for (var i = 0; i < gauges.Length; i++)
+            gauges[i].Bounds = new Rectangle(HeaderPad + i * (each + gaugeGap), gaugeTop, each, gaugeHeight);
+
+        _header.ResumeLayout(false);
     }
 
     // The board and its inspector are the shared web view (Assets/overview.html), the same page the browser
@@ -809,23 +943,18 @@ public sealed class MainForm : Form
         if (_overview is not { } overview)
         {
             _healthChip.Visible = false;
-            LayoutTitleRow();
+            LayoutHeader();
             return;
         }
         var count = overview.Suggestions.Count(s => s.Severity != "info") +
                     overview.Parts.Count(p => p.Tone == "warn" && !overview.Suggestions.Any(s => s.Title.Contains(p.Name, StringComparison.Ordinal)));
         var good = count == 0;
-        _healthChip.Text = good ? "●  Healthy" : count == 1 ? "●  One thing worth a look" : $"●  {count} things worth a look";
-        _healthChip.ForeColor = good ? AppTheme.Good : AppTheme.Warning;
-        _healthChip.BackColor = good ? Color.FromArgb(16, 44, 36) : Color.FromArgb(52, 38, 18);
-        _healthChip.FlatAppearance.BorderColor = Color.FromArgb(150, good ? AppTheme.Good : AppTheme.Warning);
-        _healthChip.FlatAppearance.MouseOverBackColor = good ? Color.FromArgb(24, 58, 46) : Color.FromArgb(68, 50, 24);
-        _healthChip.FlatAppearance.MouseDownBackColor = _healthChip.BackColor;
-        _healthChip.Width = TextRenderer.MeasureText(_healthChip.Text, _healthChip.Font).Width + 30;
+        _healthChip.Tone = good ? AppTheme.Good : AppTheme.Warning;
+        _healthChip.Text = good ? "Healthy" : count == 1 ? "One thing worth a look" : $"{count} things worth a look";
         _healthChip.AccessibleName = good ? "Healthy. Opens the Efficiency tab." : $"{count} things worth a look. Opens the Efficiency tab.";
         _toolTip.SetToolTip(_healthChip, good ? "Every check passed. Click for the Efficiency tab." : "The Overview's panel lists them; click for the Efficiency tab.");
         _healthChip.Visible = true;
-        LayoutTitleRow();
+        LayoutHeader();
     }
 
     // Reads the hardware and network (fast), shows the map, then looks up router, network, and device names
@@ -1095,6 +1224,9 @@ public sealed class MainForm : Form
             view.NavigationCompleted += (_, e) => { if (e.IsSuccess) ready(); };
             await WebViewHost.InitializeAsync(view, _service.DataRoot, page);
             view.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+            // A web view reports the function keys and Ctrl combinations it is given; the window's shortcuts
+            // (F5, Ctrl+1 to 9, Ctrl+E...) work from inside a page the same as from the native controls.
+            view.KeyDown += (_, e) => { if (HandleShortcut(e.KeyData)) e.Handled = true; };
         }
         catch (Exception ex)
         {
@@ -1116,9 +1248,10 @@ public sealed class MainForm : Form
     private TabPage BuildDriversTab()
     {
         var page = NewPage("Drivers");
-        ConfigureGrid(_drivers,
-            ("Category", 90), ("Component", 285), ("Installed", 145), ("Date", 100),
-            ("Latest", 130), ("Status", 125), ("Source", 110));
+        ConfigureGrid(_drivers, fill: 1,
+            ("Category", 110), ("Component", 300), ("Installed", 170), ("Driver date", 115),
+            ("Latest", 170), ("Status", 150), ("Found at", 210));
+        _drivers.CellPainting += (_, e) => { if (e.ColumnIndex == 5) GridPaint.Pill(e); };
         _drivers.CellDoubleClick += (_, e) => OpenDriverLink(e.RowIndex);
         _drivers.CellContentClick += (_, e) =>
         {
@@ -1127,8 +1260,8 @@ public sealed class MainForm : Form
         _drivers.Columns.Add(new DataGridViewLinkColumn
         {
             HeaderText = "Official update",
-            Width = 125,
-            MinimumWidth = 110,
+            Width = 150,
+            MinimumWidth = 130,
             TrackVisitedState = false,
             LinkColor = AppTheme.Accent,
             ActiveLinkColor = AppTheme.Good,
@@ -1150,9 +1283,25 @@ public sealed class MainForm : Form
     private TabPage BuildStorageTab()
     {
         var page = NewPage("Storage");
-        ConfigureGrid(_storage,
-            ("Volume", 70), ("Physical disk", 250), ("Bus", 70), ("File system", 95),
-            ("Capacity", 95), ("Free", 95), ("Used", 70), ("Drive health", 110), ("Drive life", 200));
+        ConfigureGrid(_storage, fill: 8,
+            ("Volume", 80), ("Physical disk", 280), ("Bus", 80), ("File system", 105),
+            ("Capacity", 105), ("Free", 105), ("Used", 190), ("Drive health", 150), ("Drive life", 200));
+        _storage.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0) return;
+            if (e.ColumnIndex == 6) GridPaint.FillBar(e, _storage.Rows[e.RowIndex].Cells[6]);
+            else if (e.ColumnIndex == 7) GridPaint.Pill(e);
+        };
+        // Sizes line up on their last digit, so a column of them can be compared at a glance.
+        _storage.Columns[6].DefaultCellStyle.Padding = new Padding(26, 6, 10, 6);
+        _storage.Columns[6].HeaderCell.Style.Padding = new Padding(26, 4, 10, 4);
+        foreach (var index in new[] { 4, 5 })
+        {
+            _storage.Columns[index].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            _storage.Columns[index].HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight;
+        }
+        _storage.Columns[7].DefaultCellStyle.Padding = new Padding(22, 6, 10, 6);
+        _storage.Columns[7].HeaderCell.Style.Padding = new Padding(22, 4, 10, 4);
         _storage.ShowCellToolTips = true;
         _storage.Columns[7].ToolTipText = "Read from the drive's own counters once a day and judged from all its readings.";
         page.Controls.Add(Card(_storage));
@@ -1183,10 +1332,16 @@ public sealed class MainForm : Form
     private TabPage BuildSuggestionsTab()
     {
         var page = NewPage("Efficiency");
-        ConfigureGrid(_suggestions,
-            ("Priority", 90), ("Category", 90), ("Suggestion", 260), ("Why it matters / next action", 620));
+        ConfigureGrid(_suggestions, fill: 3,
+            ("Priority", 100), ("Category", 130), ("Suggestion", 380), ("Why it matters, and what to do next", 620));
         _suggestions.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
-        _suggestions.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        // Wrapping is set on the columns: the grid's own default style is replaced whenever the theme is applied,
+        // which used to drop it and run "…daily readings)Next: Make room" together on one clipped line.
+        foreach (var index in new[] { 2, 3 })
+            _suggestions.Columns[index].DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        foreach (DataGridViewColumn column in _suggestions.Columns)
+            column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.TopLeft;
+        _suggestions.CellPainting += (_, e) => { if (e.ColumnIndex == 0) GridPaint.Pill(e, top: true); };
         page.Controls.Add(Card(_suggestions));
         return page;
     }
@@ -1202,7 +1357,17 @@ public sealed class MainForm : Form
         _log.ForeColor = AppTheme.Text;
         _log.BorderStyle = BorderStyle.None;
         _log.Font = new Font("Cascadia Mono", 9);
-        page.Controls.Add(Card(_log));
+        var card = Card(_log);
+        // An empty box says nothing; until something has run, say what will appear here.
+        _logEmpty.Text = "Nothing has run yet. Scans, driver checks, and downloads write what they did here, line by line.";
+        _logEmpty.Dock = DockStyle.Top;
+        _logEmpty.Height = 44;
+        _logEmpty.Padding = new Padding(10, 14, 10, 0);
+        _logEmpty.ForeColor = AppTheme.Muted;
+        _logEmpty.BackColor = AppTheme.Surface;
+        _logEmpty.Tag = "muted";
+        card.Controls.Add(_logEmpty);
+        page.Controls.Add(card);
         return page;
     }
 
@@ -1227,22 +1392,13 @@ public sealed class MainForm : Form
         }
     }
 
-    private static Control ToolbarSep() => new Panel
-    {
-        Width = 1,
-        Height = 28,
-        BackColor = AppTheme.Border,
-        Margin = new Padding(6, 4, 6, 0),
-        Tag = "border"
-    };
-
+    // One quiet line: what happened last (with a dot for how it went) on the left, two links on the right.
     private Control BuildStatusBar()
     {
         _statusPanel.Dock = DockStyle.Bottom;
-        _statusPanel.Height = 30;
+        _statusPanel.Height = 32;
         _statusPanel.BackColor = AppTheme.Surface;
-        _statusPanel.BorderStyle = BorderStyle.FixedSingle;
-        _statusPanel.Padding = new Padding(14, 6, 14, 0);
+        _statusPanel.Padding = new Padding(HeaderPad, 0, HeaderPad - 6, 0);
         _statusPanel.Tag = "surface";
 
         var rightLinks = new FlowLayoutPanel
@@ -1252,44 +1408,44 @@ public sealed class MainForm : Form
             WrapContents = false,
             FlowDirection = FlowDirection.LeftToRight,
             BackColor = Color.Transparent,
+            Padding = new Padding(0),
             Margin = new Padding(0)
         };
-
-        _dataFolderLink.Text = "Data folder";
-        _dataFolderLink.AutoSize = true;
-        _dataFolderLink.LinkColor = AppTheme.Muted;
-        _dataFolderLink.ActiveLinkColor = AppTheme.Accent;
-        _dataFolderLink.VisitedLinkColor = AppTheme.Muted;
-        _dataFolderLink.Font = new Font("Segoe UI", 8.25f);
-        _dataFolderLink.Padding = new Padding(0, 0, 8, 0);
-        _dataFolderLink.LinkClicked += (_, _) => _service.OpenDataFolder();
-
-        var sep = new Label
+        // How the PC is doing and whether privacy mode is on: always in view, never in the way of the rig's name.
+        foreach (var chip in new[] { _healthChip, _privacyChip })
         {
-            Text = "|",
-            AutoSize = true,
-            ForeColor = AppTheme.Border,
-            Font = new Font("Segoe UI", 8.25f),
-            Padding = new Padding(0, 0, 8, 0)
-        };
-
-        _feedbackLink.Text = "Report issue";
-        _feedbackLink.AutoSize = true;
-        _feedbackLink.LinkColor = AppTheme.Muted;
-        _feedbackLink.ActiveLinkColor = AppTheme.Accent;
-        _feedbackLink.VisitedLinkColor = AppTheme.Muted;
-        _feedbackLink.Font = new Font("Segoe UI", 8.25f);
-        _feedbackLink.LinkClicked += (_, _) => OpenFeedback();
-
-        rightLinks.Controls.AddRange([_dataFolderLink, sep, _feedbackLink]);
+            chip.Height = 22;
+            chip.Margin = new Padding(8, 5, 0, 0);
+            rightLinks.Controls.Add(chip);
+        }
+        foreach (var (link, text, action, tip) in new (LinkLabel, string, Action, string)[]
+                 {
+                     (_dataFolderLink, "Data folder", () => _service.OpenDataFolder(), "Open the folder that holds BoardScout's settings, scans, reports, and log."),
+                     (_feedbackLink, "Report an issue", OpenFeedback, "Open BoardScout's issue page in your browser.")
+                 })
+        {
+            link.Text = text;
+            link.AutoSize = true;
+            link.LinkBehavior = LinkBehavior.HoverUnderline;
+            link.LinkColor = link.VisitedLinkColor = AppTheme.Muted;
+            link.ActiveLinkColor = AppTheme.Accent;
+            link.Font = new Font("Segoe UI", 8.5f);
+            link.Margin = new Padding(14, 8, 0, 0);
+            link.LinkClicked += (_, _) => action();
+            _toolTip.SetToolTip(link, tip);
+            rightLinks.Controls.Add(link);
+        }
 
         _status.Dock = DockStyle.Fill;
-        _status.Text = "Ready — cached results load instantly; scan only when hardware changes.";
+        _status.Text = "Ready. Cached results load instantly; scan only when hardware changes.";
         _status.ForeColor = AppTheme.Muted;
+        _status.BackColor = AppTheme.Surface;
+        _status.Font = new Font("Segoe UI", 8.75f);
         _status.Tag = "muted";
 
         _statusPanel.Controls.Add(_status);
         _statusPanel.Controls.Add(rightLinks);
+        _statusPanel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = AppTheme.Border, Tag = "border" });
         return _statusPanel;
     }
 
@@ -1302,16 +1458,8 @@ public sealed class MainForm : Form
         Tag = "background"
     };
 
-    private void ConfigureButton(Button button, string text, EventHandler handler, bool primary = false)
-    {
-        button.Text = text;
-        button.Tag = primary ? "primaryButton" : "button";
-        AppTheme.StyleButton(button, primary);
-        button.Click += handler;
-        _themedButtons.Add((button, primary));
-    }
-
-    private static void ConfigureGrid(DataGridView grid, params (string Name, int Width)[] columns)
+    // fill: the column that takes whatever width is left (the one whose text is longest).
+    private static void ConfigureGrid(DataGridView grid, int fill, params (string Name, int Width)[] columns)
     {
         grid.Dock = DockStyle.Fill;
         grid.AllowUserToAddRows = false;
@@ -1322,9 +1470,29 @@ public sealed class MainForm : Form
         grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         grid.AutoGenerateColumns = false;
         foreach (var (name, width) in columns)
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = name, Width = width, MinimumWidth = 60 });
-        grid.Columns[^1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = name, Width = width, MinimumWidth = 60, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns[fill].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        grid.Columns[fill].MinimumWidth = Math.Min(columns[fill].Width, 220);
+        grid.AllowUserToResizeColumns = true;
+        grid.StandardTab = true;
         AppTheme.StyleGrid(grid);
+        // A list that opens with its first row lit looks like it is pointing at something. Nothing is selected
+        // until the user picks a row; after that the grid is theirs.
+        grid.MouseDown += (_, _) => grid.Tag = "touched";
+        grid.KeyDown += (_, _) => grid.Tag = "touched";
+        grid.VisibleChanged += (_, _) => Unselect(grid);
+        grid.HandleCreated += (_, _) => Unselect(grid);
+    }
+
+    private static void Unselect(DataGridView grid)
+    {
+        if (grid.Tag is "touched" || !grid.IsHandleCreated || grid.IsDisposed) return;
+        grid.BeginInvoke(() =>
+        {
+            if (grid.IsDisposed || grid.Tag is "touched") return;
+            grid.ClearSelection();
+            grid.CurrentCell = null;
+        });
     }
 
     private async Task LoadCachedDataAsync()
@@ -1521,17 +1689,20 @@ public sealed class MainForm : Form
         {
             await operation(_operationCts.Token);
             _versionButton.Flash(OrbState.Success);
+            _status.Tone = StatusTone.Good;
         }
         catch (OperationCanceledException)
         {
             _versionButton.State = OrbState.Idle;
-            _status.Text = "Operation cancelled. Existing cached results were preserved.";
+            _status.Tone = StatusTone.Idle;
+            _status.Text = "Cancelled. Results already saved were kept.";
             AppendLog("Cancelled.");
         }
         catch (Exception ex)
         {
             _versionButton.State = OrbState.Error;
-            _status.Text = "Operation failed — see Scan Log.";
+            _status.Tone = StatusTone.Bad;
+            _status.Text = "That did not finish. The Scan Log has the details.";
             AppendLog("FAILED: " + ex);
             MessageBox.Show(this, ex.Message, "BoardScout", MessageBoxButtons.OK, MessageBoxIcon.Error);
             _tabs.SelectedTab = _tabs.TabPages["Scan Log"] ?? _tabs.TabPages[^1];
@@ -1550,7 +1721,11 @@ public sealed class MainForm : Form
         var board = _scan.SystemInfo.Baseboard;
         var cpu = _scan.Cpu;
         _title.Text = $"{board.Manufacturer} {board.Product}".Trim();
-        _subtitle.Text = $"{_scan.FormFactor.ToUpperInvariant()}  •  {WindowsOverview.ShortCpuName(cpu.Name)}  •  {cpu.Cores}C/{cpu.Threads}T  •  {_scan.Scan.Os.Caption}";
+        // The rig's headline parts, as plates under its name.
+        _specs.Set(RigSpecs.For(_scan));
+        _toolTip.SetToolTip(_specs, _specs.FullText);
+        _specs.Visible = true;
+        _subtitle.Visible = false;
         _ = SendScanToTopologyAsync();
         _ = PostOverviewAsync();
         BindDrivers();
@@ -1561,7 +1736,7 @@ public sealed class MainForm : Form
         _checkDriversItem.Enabled = true;
         _downloadDriversItem.Enabled = _report is not null;
         _exportItem.Enabled = true;
-        _pimpButton.Enabled = true;
+        _upgradeButton.Enabled = true;
     }
 
     private async Task SendScanToTopologyAsync()
@@ -1599,6 +1774,8 @@ public sealed class MainForm : Form
     private void BindDrivers()
     {
         _drivers.Rows.Clear();
+        _drivers.Tag = null;
+        Unselect(_drivers);
         if (_scan is null) return;
         var reportByKey = _report?.Results
             .Where(r => !string.IsNullOrWhiteSpace(r.ComponentKey))
@@ -1610,10 +1787,10 @@ public sealed class MainForm : Form
         {
             reportByKey.TryGetValue(component.ComponentKey, out var result);
             var latest = result?.Best.LatestVersion ?? result?.Best.LatestDate ?? "";
-            var status = result?.Status ?? "not checked";
+            var status = result?.Status ?? DriverLabels.NotChecked;
             var rowIndex = _drivers.Rows.Add(
-                component.Category, component.Model, component.Current.DriverVersion ?? component.Current.Firmware ?? "—",
-                component.Current.DriverDate ?? "—", latest, status, result?.Best.Source ?? "—");
+                DriverLabels.Category(component.Category), component.Model, component.Current.DriverVersion ?? component.Current.Firmware ?? "—",
+                component.Current.DriverDate ?? "—", latest.Length > 0 ? latest : "—", DriverLabels.Status(status), DriverLabels.Source(result?.Best.Source));
             var row = _drivers.Rows[rowIndex];
             row.Tag = result;
             SetDriverLink(row, result);
@@ -1624,8 +1801,8 @@ public sealed class MainForm : Form
         foreach (var result in _report.Results.Where(r => !_scan.Components.Any(c =>
                      c.ComponentKey.Equals(r.ComponentKey, StringComparison.OrdinalIgnoreCase))))
         {
-            var rowIndex = _drivers.Rows.Add(result.Category, result.Model, result.Best.InstalledVersion ?? "—", "—",
-                result.Best.LatestVersion ?? result.Best.LatestDate ?? "—", result.Status, result.Best.Source);
+            var rowIndex = _drivers.Rows.Add(DriverLabels.Category(result.Category), result.Model, result.Best.InstalledVersion ?? "—", "—",
+                result.Best.LatestVersion ?? result.Best.LatestDate ?? "—", DriverLabels.Status(result.Status), DriverLabels.Source(result.Best.Source));
             _drivers.Rows[rowIndex].Tag = result;
             SetDriverLink(_drivers.Rows[rowIndex], result);
             ColorDriverRow(_drivers.Rows[rowIndex], result.Status, new CurrentVersion());
@@ -1636,8 +1813,16 @@ public sealed class MainForm : Form
     {
         if (row.Cells.Count <= 7) return;
         var url = result?.DownloadUrl ?? result?.Best.DownloadUrl;
-        row.Cells[7].Value = string.IsNullOrWhiteSpace(url) ? "—" : "Official page ↗";
+        var has = !string.IsNullOrWhiteSpace(url);
+        row.Cells[7].Value = has ? "Open official page" : "—";
         row.Cells[7].Tag = url;
+        // No page to open: a plain dash, not a dash dressed as a link.
+        if (row.Cells[7] is DataGridViewLinkCell link)
+        {
+            link.LinkBehavior = has ? LinkBehavior.HoverUnderline : LinkBehavior.NeverUnderline;
+            link.LinkColor = link.VisitedLinkColor = has ? AppTheme.Accent : AppTheme.Muted;
+            link.ActiveLinkColor = has ? AppTheme.Good : AppTheme.Muted;
+        }
     }
 
     private static void ColorDriverRow(DataGridViewRow row, string status, CurrentVersion current)
@@ -1651,13 +1836,18 @@ public sealed class MainForm : Form
             _ when current.DriverSource == "disk.inf" || current.DriverDate?.StartsWith("2006-06-") == true => AppTheme.Muted,
             _ => AppTheme.Text
         };
-        row.Cells[5].Style.ForeColor = color;
-        row.Cells[2].Style.ForeColor = color == AppTheme.Text ? AppTheme.Muted : color;
+        // The status carries the colour. The installed version joins it only when it is the thing to replace.
+        row.Cells[5].Style.ForeColor = status == DriverLabels.NotChecked ? AppTheme.Muted : color;
+        row.Cells[2].Style.ForeColor = status == "update-available" ? color : AppTheme.Text;
+        foreach (var index in new[] { 3, 4, 6 })
+            if (row.Cells[index].Value as string == "—") row.Cells[index].Style.ForeColor = AppTheme.Muted;
     }
 
     private void BindStorage()
     {
         _storage.Rows.Clear();
+        _storage.Tag = null;
+        Unselect(_storage);
         if (_scan is null) return;
         foreach (var volume in _scan.Volumes.OrderByDescending(v => v.UsedPercent))
         {
@@ -1671,6 +1861,7 @@ public sealed class MainForm : Form
                 health is null ? (DriveHealthService.Reading ? "Reading…" : "Not read") : DriveHealthService.VerdictLabel(health.Verdict),
                 health is null ? "" : DriveHealthService.LifeLine(health));
             var row = _storage.Rows[rowIndex];
+            row.Cells[6].Tag = (float)(volume.UsedPercent / 100d);
             row.Cells[6].Style.ForeColor =
                 volume.UsedPercent >= 95 ? AppTheme.Critical :
                 volume.UsedPercent >= 85 ? AppTheme.Warning : AppTheme.Good;
@@ -1692,6 +1883,8 @@ public sealed class MainForm : Form
     private void BindSuggestions()
     {
         _suggestions.Rows.Clear();
+        _suggestions.Tag = null;
+        Unselect(_suggestions);
         if (_overview is { } overview)
         {
             foreach (var suggestion in overview.Suggestions)
@@ -1737,14 +1930,15 @@ public sealed class MainForm : Form
         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
     }
 
-    private void OpenPimpMyBuild()
+    private void OpenUpgradePlanner()
     {
         if (_scan is null) return;
         var html = UpgradePlannerService.GenerateReport(_scan);
-        var path = Path.Combine(Path.GetTempPath(), $"BoardScout-PimpMyBuild-{DateTime.Now:yyyyMMdd-HHmmss}.html");
+        var path = Path.Combine(Path.GetTempPath(), $"BoardScout-UpgradePlanner-{DateTime.Now:yyyyMMdd-HHmmss}.html");
         File.WriteAllText(path, html, Encoding.UTF8);
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-        _status.Text = "Pimp My Build report opened in browser.";
+        _status.Tone = StatusTone.Good;
+        _status.Text = "Upgrade planner opened in your browser.";
     }
 
     private static void OpenFeedback()
@@ -1850,6 +2044,7 @@ public sealed class MainForm : Form
             await Task.Delay(7000);
             await SaveSnapshotAsync(Path.Combine(directory, "overview-glass.png"));
             SaveVersionStates(Path.Combine(directory, "version-states.png"));
+            await SnapshotChromeAsync(directory);
             if (_overviewReady)
             {
                 await _overviewWebView.CoreWebView2.ExecuteScriptAsync(
@@ -1904,6 +2099,69 @@ public sealed class MainForm : Form
             Close();
         }
     }
+
+    // The window's own chrome in the states a still picture of the Overview never shows: something running (Cancel
+    // in Scan's place, the busy line, the status dot), a focused button and an open menu's button, both menus, the
+    // native tabs, and the window at 1366 x 768 and at its smallest size.
+    private async Task SnapshotChromeAsync(string directory)
+    {
+        var status = (_status.Text, _status.Tone);
+        SetBusy(true, "Scanning hardware…");
+        await Task.Delay(700);
+        await SaveSnapshotAsync(Path.Combine(directory, "header-busy.png"));
+        SetBusy(false, status.Text);
+        _status.Tone = status.Tone;
+
+        _upgradeButton.ShowFocusRing = _scanButton.ShowFocusRing = true;
+        _moreButton.Active = true;
+        _header.Invalidate(true);
+        await Task.Delay(300);
+        await SaveSnapshotAsync(Path.Combine(directory, "header-focus.png"));
+        _upgradeButton.ShowFocusRing = _scanButton.ShowFocusRing = false;
+        _moreButton.Active = false;
+
+        // Only with BOARDSCOUT_SNAPSHOT_MENUS=1: a menu can only open on a real screen, so each one appears there
+        // for half a second and its own rectangle is read back.
+        foreach (var (menu, name) in new[] { (_driversMenu, "menu-drivers.png"), (_moreMenu, "menu-more.png") })
+        {
+            if (Environment.GetEnvironmentVariable("BOARDSCOUT_SNAPSHOT_MENUS") != "1") break;
+            menu.Show(new Point(Left + 400, Top + 300));
+            await Task.Delay(250);
+            if (menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(i => i.Enabled) is { } first) first.Select();
+            await Task.Delay(150);
+            using var picture = new Bitmap(menu.Width, menu.Height);
+            // A menu always opens on a real screen, so its own rectangle (and nothing else) is read from there.
+            using (var surface = Graphics.FromImage(picture))
+                surface.CopyFromScreen(menu.Bounds.Location, Point.Empty, menu.Size);
+            picture.Save(Path.Combine(directory, name), System.Drawing.Imaging.ImageFormat.Png);
+            menu.Close();
+        }
+
+        foreach (var tab in new[] { "Drivers", "Efficiency", "Scan Log" })
+        {
+            SelectTab(tab);
+            await Task.Delay(700);
+            await SaveSnapshotAsync(Path.Combine(directory, $"tab-{tab.ToLowerInvariant().Replace(' ', '-')}.png"));
+        }
+        _tabs.SelectedIndex = 0;
+
+        var full = Bounds;
+        foreach (var size in new[] { new Size(1366, 768), MinimumSize })
+        {
+            Bounds = new Rectangle(full.Location, size);
+            await Task.Delay(2200);
+            await SaveSnapshotAsync(Path.Combine(directory, $"overview-{size.Width}x{size.Height}.png"));
+        }
+        // The smallest window with privacy on: every chip showing, so the command bar must fold to icons.
+        var privacy = AppSettings.Current.PrivacyMode;
+        AppSettings.Update(s => s.PrivacyMode = true);
+        await Task.Delay(1500);
+        await SaveSnapshotAsync(Path.Combine(directory, "overview-smallest-privacy.png"));
+        AppSettings.Update(s => s.PrivacyMode = privacy);
+        Bounds = full;
+        await Task.Delay(2000);
+    }
+
 
     // The version badge in each state (idle, thinking, success, error), cropped from the window and enlarged 3x
     // with no smoothing, so the orb can be judged pixel by pixel.
@@ -1973,6 +2231,7 @@ public sealed class MainForm : Form
             _privacyShown = Privacy.Enabled;
             _machines?.SendState();
             _privacyChip.Visible = Privacy.Enabled;
+            LayoutHeader();
             RenderLog();
             BindStorage();
             // The map masks MACs, Wi-Fi and device names, and IPv6 on the C# side, so it is rebuilt
@@ -1997,17 +2256,26 @@ public sealed class MainForm : Form
         _downloadDriversItem.Enabled = !busy && _report is not null;
         _importItem.Enabled = !busy;
         _exportItem.Enabled = !busy && _scan is not null;
-        _pimpButton.Enabled = !busy && _scan is not null;
-        _cancelButton.Visible = busy;
-        _progress.Visible = busy;
+        _upgradeButton.Enabled = !busy && _scan is not null;
+        // Cancel takes Scan's place (and the keyboard focus, if Scan had it), and gives it back afterwards.
+        var moveFocus = busy ? _scanButton.Focused : _cancelButton.Focused;
+        _busy = busy;
+        _busyBar.Busy = busy;
+        LayoutHeader();
+        if (moveFocus) (busy ? _cancelButton : _scanButton).Focus();
+        if (busy) _status.Tone = StatusTone.Busy;
+        else if (_status.Tone == StatusTone.Busy) _status.Tone = StatusTone.Idle;
         _status.Text = message;
-        UseWaitCursor = busy;
+        // The pointer shows work in progress without blocking it: Cancel and the rest of the window stay usable.
+        Cursor = busy ? Cursors.AppStarting : Cursors.Default;
     }
 
     private void SetEmptyState()
     {
         _title.Text = "BoardScout";
-        _subtitle.Text = "No inventory yet: Scan now takes one (about half a minute), or import a scan JSON file from More.";
+        _subtitle.Text = "No inventory yet. Scan now (F5) takes one in about half a minute; More can import a saved scan instead.";
+        _subtitle.Visible = true;
+        _specs.Visible = false;
     }
 
     private void ApplyTheme()
@@ -2015,24 +2283,15 @@ public sealed class MainForm : Form
         BackColor = AppTheme.Background;
         ForeColor = AppTheme.Text;
         ApplyTaggedTheme(this);
-        foreach (var (button, primary) in _themedButtons)
-        {
-            if (button.Tag as string == "featureButton")
-                AppTheme.StyleFeatureButton(button);
-            else
-                AppTheme.StyleButton(button, primary);
-        }
+        _privacyChip.Tone = AppTheme.Purple;
+        _status.BackColor = AppTheme.Surface;
 
         foreach (var grid in new[] { _drivers, _storage, _suggestions }) AppTheme.StyleGrid(grid);
         _tabs.BackColor = AppTheme.Background;
         _tabs.ForeColor = AppTheme.Text;
         _log.BackColor = AppTheme.Surface;
         _log.ForeColor = AppTheme.Text;
-        _cpuGauge.Accent = AppTheme.Accent;
-        _memoryGauge.Accent = AppTheme.Accent;
-        _tempGauge.Accent = AppTheme.Good;
-        _networkGauge.Accent = AppTheme.Purple;
-        foreach (var gauge in new[] { _cpuGauge, _memoryGauge, _tempGauge, _networkGauge }) gauge.Invalidate();
+        foreach (var gauge in Gauges) gauge.Invalidate();
         _dataFolderLink.LinkColor = AppTheme.Muted;
         _dataFolderLink.ActiveLinkColor = AppTheme.Accent;
         _feedbackLink.LinkColor = AppTheme.Muted;
@@ -2132,31 +2391,48 @@ public sealed class MainForm : Form
         _lastTelemetry = telemetry;
         var sensors = _telemetryService.SensorStatus;
 
-        _cpuGauge.AddSample(telemetry.CpuUsagePercent);
-        _cpuGauge.Show("CPU load", $"{telemetry.CpuUsagePercent:0}%", tone: telemetry.CpuUsagePercent >= 90 ? AppTheme.Warning : null);
+        var cpu = telemetry.CpuUsagePercent / 100d;
+        _cpuGauge.AddSample(cpu);
+        _cpuGauge.SetBars(telemetry.CoreLoads);
+        _cpuGauge.Show("CPU load", $"{telemetry.CpuUsagePercent:0}", "%", (float)cpu, $"Peak {_cpuGauge.Peak * 100:0}%",
+            telemetry.CpuUsagePercent >= 90 ? AppTheme.Warning : null);
 
         var totalGb = telemetry.MemoryTotalBytes / 1_073_741_824d;
         var memory = totalGb > 0 ? telemetry.MemoryUsedGb / totalGb : 0;
-        _memoryGauge.Show("Memory", $"{telemetry.MemoryUsedGb:0.0}", $"/ {totalGb:0.#} GB", (float)memory,
-            memory >= 0.92 ? AppTheme.Critical : memory >= 0.8 ? AppTheme.Warning : null);
+        _memoryGauge.AddSample(memory);
+        _memoryGauge.Show("Memory", $"{telemetry.MemoryUsedGb:0.0}", $"of {totalGb:0.#} GB", (float)memory,
+            $"{Math.Max(0, totalGb - telemetry.MemoryUsedGb):0.0} GB free",
+            memory >= 0.92 ? AppTheme.Critical : memory >= 0.85 ? AppTheme.Warning : null);
 
         // The CPU's temperature when the sensors can read it, else the graphics card's.
         var reading = telemetry.Thermals.FirstOrDefault(t => t.Zone == "CPU") ?? telemetry.Thermals.FirstOrDefault(t => t.Zone == "GPU") ??
                       telemetry.Thermals.FirstOrDefault();
         if (reading is not null)
         {
+            // The meter and graph run from 20 to 100 degrees C.
             var celsius = reading.TemperatureCelsius;
-            _tempGauge.Show($"{(reading.Zone is "CPU" or "GPU" or "VRM" ? reading.Zone : "Board")} temp", $"{celsius:0}°C", "",
-                (float)(celsius / 100), celsius >= 90 ? AppTheme.Critical : celsius >= 75 ? AppTheme.Warning : AppTheme.Good);
+            var level = (celsius - 20) / 80d;
+            _tempGauge.AddSample(level);
+            _tempGauge.Show($"{(reading.Zone is "CPU" or "GPU" or "VRM" ? reading.Zone : "Board")} temperature", $"{celsius:0}", "°C",
+                (float)level, $"Peak {_tempGauge.Peak * 80 + 20:0}°C", celsius >= 90 ? AppTheme.Critical : celsius >= 80 ? AppTheme.Warning : null);
         }
-        else _tempGauge.Show("Temperature", sensors.Started ? "Not reported" : "—", "", 0);
+        else _tempGauge.Show("Temperature", "—", "", null, sensors.Started ? "No sensor reports one" : "Starting the sensors");
         _toolTip.SetToolTip(_tempGauge, sensors.MotherboardSensorsAvailable ? null :
             "CPU, VRM, and motherboard fan sensors need the PawnIO driver and administrator rights. Open the version button for details.");
 
         var down = telemetry.NetworkReceivedBytesPerSec;
         var up = telemetry.NetworkSentBytesPerSec;
-        _networkGauge.AddSample(down + up);
-        _networkGauge.Show("Network", $"↓ {FormatRate(down)}", $"↑ {FormatRate(up)}", tone: down > 100_000_000 ? AppTheme.Warning : null);
+        // The two meter columns (download, upload) are logarithmic, like an audio level meter: dark at 1 Kbps,
+        // full at 1 Gbps.
+        static float Level(double bytesPerSec) => (float)((Math.Log10(Math.Max(bytesPerSec * 8, 1e3)) - 3) / 6);
+        _networkGauge.AddSample(down, up);
+        _networkGauge.Show("Network", $"↓ {FormatRate(down)}", "", Level(down), $"↑ {FormatRate(up)}", level2: Level(up));
+        _toolTip.SetToolTip(_networkGauge, $"Highest in the graph: ↓ {FormatRate(_networkGauge.Peak)}, ↑ {FormatRate(_networkGauge.SecondaryPeak)}. " +
+                                           "The meter's left column is download and its right one upload, on a logarithmic scale from 1 Kbps to 1 Gbps; " +
+                                           "the graph draws download above its centre line and upload below.");
+        _toolTip.SetToolTip(_cpuGauge, telemetry.CoreLoads.Count > 0
+            ? $"The columns are this PC's {telemetry.CoreLoads.Count} threads, each with a cap at its recent high. The graph is the last minute and a half of total load."
+            : null);
 
         PostConnectionFlow(telemetry);
         if (OverviewVisible) PostOverviewTelemetry(telemetry);
@@ -2192,6 +2468,7 @@ public sealed class MainForm : Form
     private void AppendLog(string line)
     {
         _logLines.Add(line);
+        if (_logEmpty.Visible) _logEmpty.Visible = false;
         _log.AppendText(ForDisplay(line) + Environment.NewLine);
     }
 

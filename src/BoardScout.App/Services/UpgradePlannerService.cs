@@ -104,7 +104,7 @@ internal static class UpgradePlannerService
 
         if (upgrades.Count > 0)
         {
-            sb.AppendLine("<h2>Pimped Out — Best Compatible Upgrades</h2>");
+            sb.AppendLine("<h2>Best Compatible Upgrades</h2>");
             sb.AppendLine("<p class='disclaimer'>Prices reflect August 2026 US market estimates and may vary. " +
                           "DDR4 and legacy AM4 parts have inflated pricing due to global DRAM shortages and AM4 discontinuation.</p>");
             sb.AppendLine("<table class='upgrade-table'>");

@@ -86,45 +86,6 @@ internal static class AppTheme
         else control.HandleCreated += (_, _) => Apply();
     }
 
-    public static void StyleButton(Button button, bool primary = false)
-    {
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = primary ? Accent : Border;
-        button.FlatAppearance.MouseOverBackColor = primary
-            ? (IsDark ? Color.FromArgb(48, 144, 174) : Color.FromArgb(19, 89, 113))
-            : SurfaceRaised;
-        button.FlatAppearance.MouseDownBackColor = primary
-            ? (IsDark ? Color.FromArgb(37, 120, 146) : Color.FromArgb(14, 75, 96))
-            : AccentSoft;
-        button.BackColor = primary ? Accent : Surface;
-        button.ForeColor = primary ? Color.White : Text;
-        button.Padding = new Padding(12, 2, 12, 2);
-        button.Height = 36;
-        button.AutoSize = true;
-        button.Cursor = Cursors.Hand;
-        button.Font = new Font("Segoe UI Semibold", 9);
-    }
-
-    public static void StyleFeatureButton(Button button)
-    {
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = Good;
-        button.FlatAppearance.MouseOverBackColor = IsDark
-            ? Color.FromArgb(24, 58, 46) : Color.FromArgb(229, 244, 236);
-        button.FlatAppearance.MouseDownBackColor = IsDark
-            ? Color.FromArgb(14, 44, 34) : Color.FromArgb(210, 236, 222);
-        button.BackColor = IsDark
-            ? Color.FromArgb(14, 38, 30) : Color.FromArgb(240, 250, 245);
-        button.ForeColor = Good;
-        button.Padding = new Padding(12, 2, 12, 2);
-        button.Height = 36;
-        button.AutoSize = true;
-        button.Cursor = Cursors.Hand;
-        button.Font = new Font("Segoe UI Semibold", 9);
-    }
-
     public static void StyleGrid(DataGridView grid)
     {
         grid.BackgroundColor = Surface;
@@ -139,10 +100,11 @@ internal static class AppTheme
         grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
         {
             BackColor = SurfaceRaised,
-            ForeColor = Text,
+            ForeColor = Muted,
             SelectionBackColor = SurfaceRaised,
+            SelectionForeColor = Muted,
             Font = new Font("Segoe UI Semibold", 9),
-            Padding = new Padding(8, 4, 8, 4)
+            Padding = new Padding(10, 4, 10, 4)
         };
         grid.DefaultCellStyle = new DataGridViewCellStyle
         {
@@ -150,7 +112,7 @@ internal static class AppTheme
             ForeColor = Text,
             SelectionBackColor = AccentSoft,
             SelectionForeColor = Text,
-            Padding = new Padding(8, 4, 8, 4)
+            Padding = new Padding(10, 6, 10, 6)
         };
         grid.AlternatingRowsDefaultCellStyle.BackColor = IsDark
             ? Color.FromArgb(18, 26, 34)

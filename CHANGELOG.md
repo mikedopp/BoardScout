@@ -1,5 +1,59 @@
 # Changelog
 
+## 2.12.0 (2026-11-20)
+
+The Windows app's own window: a rebuilt command bar, header instruments, and tables.
+
+### Changed
+- **Command bar.** The top-right buttons are one family now: one filled action (**Scan now**), the
+  **Upgrade planner**, and two menus (**Drivers**, **More**), each with an icon, the same height and corners,
+  and text drawn by the same renderer as the rest of the window (the old buttons spaced letters badly, as in
+  "D rivers"). Menu buttons have a drawn chevron and stay lit while their menu is open. Disabled buttons are
+  plainly disabled instead of faded copies.
+- **Cancel takes Scan's place** while a scan, driver check, or download runs, so the row no longer shifts
+  sideways, and a line of the accent colour sweeps under the header in place of the green Windows progress bar.
+- **The header fits the window.** Title, detail line, and instruments share one left edge and reflow as the
+  window is resized: the command bar folds to icons (names stay in tooltips and for screen readers) and a long
+  board name ends in an ellipsis instead of running under the buttons. The smallest window is 1180 x 700
+  (was 1440 x 780), so BoardScout fits a 1280 x 720 screen.
+- **Spec plates.** Under the board's name, a row of plates names the rig's headline parts from its scan:
+  processor with cores and threads, graphics card, memory with sticks and speed, total storage, and Windows.
+  They replace the single line of small text. In a narrow window the details drop first, then plates from
+  the right; the tooltip keeps the full text.
+- **The health and privacy chips moved to the status bar**, so the title row is the rig's name, the version,
+  and the command bar, and nothing else.
+- **Header instruments.** CPU load, memory, temperature, and network are each a level meter whose lights
+  climb through the reading's colours and ease to each new value, with a light held at the recent high; the
+  figure with a line of detail (the peak, memory free, upload); and a graph of the last minute and a half
+  whose line takes the colour of its height, with a mark held at the highest point. The CPU instrument adds a
+  column of lights per thread with a cap at each one's recent high; the network one has a meter column each
+  for download and upload and draws download above its graph's centre line and upload below. They are
+  readouts: nothing on them looks like a control. Clicking one opens the screen that explains its reading.
+- **Tables.** Drivers shows words instead of codes ("Update available", "Check by hand", "Microsoft Update
+  Catalog", "Graphics"); statuses, drive health, and Efficiency priorities are coloured pills; Storage shows
+  how full each drive is as a bar of cells; sizes are right-aligned; a row with no official page shows a plain
+  dash, not a dash dressed as a link; and no row is highlighted until you pick one.
+- **Status bar.** One quiet line with a dot for how the last action went (working, done, failed), and plain
+  links at the right.
+- **Menus** have a rounded highlight, no empty icon gutter, and their shortcuts listed. **More** gains
+  **Settings and help**.
+- "Pimp My Build" is now the **Upgrade planner**, the name its report already had.
+
+### Added
+- **Keyboard.** `F5` scan, `Esc` cancel, `Ctrl+1` to `Ctrl+9` for the screens, `Ctrl+E` export, `Ctrl+O`
+  import, `Ctrl+U` upgrade planner, `F1` settings and help, and `Alt` plus the underlined letter of each
+  button. They work from inside the web views too. Every header button shows a focus ring when reached by
+  keyboard, and `Down` opens a menu button's menu.
+- **The window remembers** where it was closed (screen, size, maximized or not), and comes back from the
+  tray the way it left instead of always maximized.
+- **Per-thread CPU load** in the live telemetry, read from the counters Windows keeps for each processor.
+
+### Fixed
+- Efficiency ran each suggestion and its "Next:" step together on one clipped line; the two now wrap as
+  separate lines.
+- The Scan Log was an empty box until something ran; it now says what will appear there.
+- The build script carries settings and scans forward from the newest earlier build that actually has
+  scans, so a build opened once with an empty data folder no longer hides the real one.
 ## 2.11.0 (2026-11-16)
 
 - Windows drive health incorporates recent disk faults and unexpected removals from the System log when Windows can associate the event with a drive's recorded identity.

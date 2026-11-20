@@ -59,8 +59,9 @@ Get-FileHash -Algorithm SHA256 -LiteralPath $zip, $exe |
     Set-Content -LiteralPath $sums -Encoding ascii
 
 # Launch copy: dist\BoardScout-<ver>-<rid>\ is where launchers look first. Without it a launcher kept starting an
-# old dist build. Settings and scans come forward from the newest earlier dist build (not its WebView2 cache), so a new
-# version doesn't open with no settings and a full rescan.
+# old dist build. Settings and scans come forward from the newest earlier dist build that has scans in it (not its
+# WebView2 cache), so a new version doesn't open with no settings and a full rescan. A build that was only ever
+# opened with an empty data folder is skipped: it would hide the real data behind it.
 $distRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist'))
 $dist = Join-Path $distRoot "BoardScout-$version-$Runtime"
 if (Test-Path -LiteralPath $dist) {
@@ -70,7 +71,7 @@ New-Item -ItemType Directory -Force -Path $dist | Out-Null
 Get-ChildItem -LiteralPath $portable -Force | Where-Object Name -ne 'Data' | Copy-Item -Destination $dist -Recurse -Force
 if (-not (Test-Path -LiteralPath (Join-Path $dist 'Data'))) {
     $previous = Get-ChildItem -LiteralPath $distRoot -Directory -Filter "BoardScout-*-$Runtime" |
-        Where-Object { $_.FullName -ne $dist -and (Test-Path -LiteralPath (Join-Path $_.FullName 'Data')) } |
+        Where-Object { $_.FullName -ne $dist -and (Get-ChildItem -LiteralPath (Join-Path $_.FullName 'Data\Scans') -File -ErrorAction SilentlyContinue | Select-Object -First 1) } |
         Sort-Object { $v = $null; if ([version]::TryParse(($_.Name -replace "^BoardScout-|-$Runtime$", ''), [ref]$v)) { $v } else { [version]'0.0' } } -Descending |
         Select-Object -First 1
     if ($previous) {
