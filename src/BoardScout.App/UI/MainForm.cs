@@ -339,39 +339,45 @@ public sealed class MainForm : Form
     // reports the keys it does not use itself), so they work wherever the focus is.
     private bool HandleShortcut(Keys keyData)
     {
+        if (ShortcutFor(keyData) is not { } action) return false;
+        // A held key repeats: one press opens one report, toggles the pop-out once, flips privacy once.
+        var now = Environment.TickCount64;
+        var repeat = keyData == _lastShortcut && now - _lastShortcutAt < 400;
+        _lastShortcut = keyData;
+        _lastShortcutAt = now;
+        if (!repeat) action();
+        return true;
+    }
+
+    private Keys _lastShortcut;
+    private long _lastShortcutAt;
+
+    /// <summary>What a key does as a window shortcut right now, or null when it is not one.</summary>
+    private Action? ShortcutFor(Keys keyData)
+    {
         switch (keyData)
         {
             // Flips privacy mode from anywhere, e.g. right before a screenshot.
             case Keys.Control | Keys.Shift | Keys.P:
-                AppSettings.Update(s => s.PrivacyMode = !s.PrivacyMode);
-                return true;
+                return () => AppSettings.Update(s => s.PrivacyMode = !s.PrivacyMode);
             case Keys.F5:
-                if (!_busy) _ = RunScanAsync();
-                return true;
+                return () => { if (!_busy) _ = RunScanAsync(); };
             case Keys.Escape when _busy:
-                _operationCts?.Cancel();
-                return true;
+                return () => _operationCts?.Cancel();
             case Keys.Control | Keys.E when _exportItem.Enabled:
-                ExportScan();
-                return true;
+                return ExportScan;
             case Keys.Control | Keys.O when _importItem.Enabled:
-                _ = LoadScanFromFileAsync();
-                return true;
+                return () => _ = LoadScanFromFileAsync();
             case Keys.Control | Keys.U when _upgradeButton.Enabled:
-                OpenUpgradePlanner();
-                return true;
+                return OpenUpgradePlanner;
             case Keys.F1:
-                ToggleVersionPopout();
-                return true;
+                return ToggleVersionPopout;
         }
         // Ctrl+1 to Ctrl+9: the screens, in the navigation rail's order.
         var digit = (keyData & Keys.KeyCode) - Keys.D1;
         if ((keyData & Keys.Modifiers) == Keys.Control && digit >= 0 && digit < _tabs.TabCount)
-        {
-            _tabs.SelectedIndex = digit;
-            return true;
-        }
-        return false;
+            return () => _tabs.SelectedIndex = digit;
+        return null;
     }
 
     protected override void OnResize(EventArgs e)
@@ -1226,7 +1232,16 @@ public sealed class MainForm : Form
             view.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
             // A web view reports the function keys and Ctrl combinations it is given; the window's shortcuts
             // (F5, Ctrl+1 to 9, Ctrl+E...) work from inside a page the same as from the native controls.
-            view.KeyDown += (_, e) => { if (HandleShortcut(e.KeyData)) e.Handled = true; };
+            // Esc stays with the page (it unpins a part, closes a panel, clears a search box); the window's own Esc
+            // works from the native controls. The rest run once the web view's key handling has returned, because
+            // some of them open a dialog.
+            view.KeyDown += (_, e) =>
+            {
+                var keys = e.KeyData;
+                if (e.KeyCode == Keys.Escape || ShortcutFor(keys) is null || IsDisposed) return;
+                e.Handled = true;
+                BeginInvoke(() => HandleShortcut(keys));
+            };
         }
         catch (Exception ex)
         {
@@ -1490,8 +1505,12 @@ public sealed class MainForm : Form
         grid.BeginInvoke(() =>
         {
             if (grid.IsDisposed || grid.Tag is "touched") return;
-            grid.ClearSelection();
-            grid.CurrentCell = null;
+            try
+            {
+                grid.ClearSelection();
+                grid.CurrentCell = null;
+            }
+            catch (InvalidOperationException) { } // the grid is mid-refresh; the next refresh clears it
         });
     }
 
@@ -2252,6 +2271,8 @@ public sealed class MainForm : Form
 
     private void SetBusy(bool busy, string message)
     {
+        // Read before anything is disabled: disabling the focused button hands the focus to its neighbour.
+        var moveFocus = busy ? _scanButton.Focused : _cancelButton.Focused;
         _scanButton.Enabled = !busy;
         _checkDriversItem.Enabled = !busy && _scan is not null;
         _downloadDriversItem.Enabled = !busy && _report is not null;
@@ -2259,7 +2280,6 @@ public sealed class MainForm : Form
         _exportItem.Enabled = !busy && _scan is not null;
         _upgradeButton.Enabled = !busy && _scan is not null;
         // Cancel takes Scan's place (and the keyboard focus, if Scan had it), and gives it back afterwards.
-        var moveFocus = busy ? _scanButton.Focused : _cancelButton.Focused;
         _busy = busy;
         _busyBar.Busy = busy;
         LayoutHeader();
@@ -2387,6 +2407,12 @@ public sealed class MainForm : Form
         }
     }
 
+    // A tooltip is set only when its text changes: setting it again every second would close one that is showing.
+    private void SetTip(Control control, string? text)
+    {
+        if (_toolTip.GetToolTip(control) != (text ?? "")) _toolTip.SetToolTip(control, text);
+    }
+
     private void ApplyTelemetry(SystemTelemetry telemetry)
     {
         _lastTelemetry = telemetry;
@@ -2418,7 +2444,7 @@ public sealed class MainForm : Form
                 (float)level, $"Peak {_tempGauge.Peak * 80 + 20:0}°C", celsius >= 90 ? AppTheme.Critical : celsius >= 80 ? AppTheme.Warning : null);
         }
         else _tempGauge.Show("Temperature", "—", "", null, sensors.Started ? "No sensor reports one" : "Starting the sensors");
-        _toolTip.SetToolTip(_tempGauge, sensors.MotherboardSensorsAvailable ? null :
+        SetTip(_tempGauge, sensors.MotherboardSensorsAvailable ? null :
             "CPU, VRM, and motherboard fan sensors need the PawnIO driver and administrator rights. Open the version button for details.");
 
         var down = telemetry.NetworkReceivedBytesPerSec;
@@ -2428,11 +2454,10 @@ public sealed class MainForm : Form
         static float Level(double bytesPerSec) => (float)((Math.Log10(Math.Max(bytesPerSec * 8, 1e3)) - 3) / 6);
         _networkGauge.AddSample(down, up);
         _networkGauge.Show("Network", $"↓ {FormatRate(down)}", "", Level(down), $"↑ {FormatRate(up)}", level2: Level(up));
-        _toolTip.SetToolTip(_networkGauge, $"Highest in the graph: ↓ {FormatRate(_networkGauge.Peak)}, ↑ {FormatRate(_networkGauge.SecondaryPeak)}. " +
-                                           "The meter's left column is download and its right one upload, on a logarithmic scale from 1 Kbps to 1 Gbps; " +
-                                           "the graph draws download above its centre line and upload below.");
-        _toolTip.SetToolTip(_cpuGauge, telemetry.CoreLoads.Count > 0
-            ? $"The columns are this PC's {telemetry.CoreLoads.Count} threads, each with a cap at its recent high. The graph is the last minute and a half of total load."
+        SetTip(_networkGauge, "The meter's left column is download and its right one upload, on a logarithmic scale from 1 Kbps to 1 Gbps. " +
+                              "The graph draws download above its centre line and upload below. Click for Connections.");
+        SetTip(_cpuGauge, telemetry.CoreLoads.Count > 0
+            ? $"The columns are this PC's {telemetry.CoreLoads.Count} threads, each with a cap at its recent high. The graph is the last minute and a half of total load. Click for System."
             : null);
 
         PostConnectionFlow(telemetry);

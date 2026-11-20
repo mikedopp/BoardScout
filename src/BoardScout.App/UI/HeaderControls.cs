@@ -243,7 +243,9 @@ internal sealed class GaugeTile : Control
         else
         {
             _bridgeBox = Rectangle.Empty;
-            if (_bars.Length > 0 && graph.Width >= 170)
+            // The per-thread columns are drawn only when the graph beside them keeps a useful width: a 32-thread
+            // processor needs 158 px for its columns however narrow the window is.
+            if (_bars.Length > 0 && graph.Width - BridgeWidth(graph.Width).Total - 16 >= 90)
             {
                 var used = DrawBridge(g, graph);
                 graph = new RectangleF(graph.X + used + 16, graph.Y, graph.Width - used - 16, graph.Height);
@@ -255,12 +257,21 @@ internal sealed class GaugeTile : Control
 
     // The meter bridge: a column of eight lights per thread, lit from the bottom in the colours of the range, with
     // a bright cap resting at each column's recent high. Returns the width it took.
+    private const float BridgeGap = 2f;
+
+    // How wide each column is, and all of them together, in a graph window of this width: about half of it, with
+    // columns never thinner than 3 px or wider than 6.
+    private (float Column, float Total) BridgeWidth(float boxWidth)
+    {
+        var column = Math.Clamp(MathF.Floor((boxWidth * 0.48f + BridgeGap) / Math.Max(1, _bars.Length) - BridgeGap), 3f, 6f);
+        return (column, _bars.Length * (column + BridgeGap) - BridgeGap);
+    }
+
     private float DrawBridge(Graphics g, RectangleF box)
     {
         const int rows = 8;
-        const float gap = 2f, rowGap = 1.5f;
-        var column = Math.Clamp(MathF.Floor((box.Width * 0.48f + gap) / _bars.Length - gap), 3f, 6f);
-        var width = _bars.Length * (column + gap) - gap;
+        const float gap = BridgeGap, rowGap = 1.5f;
+        var (column, width) = BridgeWidth(box.Width);
         var cell = (box.Height - rowGap * (rows - 1)) / rows;
         _bridgeBox = Rectangle.Inflate(Rectangle.Round(new RectangleF(box.X, box.Y, width, box.Height)), 2, 3);
         var smoothing = g.SmoothingMode;
@@ -546,6 +557,7 @@ internal sealed class SpecStrip : Control
         for (var i = 0; i < count; i++)
         {
             var width = Math.Min(PlateWidth(i), Width - x);
+            if (width < 40 || Height < 8) break; // no room left for a plate (a window being minimized or restored)
             var plate = new RectangleF(x + 0.5f, 0.5f, width - 1f, Height - 1f);
             using (var path = Glass.RoundedPath(plate, 8))
             {

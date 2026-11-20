@@ -179,6 +179,17 @@ public class HeaderAndTableTests
         Assert.Equal(["CPU", "Storage", "System"], RigSpecs.For(rig).Select(s => s.Label));
     }
 
+    [Fact]
+    public void A_scan_file_with_nulls_where_text_belongs_still_gets_its_other_plates()
+    {
+        var rig = Rig();
+        rig.Scan.Os.Caption = null!;
+        rig.Components.Add(new() { Category = null!, Model = null! });
+        rig.Components.Add(new() { Category = "gpu", Model = null! });
+        rig.SystemInfo.CpuElement = System.Text.Json.JsonDocument.Parse("""{"name":null,"cores":8,"threads":16}""").RootElement;
+        Assert.Equal(["Graphics", "Memory", "Storage"], RigSpecs.For(rig).Select(s => s.Label));
+    }
+
     [Theory]
     [InlineData("NVIDIA GeForce RTX 3050", "GeForce RTX 3050")]
     [InlineData("AMD Radeon(TM) Graphics", "Radeon Graphics")]

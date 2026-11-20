@@ -16,12 +16,13 @@ internal static class RigSpecs
     {
         var specs = new List<RigSpec>();
 
+        // An older or hand-edited scan file can hold nulls where the model expects text.
         var cpu = scan.Cpu;
-        if (cpu.Name.Length > 0)
+        if (cpu.Name is { Length: > 0 })
             specs.Add(new("CPU", Views.WindowsOverview.ShortCpuName(cpu.Name),
                 cpu.Cores > 0 ? $"{cpu.Cores} cores · {cpu.Threads} threads" : ""));
 
-        var cards = scan.Components.Where(c => c.Category.Equals("gpu", StringComparison.OrdinalIgnoreCase) && c.Model.Length > 0)
+        var cards = scan.Components.Where(c => string.Equals(c.Category, "gpu", StringComparison.OrdinalIgnoreCase) && c.Model is { Length: > 0 })
             .Select(c => c.Model).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (cards.Count > 0)
         {
@@ -49,7 +50,7 @@ internal static class RigSpecs
         if (volumes.Count > 0)
             specs.Add(new("Storage", Size(volumes.Sum(v => v.SizeBytes)), volumes.Count == 1 ? "1 volume" : $"{volumes.Count} volumes"));
 
-        var os = scan.Scan.Os.Caption.Replace("Microsoft ", "", StringComparison.OrdinalIgnoreCase).Trim();
+        var os = (scan.Scan.Os.Caption ?? "").Replace("Microsoft ", "", StringComparison.OrdinalIgnoreCase).Trim();
         if (os.Length > 0)
             specs.Add(new("System", os, scan.FormFactor is { Length: > 0 } form && form != "unknown" ? form.ToUpperInvariant() : ""));
 
