@@ -42,7 +42,7 @@ The Windows app's own window: a rebuilt command bar, header instruments, and tab
 ### Added
 - **Keyboard.** `F5` scan, `Esc` cancel, `Ctrl+1` to `Ctrl+9` for the screens, `Ctrl+E` export, `Ctrl+O`
   import, `Ctrl+U` upgrade planner, `F1` settings and help, and `Alt` plus the underlined letter of each
-  button. They work from inside the web views too. Every header button shows a focus ring when reached by
+  button. They work from inside the web views too, except `Esc`, which stays with the page there (it unpins a part or clears a search). Every header button shows a focus ring when reached by
   keyboard, and `Down` opens a menu button's menu.
 - **The window remembers** where it was closed (screen, size, maximized or not), and comes back from the
   tray the way it left instead of always maximized.
