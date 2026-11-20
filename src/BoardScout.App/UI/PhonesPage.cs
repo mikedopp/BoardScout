@@ -138,6 +138,8 @@ internal sealed class PhonesPage : Panel
             _about.Text = string.Join("  •  ", new[]
             {
                 phone.Kind,
+                // Under a name its owner gave it, say what it is sold as.
+                phone.MarketName is { Length: > 0 } sold && sold != _title.Text ? sold : null,
                 named.Length > 0 && named != _title.Text ? named : null,
                 phone.UptimeHours is { } hours ? hours >= 48 ? $"on for {hours / 24:0} days" : $"on for {hours:0} h" : null,
                 phone.BatteryFirstUse is { } first ? $"battery in use since {first.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)}" : null

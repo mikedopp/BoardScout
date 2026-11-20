@@ -118,15 +118,22 @@ internal static class PhoneInventory
             _ => string.Join(" + ", groups.Select(g => $"{g.Count()} × {g.Key / 1e6:0.00}")) + " GHz"
         };
         var cores = speeds.Count;
-        var chipCode = Prop("ro.soc.model", "ro.hardware.chipname") ??
-                       Section("cpuinfo").Select(l => Regex.Match(l, @"^Hardware\s*:\s*(.+)$")).FirstOrDefault(m => m.Success)?.Groups[1].Value.Trim() ??
-                       Prop("ro.board.platform", "ro.hardware");
+        // Some kernels answer "Generic DT based system" for the chip, and "qcom" names a maker, not a chip: neither is
+        // shown. Of the board's two fallback names, the one with a number in it is the chip's code.
+        var hardwareLine = Section("cpuinfo").Select(l => Regex.Match(l, @"^Hardware\s*:\s*(.+)$")).FirstOrDefault(m => m.Success)?.Groups[1].Value.Trim();
+        if (hardwareLine is not null && hardwareLine.Contains("Generic", StringComparison.OrdinalIgnoreCase)) hardwareLine = null;
+        var boardNames = new[] { Prop("ro.board.platform"), Prop("ro.hardware") }
+            .Where(n => n is { Length: > 0 } && !n.Equals("qcom", StringComparison.OrdinalIgnoreCase)).ToList();
+        var chipCode = Prop("ro.soc.model", "ro.hardware.chipname") ?? hardwareLine ??
+                       boardNames.FirstOrDefault(n => n!.Any(char.IsDigit)) ?? boardNames.FirstOrDefault();
 
         double? memory = Section("mem").Select(l => Regex.Match(l, @"MemTotal:\s*(\d+)\s*kB")).FirstOrDefault(m => m.Success) is { } mem
             ? long.Parse(mem.Groups[1].Value, CultureInfo.InvariantCulture) / 1048576d : null;
 
         long? size = null, free = null;
-        if (Section("df").LastOrDefault(l => Regex.IsMatch(l, @"\s/data(/\S*)?\s*$")) is { } df &&
+        // The question was about /data, so the answer is its volume, whichever of its mount points df names
+        // (a Fire TV names /storage/emulated/0/Android/obb).
+        if (Section("df").LastOrDefault(l => Regex.IsMatch(l, @"^\S+\s+\d+\s+\d+\s+\d+\s+\d+%\s+/")) is { } df &&
             df.Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: >= 4 } parts &&
             long.TryParse(parts[1], out var blocks) && long.TryParse(parts[3], out var available))
         {
@@ -250,7 +257,7 @@ internal static class PhoneInventory
         "S5E9945" => "Exynos 2400",
         "S5E9925" => "Exynos 2200",
         "S5E9840" => "Exynos 2100",
-        _ => code.Trim()
+        _ => Regex.IsMatch(code.Trim(), @"^[a-z]{1,4}\d[a-z0-9]*$") ? code.Trim().ToUpperInvariant() : code.Trim()
     };
 
     /// <summary>Galaxy model numbers BoardScout can put a name to; the letter after the digits is the region.</summary>

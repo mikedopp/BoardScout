@@ -138,6 +138,27 @@ public class PhoneInventoryTests
     }
 
     [Fact]
+    public void A_generic_hardware_line_gives_way_to_the_boards_chip_code_and_data_is_found_under_another_mount_point()
+    {
+        // The shape a second, newer Fire TV answered in.
+        var text = Tv.Replace("[ro.board.platform]: [m7632]", "[ro.board.platform]: [merak]")
+            .Replace("[ro.hardware]: [m7632]", "[ro.hardware]: [mt5896]")
+            .Replace("Hardware\t: M7632", "Hardware\t: Generic DT based system")
+            .Replace("/dev/block/mmcblk0p22  11497788 2862968   8487364  26% /data", "/dev/block/dm-17   9339420 2467804   6724160  27% /storage/emulated/0/Android/obb");
+        var tv = PhoneInventory.Parse(text, "x");
+        Assert.Equal("MT5896", tv.Chip);
+        Assert.Equal(9339420L * 1024, tv.StorageBytes);
+        Assert.Equal(6724160L * 1024, tv.StorageFreeBytes);
+    }
+
+    [Fact]
+    public void A_maker_name_is_never_shown_as_the_chip()
+    {
+        var phone = PhoneInventory.Parse("##props\n[ro.board.platform]: [kalama]\n[ro.hardware]: [qcom]\n", "x");
+        Assert.Equal("kalama", phone.Chip);
+    }
+
+    [Fact]
     public void A_first_use_date_that_is_not_a_date_is_left_out()
     {
         var text = PhoneInventory.SampleProbe.Replace("[20230402]", "[unsupported]");
@@ -157,6 +178,8 @@ public class PhoneInventoryTests
     [InlineData("SM8550", "Snapdragon 8 Gen 2")]
     [InlineData("s5e9925", "Exynos 2200")]
     [InlineData("MT6789", "MT6789")]
+    [InlineData("mt5896", "MT5896")]
+    [InlineData("kalama", "kalama")]
     public void A_chip_code_reads_as_its_name_when_it_has_one(string code, string name) =>
         Assert.Equal(name, PhoneInventory.ChipName(code));
 
