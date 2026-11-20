@@ -103,6 +103,16 @@ internal sealed class GaugeTile : Control
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float GraphFloor { get; set; } = 1f;
 
+    /// <summary>False for a reading with no history to draw: the instrument is its meter, figure, and note only.</summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool ShowGraph { get; set; } = true;
+
+    /// <summary>For a reading where full is the good end (a battery): the colours run from red at empty to green at full.</summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Invert { get; set; }
+
+    private Color HeatAt(float fraction) => Heat.At(_kind, Invert ? 1f - fraction : fraction);
+
     /// <summary>The highest reading in the graph's window (0 when there is none yet).</summary>
     public float Peak => _primary.Count == 0 ? 0 : _primary.Max();
     public float SecondaryPeak => _secondary.Count == 0 ? 0 : _secondary.Max();
@@ -203,7 +213,7 @@ internal sealed class GaugeTile : Control
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        var heat = Heat.At(_kind, _shown);
+        var heat = HeatAt(_shown);
         var body = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
         Glass.Surface(g, body, 12, _tone ?? heat, tintStrength: (_tone is null ? 0.06f : 0.13f) + (_hover ? 0.05f : 0), sheen: _hover ? 1.1f : 0.7f);
         if (_tone is { } alarm)
@@ -219,7 +229,8 @@ internal sealed class GaugeTile : Control
         // Caption, the reading, and one line of detail, in a column of a fixed width so the graph never shifts.
         var compact = Height < 70;
         var textLeft = _meterBox.Right + 15;
-        var column = Math.Min(_kind == GaugeKind.Network ? 138 : 116, Width - textLeft - 10);
+        // With no graph beside it, the text has the rest of the panel.
+        var column = ShowGraph ? Math.Min(_kind == GaugeKind.Network ? 138 : 116, Width - textLeft - 10) : Width - textLeft - 12;
         var top = compact ? 6 : 9;
         const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
         TextRenderer.DrawText(g, _caption.ToUpperInvariant(), CaptionFont, new Rectangle(textLeft, top, column, 13), AppTheme.Muted, flags);
@@ -234,7 +245,7 @@ internal sealed class GaugeTile : Control
             TextRenderer.DrawText(g, _note, NoteFont, new Rectangle(textLeft, Height - (compact ? 20 : 23), column, 15), AppTheme.Muted, flags);
 
         var well = new RectangleF(textLeft + column + 8, 7.5f, Width - (textLeft + column + 8) - 9.5f, Height - 16f);
-        if (well.Width < 96) return;
+        if (!ShowGraph || well.Width < 96) return;
         DrawWell(g, well);
         var graph = RectangleF.Inflate(well, -11, -8);
         var state = g.Save();
@@ -324,7 +335,9 @@ internal sealed class GaugeTile : Control
             var held = has && peak > level + 0.06f ? Math.Clamp((int)(peak * rows), 0, rows - 1) : -1;
             for (var row = 0; row < rows; row++)
             {
-                var color = two ? (column == 0 ? Heat.Down : Heat.Up) : Heat.At(_kind, (row + 0.5f) / rows);
+                // A reading where full is good (a battery) lights every cell in the colour of its level: green when
+                // there is plenty, amber and red as it runs down.
+                var color = two ? (column == 0 ? Heat.Down : Heat.Up) : Invert ? HeatAt(level) : HeatAt((row + 0.5f) / rows);
                 brush.Color = row < lit ? color : row == held ? Glass.Mix(color, Color.White, 0.3f) : dark;
                 g.FillRectangle(brush, x, box.Bottom - (row + 1) * cell - row * rowGap, MathF.Round(width), cell);
             }

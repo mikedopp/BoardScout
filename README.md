@@ -94,7 +94,7 @@ at the bottom, next to the **Privacy on** chip when privacy mode is on.
 
 The command bar at the top right has one filled action, **Scan now**, the **Upgrade planner**, and two
 menus (**Drivers**, **More**); in a narrow window they fold to icons. While something runs, **Cancel**
-takes Scan's place. Keyboard: `F5` scan, `Esc` cancel, `Ctrl+1`–`Ctrl+9` the screens in the rail's
+takes Scan's place. Keyboard: `F5` scan, `Esc` cancel, `Ctrl+1`–`Ctrl+9` and `Ctrl+0` the screens in the rail's
 order, `Ctrl+E` export, `Ctrl+O` import a scan, `Ctrl+U` upgrade planner, `F1` settings and help,
 `Ctrl+Shift+P` privacy mode, and `Alt` plus a button's underlined letter. The window opens where it was
 last closed, and fits a 1280 × 720 screen.
@@ -223,6 +223,16 @@ is kept. Settings › Daily drive health reading turns it off. On Linux and macO
 adds the same Health and Life columns; SMART there needs root, so `sudo boardscout --drive-health` takes a reading
 (and prints it) that the dashboard then shows.
 
+**Phones** — what is inside each Android phone, tablet, or TV connected to this PC, one card per
+device: its name, then plates for the chip (with its cores and their speeds), memory, storage, display
+(resolution and refresh rate), and Android version (with One UI and the security patch date on a
+Galaxy), then meters for battery level (with the battery's capacity against new and its charge cycles
+where the phone reports them, as Samsung phones do), battery temperature, and storage used. Press
+**Read phones** to ask; nothing is read until you do. It needs adb from Google's Android
+platform-tools on PATH, USB debugging turned on in the phone's Developer options, and this PC allowed
+on the phone's screen. Privacy mode shows a device by maker and model instead of the name its owner
+gave it.
+
 **Version button** — the version on a orb badge (aurora, the same orb as the browser
 dashboard's). The orb thinks while a scan, driver check, or download runs, turns mint for a moment when it
 finishes, and stays red after a failure until the next run or a click. It opens runtime details, sensor
@@ -311,6 +321,11 @@ when you click it twice: it asks Windows to stop that USB drive, exactly as Safe
   much power it needs, once per session. Phones and cameras are never asked, so BoardScout stays off the
   link they copy files over, and a drive is asked only while Windows' counters show it idle, never in
   the middle of a copy.
+- **A phone is asked only on the Phones screen, and only when you press Read phones.** That one press
+  runs one read-only command per device through adb (Android's own debugging tool, which you install
+  and whose access you approve on the phone): what chip, memory, storage, display, Android version,
+  and battery it has. It reads no serial number, IMEI, account, app list, message, or file, and changes
+  nothing on the device. BoardScout never starts this by itself and never repeats it.
 - **Drive health readings** (once a day, unless turned off) ask each drive for its health counters and logs
   through smartctl (`smartctl -x`: SMART READ DATA and log reads on SATA, Get Log Page on NVMe). These are read-only
   commands: no self-test is started, no setting is changed, and a hard disk that has spun down is left asleep unless

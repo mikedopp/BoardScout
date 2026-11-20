@@ -77,6 +77,7 @@ public sealed class MainForm : Form
     private readonly HeaderLabel _title = new();
     private readonly HeaderLabel _subtitle = new();
     private readonly SpecStrip _specs = new() { Visible = false };
+    private PhonesPage? _phonesPage;
     private readonly DataGridView _drivers = new();
     private readonly DataGridView _storage = new();
     private readonly DataGridView _suggestions = new();
@@ -373,8 +374,8 @@ public sealed class MainForm : Form
             case Keys.F1:
                 return ToggleVersionPopout;
         }
-        // Ctrl+1 to Ctrl+9: the screens, in the navigation rail's order.
-        var digit = (keyData & Keys.KeyCode) - Keys.D1;
+        // Ctrl+1 to Ctrl+9, then Ctrl+0 for the tenth: the screens, in the navigation rail's order.
+        var digit = (keyData & Keys.KeyCode) == Keys.D0 ? 9 : (keyData & Keys.KeyCode) - Keys.D1;
         if ((keyData & Keys.Modifiers) == Keys.Control && digit >= 0 && digit < _tabs.TabCount)
             return () => _tabs.SelectedIndex = digit;
         return null;
@@ -432,6 +433,9 @@ public sealed class MainForm : Form
         _tabs.TabPages.Add(BuildSuggestionsTab());
         _tabs.TabPages.Add(BuildWebTab("System", _systemCard, _systemWebView));
         _tabs.TabPages.Add(BuildWebTab("Machines", _machinesCard, _machinesWebView));
+        var phones = NewPage("Phones");
+        phones.Controls.Add(_phonesPage = new PhonesPage(_toolTip));
+        _tabs.TabPages.Add(phones);
         _tabs.TabPages.Add(BuildLogTab());
         _navigation.SelectedIndexChanged += (_, _) =>
         {
@@ -2162,6 +2166,21 @@ public sealed class MainForm : Form
             SelectTab(tab);
             await Task.Delay(tab is "Topology" or "Connections" or "System" ? 9000 : 700);
             await SaveSnapshotAsync(Path.Combine(directory, $"tab-{tab.ToLowerInvariant().Replace(' ', '-')}.png"));
+        }
+        // The Phones screen with a made-up Galaxy (the shape a Samsung answers in), so its layout can be judged with
+        // no phone plugged in; and, only with BOARDSCOUT_SNAPSHOT_PHONES=1, one real read of whatever adb can reach.
+        if (_phonesPage is { } phonesPage)
+        {
+            SelectTab("Phones");
+            phonesPage.Show(new PhoneInventory.Result("sample", [PhoneInventory.Parse(PhoneInventory.SampleProbe, "sample")], 1, 0, null));
+            await Task.Delay(900);
+            await SaveSnapshotAsync(Path.Combine(directory, "tab-phones-sample.png"));
+            if (Environment.GetEnvironmentVariable("BOARDSCOUT_SNAPSHOT_PHONES") == "1")
+            {
+                await phonesPage.ReadAsync();
+                await Task.Delay(900);
+                await SaveSnapshotAsync(Path.Combine(directory, "tab-phones.png"));
+            }
         }
         _tabs.SelectedIndex = 0;
 

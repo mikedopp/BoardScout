@@ -40,7 +40,7 @@ internal sealed class AuroraPanel : Panel
 }
 
 /// <summary>A rounded card whose luminous glass rim replaces the old square 1 px border.</summary>
-internal sealed class GlassCard : Panel
+internal class GlassCard : Panel
 {
     private const float CornerRadius = 16;
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.13.0 (2026-11-20)
+
+What is inside your phones.
+
+### Added
+- **Phones screen (Windows app).** A card for each Android phone, tablet, or TV that adb can reach: its name,
+  plates for the chip (with its cores and their top speeds), memory, storage, display (resolution and refresh
+  rate), and Android version (with One UI and the security patch date on a Galaxy), and meters for battery
+  level, battery temperature, and storage used. Where the phone reports them, as Samsung phones do, the
+  battery meter also shows its capacity against new and its charge cycles. Common Galaxy model numbers and
+  flagship chips are shown by the names they are sold under.
+- **Only when asked.** Nothing is read until you press **Read phones**; one press runs one read-only command
+  per device and is never repeated by itself. No serial number, IMEI, account, app list, message, or file is
+  read, and nothing on the device changes. It needs adb (Google's Android platform-tools) on PATH, USB
+  debugging on, and this PC allowed on the phone's screen; the screen says which of those is missing.
+- Privacy mode shows a device by maker and model instead of the name its owner gave it.
+- `Ctrl+9` opens Phones; the Scan Log, now the tenth screen, is `Ctrl+0`.
+
+### Notes
+- Read on real hardware so far: an Amazon Fire TV. The Samsung-only figures (One UI version, battery capacity
+  against new, charge cycles) are built from how Galaxy phones report them and have not yet been read from a
+  real Galaxy.
+- The Linux and macOS editions and the browser dashboard do not have this screen.
 ## 2.12.0 (2026-11-20)
 
 The Windows app's own window: a rebuilt command bar, header instruments, and tables.

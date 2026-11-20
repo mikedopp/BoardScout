@@ -170,6 +170,10 @@ internal sealed class VersionPopout : Panel, IMessageFilter
                 : "smartmontools (smartctl), for drive health: not installed. Optional: without it only Windows' own drive counters are read. smartmontools.org",
             width: PopoutWidth - 44));
         Add(Detail(@"Drive health history: DriveHealth in the data folder (one line per reading per drive)", width: PopoutWidth - 44));
+        Add(Detail(DriveHealth.AndroidDevices.LocateAdb() is { } adb
+                ? $"adb (Android platform-tools), for the Phones screen: {adb}"
+                : "adb (Android platform-tools), for the Phones screen: not found. Optional: without it the Phones screen has nothing to ask. developer.android.com/tools/releases/platform-tools",
+            width: PopoutWidth - 44));
         Add(Detail("Credentials: none. Machines signs in with your own SSH keys; BoardScout never asks for or keeps a password.",
             width: PopoutWidth - 44));
 

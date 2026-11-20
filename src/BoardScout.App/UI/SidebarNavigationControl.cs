@@ -26,6 +26,7 @@ public sealed class SidebarNavigationControl : Control
         new("Efficiency", "Fixes and upgrade ideas, worst first"),
         new("System", "Windows, updates, apps, and scheduled tasks"),
         new("Machines", "Other PCs and servers, over SSH"),
+        new("Phones", "What is inside each Android phone, tablet, or TV"),
         new("Scan Log", "What was read, and when")
     ];
 
@@ -216,6 +217,11 @@ public sealed class SidebarNavigationControl : Control
                 Rounded(R(2.5f, 10, 13, 5.5f), 1.5f);
                 Dot(5.5f, 5.25f, 1); Dot(5.5f, 12.75f, 1);
                 Line(9, 5.25f, 12.5f, 5.25f); Line(9, 12.75f, 12.5f, 12.75f);
+                break;
+            case 8: // Phones: a handset with its speaker slot and home bar
+                Rounded(R(4.5f, 1.5f, 9, 15), 2.2f);
+                Line(7.6f, 3.6f, 10.4f, 3.6f);
+                Line(8, 14, 10, 14);
                 break;
             default: // Scan log: a list
                 foreach (var y in new[] { 4.5f, 9, 13.5f })
