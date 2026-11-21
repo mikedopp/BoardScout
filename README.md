@@ -233,6 +233,8 @@ platform-tools on PATH, USB debugging turned on in the phone's Developer options
 on the phone's screen. Privacy mode shows a device by maker and model instead of the name its owner
 gave it.
 
+![Phones: a sample Galaxy S23 Ultra with plates for its chip, memory, storage, display, and system, and meters for battery, battery temperature, and storage used](docs/screenshots/phones.png)
+
 **Version button** — the version on a orb badge (aurora, the same orb as the browser
 dashboard's). The orb thinks while a scan, driver check, or download runs, turns mint for a moment when it
 finishes, and stays red after a failure until the next run or a click. It opens runtime details, sensor
@@ -318,7 +320,7 @@ when you click it twice: it asks Windows to stop that USB drive, exactly as Safe
 - **USB hubs** say which device is on which port and at what speed, from what the hub driver already
   knows; nothing is sent to the devices for that.
 - **One question reaches a USB device itself:** its 9-byte configuration descriptor, which says how
-  much power it needs, once per session. Phones and cameras are never asked, so BoardScout stays off the
+  much power it needs, once per session. Phones and cameras are never asked this, so BoardScout stays off the
   link they copy files over, and a drive is asked only while Windows' counters show it idle, never in
   the middle of a copy.
 - **A phone is asked only on the Phones screen, and only when you press Read phones.** That one press
