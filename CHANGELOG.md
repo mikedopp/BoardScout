@@ -13,6 +13,13 @@ Each memory stick says what it is, how old it is, and how hot it runs, when it c
   "not recorded".
 - The temperature includes the stick's own alarm limit and, on DDR5, whether it has tripped.
 
+### Fixed
+- **Linux: a driver's module comes from the kernel.** BoardScout now follows the kernel's own link from a driver
+  to its module (`/sys/bus/<bus>/drivers/<driver>/module`) before guessing from the name, so a driver whose
+  module is named differently (`i801_smbus` is in `i2c_i801`) is never called built in. The PCI screens already
+  followed the device's link; this covers the network adapters' driver fact and any later caller. Checked on a
+  real Ubuntu machine (kernel 7.0.0-44) against `lspci -k` and `lsmod`.
+
 ### Notes
 - Reading is read-only: BoardScout never writes to a stick's SPD.
 - Without administrator rights the slot says how to get the reading rather than guessing.

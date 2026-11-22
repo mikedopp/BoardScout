@@ -15,9 +15,9 @@ internal static partial class KernelInfo
     public static DriverInfo? Driver(string? name, string kernel)
     {
         if (string.IsNullOrEmpty(name)) return null;
-        // The driver's module name can differ from its driver name ("xhci_hcd" is in "xhci_pci").
-        var module = Sys.Exists($"/sys/module/{name}") ? name : Sys.Exists($"/sys/module/{name.Replace('-', '_')}") ? name.Replace('-', '_') : null;
-        if (module is null) return new DriverInfo(name, null, $"Built into the kernel ({kernel})", false, true);
+        var module = ModuleOf(name);
+        // A module with no /sys/module folder is built in and takes no parameters.
+        if (module is null || !Sys.Exists($"/sys/module/{module}")) return new DriverInfo(name, null, $"Built into the kernel ({kernel})", false, true);
         var taint = Sys.Read($"/sys/module/{module}/taint") ?? "";
         var version = Sys.Read($"/sys/module/{module}/version");
         var proprietary = taint.Contains('P');
@@ -28,6 +28,21 @@ internal static partial class KernelInfo
             : builtIn ? $"Built into the kernel ({kernel})"
             : $"Kernel module from the kernel ({kernel})";
         return new DriverInfo(name, version, source, proprietary, builtIn);
+    }
+
+    /// <summary>
+    /// The module a driver lives in. Its name can differ from the driver's ("i801_smbus" is in "i2c_i801", "xhci_hcd"
+    /// in "xhci_pci"), so the kernel's own link /sys/bus/&lt;bus&gt;/drivers/&lt;driver&gt;/module comes first; a module
+    /// folder of the same name (or with dashes as underscores) is only the fallback. A name that is already a
+    /// module's (callers that followed the device's link) is found the same way.
+    /// </summary>
+    internal static string? ModuleOf(string name)
+    {
+        foreach (var bus in Sys.Children("/sys/bus"))
+            if (Sys.LinkName($"/sys/bus/{bus}/drivers/{name}/module") is { } linked) return linked;
+        if (Sys.Exists($"/sys/module/{name}")) return name;
+        var underscored = name.Replace('-', '_');
+        return Sys.Exists($"/sys/module/{underscored}") ? underscored : null;
     }
 
     /// <summary>Sound cards with their codec ("Realtek ALC897"), keyed by the PCI address of their controller.</summary>
