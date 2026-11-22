@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.13.1 (2026-11-21)
+
+No change to what you see.
+
+### Changed
+- The driver engine (the hardware scan, the driver check and its resolvers, the download cache and the scan
+  models) is now kept as its own engine and copied in. Its C# lives in `src/BoardScout.App/Services/DriverCore`
+  with a `SOURCE.txt` naming the engine version; the scripts stay in `src/BoardScout.App/Drivers`. Fixes to the
+  driver engine are made there and synced in, not edited here.
+- Scans now also read each device's installed-driver list and full device list into the scan model (the scan
+  file always held them).
+
 ## 2.13.0 (2026-11-20)
 
 What is inside your phones.

@@ -1,3 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Text.Json;
 using BoardScout.Models;
@@ -11,10 +18,11 @@ public sealed class DriverEngine
 
     public event EventHandler<string>? OutputReceived;
 
-    public DriverEngine()
+    /// <param name="dataRoot">Where scans, reports and the cache go; null picks Data beside the exe, else LocalAppData.</param>
+    public DriverEngine(string? dataRoot = null)
     {
         _toolRoot = Path.Combine(AppContext.BaseDirectory, "Drivers");
-        _dataRoot = ResolveWritableDataRoot();
+        _dataRoot = dataRoot ?? ResolveWritableDataRoot();
         Directory.CreateDirectory(ScanDirectory);
         Directory.CreateDirectory(ReportDirectory);
         Directory.CreateDirectory(CacheDirectory);
@@ -62,7 +70,7 @@ public sealed class DriverEngine
         Task.Run(() =>
         {
             using var stream = File.OpenRead(path);
-            var scan = JsonSerializer.Deserialize(stream, BoardScoutJson.Default.ScanManifest);
+            var scan = JsonSerializer.Deserialize(stream, DriverJson.Default.ScanManifest);
             if (scan is null || scan.SystemInfo.Baseboard is null)
                 throw new InvalidDataException("The selected file is not a compatible BoardScout scan.");
             _ = scan.Cpu;
@@ -73,7 +81,7 @@ public sealed class DriverEngine
         Task.Run(() =>
         {
             using var stream = File.OpenRead(path);
-            return JsonSerializer.Deserialize(stream, BoardScoutJson.Default.DriverReport)
+            return JsonSerializer.Deserialize(stream, DriverJson.Default.DriverReport)
                 ?? throw new InvalidDataException("The selected file is not a compatible BoardScout report.");
         }, cancellationToken);
 

@@ -1,3 +1,10 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 
@@ -10,9 +17,16 @@ internal sealed class DriverDownloadService
         Timeout = TimeSpan.FromMinutes(10),
         DefaultRequestHeaders =
         {
-            { "User-Agent", $"BoardScout/{UI.VersionButton.AppVersion}" }
+            { "User-Agent", Agent() }
         }
     };
+
+    // The host app's own name and version ("BoardScout/2.13.0"), so a vendor's logs show who asked.
+    private static string Agent()
+    {
+        var name = System.Reflection.Assembly.GetEntryAssembly()?.GetName();
+        return $"{name?.Name ?? "BoardScout"}/{name?.Version?.ToString(3) ?? "0.0.0"}";
+    }
 
     public string DownloadFolder { get; }
 
