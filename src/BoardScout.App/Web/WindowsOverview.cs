@@ -157,8 +157,13 @@ internal static partial class WindowsOverview
             var stick = index < spd.Count && spd.Count == populatedCount ? spd[index] : null;
             var facts = DimmSpd.Facts(stick, SystemTelemetryService.IsElevated, today);
             // A live reading beats the one taken when the sensors opened.
-            if (telemetry?.Thermals.FirstOrDefault(t => t.Zone == $"DIMM #{index}") is { } live && stick?.HasThermalSensor == true)
+            if (stick?.HasThermalSensor == true && telemetry?.Thermals.FirstOrDefault(t => DimmSpd.IsZoneFor(t.Zone, stick.Address)) is { } live)
+            {
                 facts[0] = ("Temperature", $"{live.TemperatureCelsius:0.0} °C" + ((stick.CriticalHighC ?? stick.HighLimitC) is { } l ? $" (alarm at {l:0} °C)" : ""));
+                var alarm = DimmSpd.AlarmText(live.TemperatureCelsius, stick.LowLimitC, stick.HighLimitC, stick.CriticalHighC);
+                facts.RemoveAll(f => f.Label == "Sensor alarm");
+                if (alarm is not null) facts.Insert(1, ("Sensor alarm", $"Stick is {alarm}"));
+            }
             return facts.Select(f => new Fact(f.Label, privacy && f.Label == "Serial" ? "hidden" : f.Value)).ToList();
         }
         if (dimms.Count > 0)

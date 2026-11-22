@@ -47,7 +47,8 @@ internal static class DimmSpd
     /// <summary>
     /// Reads every SPD on the SMBuses the sensor library found. Call it only after a LibreHardwareMonitor
     /// <c>Computer</c> with memory enabled is open (that loads the driver and finds the buses), from the
-    /// thread that owns it. Read-only: it never writes to the SPD.
+    /// thread that owns it. It never writes the SPD's memory; the only writes are the page selects the
+    /// chip needs to reach bytes past 255, and it puts the chip back on page 0 before it lets go.
     /// </summary>
     public static List<DimmSpdInfo> ReadAll()
     {
@@ -65,7 +66,15 @@ internal static class DimmSpd
                 {
                     var detector = new SPDDetector(bus, address);
                     if (!detector.IsValid || detector.Accessor is not { } spd) continue;
-                    list.Add(Describe(address, detector.SPDMemoryType, spd));
+                    try { list.Add(Describe(address, detector.SPDMemoryType, spd)); }
+                    finally
+                    {
+                        // Reading byte 0 selects page 0 again. Done here, not left to the accessor's finalizer,
+                        // which would switch pages on the GC thread while the sensor library reads the bus,
+                        // or never if the app exits first (some boards dislike a DDR4 SPD left on page 1).
+                        try { spd.At(0); } catch { }
+                        GC.SuppressFinalize(spd);
+                    }
                 }
                 catch
                 {
@@ -103,7 +112,6 @@ internal static class DimmSpd
 
         bool hasSensor = false;
         double? temp = null, low = null, high = null, crit = null;
-        string? status = null;
         if (spd is DDR4AccessorBase d4)
         {
             hasSensor = d4.HasThermalSensor;
@@ -124,24 +132,13 @@ internal static class DimmSpd
                 high = Celsius(d5.ThermalSensorHighLimit);
             }
             if (spd is DDR5Accessor full && hasSensor)
-            {
                 crit = Celsius(full.ThermalSensorCriticalHighLimit);
-                status = full.ThermalSensorStatus switch
-                {
-                    ThermalSensorStatus.Good => null,
-                    ThermalSensorStatus.AboveHighLimit => "above its high limit",
-                    ThermalSensorStatus.AboveCriticalHighLimit => "above its critical limit",
-                    ThermalSensorStatus.BelowLowLimit => "below its low limit",
-                    ThermalSensorStatus.BelowCriticalLowLimit => "below its critical low limit",
-                    _ => null
-                };
-            }
         }
 
         return new DimmSpdInfo(address, kind,
             Clean(Safe(spd.GetModuleManufacturerString)), Clean(Safe(spd.GetDRAMManufacturerString)),
             Clean(Safe(spd.ModulePartNumber)), serial,
-            made, hasSensor, temp, low, high, crit, status, Safe(() => spd.HasSPDWriteProtection));
+            made, hasSensor, temp, low, high, crit, AlarmText(temp, low, high, crit), Safe(() => spd.HasSPDWriteProtection));
     }
 
     private static T? Safe<T>(Func<T> read)
@@ -191,6 +188,29 @@ internal static class DimmSpd
         return s.Length == 0 || s.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ? null : s;
     }
 
+    /// <summary>
+    /// Whether a reading is past the stick's own limits. Worked out from the reading rather than taken from the
+    /// chip's status register, which the library fills only on a full refresh.
+    /// </summary>
+    public static string? AlarmText(double? temp, double? low, double? high, double? critical)
+    {
+        if (temp is not { } t) return null;
+        if (critical is { } c && c > 0 && t >= c) return "above its critical limit";
+        if (high is { } h && h > 0 && t > h) return "above its high limit";
+        if (low is { } l && l > 0 && t < l) return "below its low limit";
+        return null;
+    }
+
+    /// <summary>
+    /// The sensor library names a stick's hardware "DIMM #n", or "maker - part (#n)" once it has read the part
+    /// number, where n is the SPD address less 0x50, not the stick's place in the list.
+    /// </summary>
+    public static bool IsZoneFor(string zone, byte address)
+    {
+        var n = address - 0x50;
+        return zone == $"DIMM #{n}" || zone.EndsWith($"(#{n})", StringComparison.Ordinal);
+    }
+
     /// <summary>"about 3 years old" from a manufacture date.</summary>
     public static string AgeText(DimmMade made, DateOnly today)
     {
@@ -210,7 +230,7 @@ internal static class DimmSpd
         var facts = new List<(string, string)>();
         if (spd is null)
         {
-            facts.Add(("SPD", elevated ? "This stick's SPD chip did not answer" : "Run BoardScout as administrator to read the stick's own chip (temperature, maker, date)"));
+            facts.Add(("SPD", elevated ? "This stick's SPD chip did not answer (reading it needs the PawnIO driver)" : "Run BoardScout as administrator to read the stick's own chip (temperature, maker, date)"));
             return facts;
         }
 

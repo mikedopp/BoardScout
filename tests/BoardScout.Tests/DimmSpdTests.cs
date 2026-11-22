@@ -88,6 +88,27 @@ public class DimmSpdTests
         Assert.Equal(("Temperature", "38.5 °C (alarm at 85 °C)"), DimmSpd.Facts(stick, true, Today)[0]);
     }
 
+    [Theory]
+    [InlineData(47.0, 0.0, 55.0, 85.0, null)]
+    [InlineData(60.0, 0.0, 55.0, 85.0, "above its high limit")]
+    [InlineData(86.0, 0.0, 55.0, 85.0, "above its critical limit")]
+    [InlineData(4.0, 5.0, 55.0, null, "below its low limit")]
+    public void Alarm_comes_from_the_reading_and_the_sticks_limits(double temp, double low, double high, double? crit, string? expected) =>
+        Assert.Equal(expected, DimmSpd.AlarmText(temp, low, high, crit));
+
+    [Fact]
+    public void A_stick_with_no_reading_has_no_alarm() => Assert.Null(DimmSpd.AlarmText(null, 0, 55, 85));
+
+    [Theory]
+    [InlineData("DIMM #1", 0x51, true)]
+    [InlineData("DIMM #3", 0x53, true)]
+    [InlineData("Kingston - KF560C36-16 (#3)", 0x53, true)]
+    [InlineData("DIMM #1", 0x53, false)]   // A2/B2 sticks: list position 1 is address 0x53, not zone #1
+    [InlineData("DIMM #13", 0x51, false)]
+    [InlineData("CPU", 0x50, false)]
+    public void Live_zone_is_matched_by_spd_address(string zone, byte address, bool expected) =>
+        Assert.Equal(expected, DimmSpd.IsZoneFor(zone, address));
+
     [Fact]
     public void Without_admin_it_asks_instead_of_guessing() =>
         Assert.StartsWith("Run BoardScout as administrator", DimmSpd.Facts(null, elevated: false, Today)[0].Value);

@@ -39,6 +39,8 @@ internal sealed partial class SystemTelemetryService : IDisposable
 
     private Computer? _computer;
     private IReadOnlyList<DimmSpdInfo> _dimms = [];
+    private int _dimmAttempts;
+    private int _samplesSinceDimmRead;
     private bool _sensorsFailed;
     private int _discoveryPasses;
     private readonly HashSet<IHardware> _sensorHardware = [];
@@ -160,11 +162,11 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 };
                 _computer.Open();
                 // The library found the SMBuses while opening; read each stick's SPD once (maker, date, sensor).
-                if (IsElevated)
-                {
-                    try { _dimms = DimmSpd.ReadAll(); } catch { _dimms = []; }
-                }
+                ReadDimms();
             }
+            // The library retries finding the sticks for a few seconds after a slow start; try again a few times.
+            else if (_dimms.Count == 0 && _dimmAttempts < 6 && ++_samplesSinceDimmRead >= 5)
+                ReadDimms();
 
             IEnumerable<IHardware> hardware = _lockedSensorHardware ?? (IEnumerable<IHardware>)_computer.Hardware;
             foreach (var hw in hardware)
@@ -192,6 +194,14 @@ internal sealed partial class SystemTelemetryService : IDisposable
             UpdateStatus(0, 0, ex.Message);
         }
         return (thermals, fans, power);
+    }
+
+    private void ReadDimms()
+    {
+        _samplesSinceDimmRead = 0;
+        if (!IsElevated) return;
+        _dimmAttempts++;
+        try { _dimms = DimmSpd.ReadAll(); } catch { _dimms = []; }
     }
 
     private void UpdateStatus(int temperatureZones, int fans, string? error)
@@ -224,6 +234,8 @@ internal sealed partial class SystemTelemetryService : IDisposable
             {
                 case SensorType.Temperature:
                 {
+                    // A memory stick's first temperature sensor is the reading; the rest are its resolution and limits.
+                    if (hw.HardwareType is HardwareType.Memory && sensor.Index != 0) break;
                     var temp = sensor.Value.Value;
                     if (temp is <= 0 or > 150) break;
                     var zone = ClassifyThermalZone(hw, sensor);
