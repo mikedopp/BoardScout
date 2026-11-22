@@ -147,18 +147,36 @@ internal static partial class WindowsOverview
         // firmware's own list.
         var slots = capture.Firmware.MemorySlots;
         var dimms = nodes.Where(n => n.Kind is "dimm" or "dimm-empty").ToList();
+        // Each populated slot's stick, in order: SPD addresses (0x50 up) and the firmware's slot list both run
+        // channel A then B, so the nth stick found is the nth populated slot.
+        var spd = telemetry?.Dimms ?? [];
+        var populatedCount = dimms.Count > 0 ? dimms.Count(d => d.Kind == "dimm") : slots.Count(s => s.Populated);
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        List<Fact> SpdFacts(int index)
+        {
+            var stick = index < spd.Count && spd.Count == populatedCount ? spd[index] : null;
+            var facts = DimmSpd.Facts(stick, SystemTelemetryService.IsElevated, today);
+            // A live reading beats the one taken when the sensors opened.
+            if (telemetry?.Thermals.FirstOrDefault(t => t.Zone == $"DIMM #{index}") is { } live && stick?.HasThermalSensor == true)
+                facts[0] = ("Temperature", $"{live.TemperatureCelsius:0.0} °C" + ((stick.CriticalHighC ?? stick.HighLimitC) is { } l ? $" (alarm at {l:0} °C)" : ""));
+            return facts.Select(f => new Fact(f.Label, privacy && f.Label == "Serial" ? "hidden" : f.Value)).ToList();
+        }
         if (dimms.Count > 0)
         {
+            var stickIndex = 0;
             foreach (var dimm in dimms)
             {
                 var halves = dimm.Name.Split(" · ", 2); // "A1 · 8 GB", "A2 · empty"
                 var populated = dimm.Kind == "dimm";
+                var facts = Facts(dimm);
+                if (populated) facts.AddRange(SpdFacts(stickIndex++));
                 parts.Add(new BoardPart(dimm.Id, "memory", "dimm", populated && halves.Length == 2 ? halves[1] : "Open", halves[0],
-                    populated ? "good" : "open", Facts(dimm), Live: "mem", Empty: !populated, Node: "memory", Side: "cpu"));
+                    populated ? "good" : "open", facts, Live: "mem", Empty: !populated, Node: "memory", Side: "cpu"));
             }
         }
         else if (slots.Count > 0)
         {
+            var firmwareStick = 0;
             foreach (var slot in slots)
             {
                 var facts = new List<Fact> { new("Slot", $"{slot.DeviceLocator}{(slot.BankLocator.Length > 0 ? " · " + slot.BankLocator : "")}") };
@@ -167,6 +185,7 @@ internal static partial class WindowsOverview
                     facts.Add(new("Size", $"{slot.SizeMb / 1024d:0.#} GB {slot.MemoryType}"));
                     if (slot.ConfiguredMts > 0) facts.Add(new("Speed", $"{slot.ConfiguredMts} MT/s (rated {Math.Max(slot.SpeedMts, slot.ConfiguredMts)})"));
                     if (slot.PartNumber is { Length: > 0 } part) facts.Add(new("Part number", part));
+                    facts.AddRange(SpdFacts(firmwareStick++));
                 }
                 parts.Add(new BoardPart("dimm-" + ConnectionsService.ShortHash(slot.DeviceLocator + slot.BankLocator), "memory", "dimm",
                     slot.Populated ? $"{slot.SizeMb / 1024d:0.#} GB" : "Open", slot.DeviceLocator, slot.Populated ? "good" : "open", facts, Live: "mem",

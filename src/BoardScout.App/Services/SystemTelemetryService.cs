@@ -38,6 +38,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
     private DateTime _disksReadUtc = DateTime.MinValue;
 
     private Computer? _computer;
+    private IReadOnlyList<DimmSpdInfo> _dimms = [];
     private bool _sensorsFailed;
     private int _discoveryPasses;
     private readonly HashSet<IHardware> _sensorHardware = [];
@@ -83,6 +84,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 DiskBusy = disks.Busy,
                 DiskDetail = disks.Detail,
                 CoreLoads = cores,
+                Dimms = _dimms,
                 Power = power
             };
         }
@@ -152,9 +154,16 @@ internal sealed partial class SystemTelemetryService : IDisposable
                     IsCpuEnabled = true,
                     IsMotherboardEnabled = true,
                     IsGpuEnabled = true,
-                    IsPsuEnabled = true
+                    IsPsuEnabled = true,
+                    // Memory sticks with a sensor (DDR5, DDR4 with a TSOD) report their temperature over SMBus.
+                    IsMemoryEnabled = true
                 };
                 _computer.Open();
+                // The library found the SMBuses while opening; read each stick's SPD once (maker, date, sensor).
+                if (IsElevated)
+                {
+                    try { _dimms = DimmSpd.ReadAll(); } catch { _dimms = []; }
+                }
             }
 
             IEnumerable<IHardware> hardware = _lockedSensorHardware ?? (IEnumerable<IHardware>)_computer.Hardware;
@@ -306,6 +315,9 @@ internal sealed partial class SystemTelemetryService : IDisposable
         }
         if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
             return "GPU";
+        // "DIMM #0": one zone per stick, in SPD address order.
+        if (hw.HardwareType is HardwareType.Memory)
+            return hw.Name;
         if (name.Contains("VRM", StringComparison.OrdinalIgnoreCase) ||
             name.Contains("Voltage Regulator", StringComparison.OrdinalIgnoreCase))
             return "VRM";

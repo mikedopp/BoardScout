@@ -54,6 +54,9 @@ public sealed record SystemTelemetry(
     /// <summary>CPU, GPU, and power supply readings, when the sensors report them.</summary>
     public IReadOnlyList<PowerReading> Power { get; init; } = [];
 
+    /// <summary>Each memory stick's SPD chip (maker, date, sensor), read once; empty without administrator rights.</summary>
+    public IReadOnlyList<BoardScout.Services.DimmSpdInfo> Dimms { get; init; } = [];
+
     public ulong MemoryUsedBytes => MemoryTotalBytes > MemoryAvailableBytes
         ? MemoryTotalBytes - MemoryAvailableBytes
         : 0;

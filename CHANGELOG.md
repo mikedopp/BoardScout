@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.14.0 (2026-11-21)
+
+Each memory stick says what it is, how old it is, and how hot it runs, when it can.
+
+### Added
+- **Memory sticks read their own SPD chip** (Windows app, run as administrator). Each filled memory slot on the
+  Overview board now shows the stick's temperature, who made the module and its memory chips, when it was made
+  (with its age), and its serial. Sticks with a temperature sensor report it live: every DDR5 stick (its SPD5118
+  hub has one) and DDR4 sticks that carry a TSOD chip, mostly server and some high-end kits. A stick without
+  one says so instead of showing a made-up number, and a maker that left the date or serial blank is shown as
+  "not recorded".
+- The temperature includes the stick's own alarm limit and, on DDR5, whether it has tripped.
+
+### Notes
+- Reading is read-only: BoardScout never writes to a stick's SPD.
+- Without administrator rights the slot says how to get the reading rather than guessing.
+- The DDR5 and DDR4-with-sensor paths are covered by unit tests only; the test PC has DDR4 without a sensor.
+
 ## 2.13.1 (2026-11-21)
 
 No change to what you see.
