@@ -412,6 +412,7 @@ internal static class WebServer
             ".ico" => "image/x-icon",
             ".json" => "application/json",
             ".woff2" => "font/woff2",
+            ".glb" => "model/gltf-binary",
             ".txt" or ".md" or "" => "text/plain; charset=utf-8",
             _ => "application/octet-stream"
         };

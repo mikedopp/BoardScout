@@ -11,6 +11,8 @@ machine you reach with SSH ([Machines](docs/remote.md)).
 
 ![BoardScout Overview: the rig's name and spec plates, four live instruments, the board with its printed slot names, and the At a glance panel](docs/screenshots/overview.png)
 
+![The Overview board in 3D: the processor, memory sticks, graphics card, chipset heatsink, drives and headers as a model you can turn](docs/screenshots/overview-3d.png)
+
 ## What it's for
 
 For anyone who wants to know what is really inside a PC and whether it is set up well, without
@@ -34,7 +36,8 @@ can reach over SSH.
    sensors that need it.
 3. **Scan now** (top right) takes a local inventory in under a minute; later starts show it
    instantly. Run it again after you change hardware or firmware.
-4. **Look around.** Hover a part on the Overview for what it is and what it suits; click to pin it.
+4. **Look around.** The Overview board opens in 3D: drag to turn it, scroll to zoom, or switch to the flat
+   board with the 2D button. Hover a part for what it is and what it suits; click to pin it.
    **Topology** shows CPU lanes versus the chipset uplink, **Connections** maps every device to the
    port it uses (search it, open a drive's details, eject a USB drive), and **System** covers the OS,
    its support dates and Windows 11 readiness.
@@ -451,7 +454,7 @@ Source layout:
 - `src\BoardScout.App\Services` — scanning, driver checks, telemetry, System tab data, the device
   tree, network probe, Connections map, firmware (SMBIOS) memory reader, interrupt sampling and
   tracing, and the optimization plan
-- `src\BoardScout.App\Assets` — Overview, Topology, Connections, System, and Machines web views, plus `vendor\` (QuickLiquid, D3)
+- `src\BoardScout.App\Assets` — Overview, Topology, Connections, System, and Machines web views, plus `vendor\` (QuickLiquid, D3, three.js, and `board3d`, the 3D Overview board and its part models)
 - `src\BoardScout.App\Shell` — the browser dashboard (both editions serve it)
 - `src\BoardScout.App\Web` — its server and engine: `Hub.cs` is shared, `Hub.Windows.cs` and
   `WindowsOverview.cs` are the Windows half (the app's Overview, agent and `--serve` modes), and

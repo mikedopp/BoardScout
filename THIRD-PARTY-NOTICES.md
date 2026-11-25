@@ -52,7 +52,7 @@ without warranties or conditions of any kind.
 
 ## Web libraries bundled in `Assets/vendor`
 
-These run inside the Topology, Connections, and System views. They are loaded from disk, not from
+These run inside the Overview, Topology, Connections, and System views. They are loaded from disk, not from
 a CDN, so the views work offline. The files are byte-identical to the npm packages; the tarball SHA-1
 matched the registry's published `shasum` when they were added.
 
@@ -61,6 +61,8 @@ matched the registry's published `shasum` when they were added.
 | `vendor/quick-liquid/index.mjs` | quick-liquid 0.1.2 | MIT | `0eb68672ed9ab3ab089e1387a043592638752968741fc0f1a40b29f9156ca73a` |
 | `vendor/quick-liquid/chunk-4TLGP4GF.mjs` | quick-liquid 0.1.2 | MIT | `b0258bfac49133cf48eb6c11275a383e361cdd6c4af803739701f0c88f007e0b` |
 | `vendor/d3/d3.v7.min.js` | d3 7.9.0 | ISC | `f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539` |
+| `vendor/three/three.module.js` | three 0.187.0 | MIT | `104f56145899722094556490d787aae0617cc2fc3382f31df02d724ea1aee341` |
+| `vendor/three/three.core.js` | three 0.187.0 | MIT | `613e370f76638fdef83926642bf256dc9615684922de1ce1f63a8583e5d78578` |
 
 ### QuickLiquid 0.1.2
 
@@ -88,6 +90,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+### three.js 0.187.0
+
+Source: https://github.com/mrdoob/three.js. Draws the Overview board in 3D (`vendor/board3d`, BoardScout's own code and part models).
+
+```
+The MIT License
+
+Copyright © 2010-2026 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```
 
 ### D3.js 7.9.0

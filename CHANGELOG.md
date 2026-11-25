@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.15.0 (2026-11-25)
+
+The board stands up: the Overview in 3D.
+
+### Added
+- **The Overview board in 3D** (Windows app and browser dashboard). The same board, the same slot names and the
+  same readings, as a model you can turn: the processor under its lid, memory sticks standing in their slots, the
+  graphics card with its fans, the chipset heatsink, M.2 drives, SATA ports with their cables, the pin headers and
+  the rear I/O shroud. Drag to turn it, right-drag (or Shift-drag) to slide it, scroll to zoom, double-click empty
+  board to go back to the first view. Hovering and pinning a part work as before, and so does the inspector.
+- **Heat you can see.** A part that reports a temperature (the processor, the graphics card, the chipset, memory
+  sticks with a sensor) glows from teal through amber to red as it warms. A part with no reading does not glow.
+- **Busy links light up.** A drive or network adapter that is moving data lights its trace, and dashes run along it.
+- **2D / 3D switch** at the top right of the board; the choice is remembered. The board opens in 3D where the
+  browser can draw it. Where it can't (no WebGL, or the graphics driver stops it) the flat board shows instead and
+  a line says why. `overview.html?view=2d` or `?view=3d` picks one for a single visit.
+- Keys in 3D: arrows turn and tilt, `+` and `-` zoom, `.` and `,` step through the parts, Enter pins, Home resets.
+
+### Notes
+- The 3D view draws only when something changes or a trace is flowing, so it does not load the processor it is
+  showing. With motion turned off in Settings nothing animates.
+- The flat board is unchanged and still the one a screen reader walks part by part.
+- Uses three.js 0.187.0 (MIT), bundled in `Assets/vendor/three` and loaded only when the 3D view is first shown.
+  The part models are in `Assets/vendor/board3d/parts.glb`.
+- Checked in Edge on a real graphics card through the browser dashboard. Not yet checked: the Windows app's own
+  window by hand, Firefox and Safari, the Linux and macOS editions on their systems, and a PC without a graphics
+  driver (the fall-back to 2D is covered only by reading the code path).
+
 ## 2.14.0 (2026-11-21)
 
 Each memory stick says what it is, how old it is, and how hot it runs, when it can.
