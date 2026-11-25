@@ -38,6 +38,31 @@ button{font:inherit;color:inherit}
 .btn:disabled{opacity:.55;cursor:default;filter:none}
 .btn.primary{border-color:rgba(61,158,255,.55);color:#cfe6ff}
 #stage{position:relative}
+#stage3d{position:fixed;left:0;right:0;bottom:0;top:92px;z-index:2}
+#stage3d[hidden]{display:none}
+body.plan-open #stage3d,body.drives-open #stage3d{left:510px}
+#map3d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline-offset:-3px}
+#stage3d .cap{position:absolute;left:24px;bottom:14px;color:var(--tm);font-size:11px;pointer-events:none}
+body.three #stage{visibility:hidden;height:0;overflow:hidden}
+body.three #flow{display:none}
+body.three{overflow:hidden}
+.tags3d{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.tags3d[hidden],.tag3d[hidden]{display:none}
+.tag3d{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 10px 5px;border-radius:10px;
+  background:rgba(7,13,20,.9);border:1px solid rgba(255,255,255,.18);box-shadow:0 6px 16px rgba(0,0,0,.4);white-space:nowrap;line-height:1.25}
+.tag3d b{font-size:12.5px;font-weight:650;color:#f1f5fa;max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.tag3d span{font:600 12.5px/1.2 "Cascadia Mono",Consolas,monospace;color:#7fe9d6}
+.tag3d span:empty{display:none}
+.tag3d::after{content:"";position:absolute;left:var(--stem,50%);top:100%;width:1px;height:9px;background:rgba(255,255,255,.4)}
+.tag3d.warn b{color:#fde3b5}
+.tag3d.sel{border-color:#7cc4ff;box-shadow:0 0 0 3px rgba(124,196,255,.18),0 6px 16px rgba(0,0,0,.4)}
+body.no-glass .tag3d{background:var(--sr)}
+#viewMode{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(9,17,26,.7);border:1px solid rgba(255,255,255,.1);align-self:center}
+#viewMode button{background:none;border:0;border-radius:999px;min-width:36px;height:24px;cursor:pointer;color:var(--ts);font:inherit;font-size:12px;font-weight:600}
+#viewMode button:hover{background:rgba(255,255,255,.08)}
+#viewMode button[aria-pressed="true"]{background:rgba(61,158,255,.22);color:#dbeeff}
+#viewMode button:focus-visible{outline:2px solid #7cc4ff}
+@media (forced-colors:active){.tag3d{background:Canvas!important;border:1px solid CanvasText!important}#viewMode button[aria-pressed="true"]{outline:2px solid Highlight}}
 svg{display:block;margin:0 auto}
 .link{fill:none;stroke-width:2;opacity:.5;stroke-linecap:round;stroke-linejoin:round}
 .link.hot{opacity:.85}
@@ -270,6 +295,10 @@ body.no-motion #toast{transition:none}
     </div>
   </div>
   <div class="actions">
+    <div id="viewMode" role="group" aria-label="Map view">
+      <button id="view2d" aria-pressed="true">2D</button>
+      <button id="view3d" aria-pressed="false">3D</button>
+    </div>
     <div id="search" role="search">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a9bb2" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
       <input id="searchBox" type="search" placeholder="Search devices  (Ctrl+F)" autocomplete="off" spellcheck="false"
@@ -283,6 +312,10 @@ body.no-motion #toast{transition:none}
 </div>
 <div id="empty"><span class="spin"></span>Reading devices and links…</div>
 <div id="stage"><svg id="map" role="img" aria-label="Device connection map"></svg></div>
+<div id="stage3d" hidden>
+  <canvas id="map3d" tabindex="0" aria-label="The connection map in 3D: each device is a block that rises with its traffic. Drag or use the arrow keys to turn it, plus and minus to zoom, Home to reset, click a block for its details. The 2D map lists every device as text."></canvas>
+  <div class="cap">A block rises with the traffic through it · drag to turn · right-drag to slide · scroll to zoom · click a block for details</div>
+</div>
 <canvas id="flow" aria-hidden="true"></canvas>
 <div id="inspector" aria-live="polite"><div class="ql-content"><div id="insp"></div></div></div>
 <div id="plan" role="region" aria-label="Optimization plan"><div id="planHead"></div><div id="planBody"></div></div>
@@ -357,7 +390,7 @@ const CARD_W=236,CARD_H=52,ROW=62,INDENT=22,COL_GAP=28,BAND_GAP=30,LEFT=24,TOP=1
 const state={data:null,glass:true,motion:true,privacy:false,selected:null,nodes:new Map(),links:[],flow:null,
   history:new Map(),wan:null,wanBusy:false,ql:null,inspGlass:null,scale:1,anim:0,lastFrame:0,pos:null,mapW:0,
   crawler:null,speed:null,discoveryBusy:false,sweepBusy:false,plan:null,planOpen:false,planBusy:null,planError:null,planAt:null,confirmElevate:false,drivesOpen:false,
-  query:'',hits:[],hitIndex:-1,ejects:new Map(),platform:'windows'};
+  query:'',hits:[],hitIndex:-1,ejects:new Map(),platform:'windows',view:'2d',three:null,threeLoading:null,size:null,crawlers:0};
 // The Windows and Linux editions share this view; a few sentences name what each operating system does.
 const OS=()=>state.platform==='linux'?'Linux':'Windows';
 
@@ -542,7 +575,7 @@ function render(){
   reconcileEjects();
   const viewW=document.documentElement.clientWidth-(state.planOpen||state.drivesOpen?510:0);
   const {pos,width,height}=layout(root,viewW);
-  state.pos=pos;
+  state.pos=pos;state.size={width,height};
   const scale=Math.max(.72,Math.min(1,(viewW-8)/width));
   state.scale=scale;
   state.mapW=Math.ceil(width*scale);
@@ -587,12 +620,67 @@ function render(){
   // A refreshed map keeps the search: plugging a drive in while searching for it lights it up.
   if(state.query){state.hits=searchNodes(state.query);state.hitIndex=Math.min(Math.max(0,state.hitIndex),state.hits.length-1);applySearch();renderResults()}
   applyFlow();
+  sync3d();
+}
+
+// The 3D floor is wide where the flat map is a tall page: the CPU sits at the back, and each group (what hangs off
+// the CPU directly, the chipset's devices, the network behind a router) runs forward in its own column as an
+// indented list. A long group continues in the next column, so the whole map fits one look.
+function layout3d(root){
+  const pos=new Map(),links=[],col=new Map();
+  const order={chipset:0,gpu:1,nvme:2,integrated:4,platform:5,'virtual-group':6};
+  const bands=[...root.children].sort((a,b)=>(order[a.kind]??3)-(order[b.kind]??3));
+  const groups=[];
+  for(const band of bands){
+    groups.push(rows(band,0,[]));
+    band.children.forEach(function find(n){if(n.kind==='router')groups.push(rows(n,0,[]));else n.children.forEach(find)});
+  }
+  const total=groups.reduce((sum,g)=>sum+g.length,0);
+  const perCol=Math.max(7,Math.ceil(Math.sqrt(total*2.5)));
+  const top=CARD_H+96;
+  let x=0,index=0,deepest=0;
+  for(const group of groups){
+    for(let i=0;i<group.length;i+=perCol){
+      const part=group.slice(i,i+perCol);
+      part.forEach((r,j)=>{pos.set(r.node.id,{x:x+r.depth*INDENT,y:top+j*ROW,w:CARD_W,h:CARD_H});col.set(r.node.id,index)});
+      deepest=Math.max(deepest,top+part.length*ROW);
+      x+=CARD_W+INDENT*Math.max(0,...part.map(r=>r.depth))+44;
+      index++;
+    }
+    x+=22;
+  }
+  const width=Math.max(CARD_W,x-66);
+  pos.set(root.id,{x:(width-CARD_W)/2,y:0,w:CARD_W,h:58});
+  const cpu=pos.get(root.id);
+  bands.forEach((band,i)=>{
+    const b=pos.get(band.id);if(!b)return;
+    const lane=cpu.x+CARD_W/2+(i-(bands.length-1)/2)*9,busY=58+26+i*5;
+    links.push({node:band,pts:[[lane,58],[lane,busY],[b.x+CARD_W/2,busY],[b.x+CARD_W/2,b.y]]});
+  });
+  for(const n of state.nodes.values()){
+    if(!n.parent||n.parent===root)continue;
+    const p=pos.get(n.parent.id),c=pos.get(n.id);
+    if(!p||!c)continue;
+    const cy=c.y+c.h/2;
+    if(col.get(n.id)===col.get(n.parent.id)&&c.y>p.y)links.push({node:n,pts:[[p.x+11,p.y+p.h],[p.x+11,cy],[c.x,cy]]});
+    else links.push({node:n,pts:[[p.x+p.w,p.y+p.h/2],[c.x-16,p.y+p.h/2],[c.x-16,cy],[c.x,cy]]});
+  }
+  return {pos,links,width,height:deepest};
+}
+
+// Hand the 3D view the map as it now stands: the same nodes, positions and links the flat map has just drawn.
+function sync3d(){
+  if(!state.three||!state.pos)return;
+  const wide=layout3d(state.data.root);
+  state.three.setMap([...state.nodes.values()],wide.pos,wide,wide.links);
+  state.three.setSelected(state.selected,false);
+  state.three.setFound(state.query?new Set(state.hits.map(h=>h.n.id)):null);
 }
 
 // The side panels start just below the header, which grows when the summary pills wrap.
 function placePanels(){
   const top=Math.round($('head').getBoundingClientRect().bottom)+2;
-  for(const id of ['inspector','plan','drives'])$(id).style.top=top+'px';
+  for(const id of ['inspector','plan','drives','stage3d'])$(id).style.top=top+'px';
 }
 
 // While the details panel is open, the page gets room to scroll whatever it covers into view.
@@ -782,6 +870,7 @@ function applyFlow(){
     syncDots(link);
   }
   if(state.selected)updateLive();
+  state.three?.setFlow();
   startAnimation();
 }
 
@@ -816,6 +905,7 @@ function sizeFlowCanvas(){
 }
 
 function startAnimation(){
+  if(state.view==='3d'&&state.three)return;
   if(state.anim||!state.motion)return;
   if(!state.flowCtx){sizeFlowCanvas();state.flowCtx=$('flow').getContext('2d')}
   state.lastFrame=performance.now();
@@ -863,6 +953,7 @@ function select(id,user){
   const n=state.nodes.get(id);if(!n)return;
   const wasOpen=!!state.selected;
   state.selected=id;
+  state.three?.setSelected(id,!state.from3d);
   d3.selectAll('.card').classed('sel',false);
   d3.select('#c-'+id).classed('sel',true);
   const insp=$('insp');insp.replaceChildren();
@@ -980,6 +1071,7 @@ function applySearch(){
   const on=!!state.query;document.body.classList.toggle('searching',on);
   const found=new Set(state.hits.map(h=>h.n.id));
   d3.selectAll('.card').classed('found',function(){return on&&found.has(this.id.slice(2))});
+  state.three?.setFound(on?found:null);
 }
 function renderResults(){
   const box=$('results'),input=$('searchBox');box.replaceChildren();
@@ -1075,6 +1167,7 @@ function toast(text,tone){
 function closeInspector(user){
   const wasOpen=!!state.selected;
   state.selected=null;
+  state.three?.setSelected(null);
   $('inspector').classList.remove('open');
   d3.selectAll('.card').classed('sel',false);
   if(wasOpen)padForInspector();
@@ -1233,7 +1326,9 @@ function applySettings(s){
   document.body.classList.toggle('no-motion',!state.motion);
   if(!state.motion&&state.anim){cancelAnimationFrame(state.anim);state.anim=0;clearFlow()}
   else {startAnimation();startDiskViews()}
-  syncCrawler(state.motion?Math.max(0,Math.min(8,s.crawlers|0)):0);
+  state.crawlers=state.motion?Math.max(0,Math.min(8,s.crawlers|0)):0;
+  state.three?.setMotion(state.motion);
+  syncCrawler(state.view==='3d'&&state.three?0:state.crawlers);
   syncGlass();
 }
 
@@ -1244,6 +1339,56 @@ function syncCrawler(count){
   if(state.crawler){state.crawler.setCount(count);return}
   state.crawler=new CrawlerLib.Crawler({count,food:'.card, .pill, .btn',prey:'.card.warn, .pill.warn',
     label:e=>(e.querySelector('.name')||e).textContent.replace(/^⚠\s*/,'')});
+}
+
+// ---- 2D or 3D: opens in 3D where the browser can draw it, flat where it can't; the choice is remembered. ----
+function showView(){
+  const three=state.view==='3d'&&!!state.three;
+  document.body.classList.toggle('three',three);
+  $('stage3d').hidden=!three;
+  $('view2d').setAttribute('aria-pressed',String(state.view!=='3d'));
+  $('view3d').setAttribute('aria-pressed',String(state.view==='3d'));
+  if(three){
+    if(state.anim){cancelAnimationFrame(state.anim);state.anim=0}
+    clearFlow();
+    syncCrawler(0);
+  }else syncCrawler(state.crawlers);
+  placePanels();
+  state.three?.show(three);
+  if(!three&&state.data){render();startAnimation()}
+}
+function fallBack(why){
+  state.view='2d';
+  if(state.three){try{state.three.show(false);state.three.dispose()}catch{/* already gone */}state.three=null}
+  showView();
+  toast(why+' Showing the 2D map.','warn');
+}
+function setView(view,save){
+  state.view=view==='3d'?'3d':'2d';
+  if(save){try{localStorage.setItem('boardscout.connectionsView',state.view)}catch{/* storage off */}}
+  showView();
+  if(state.view!=='3d'||state.three)return;
+  state.threeLoading??=import('./vendor/board3d/conn3d.js');
+  state.threeLoading.then(lib=>{
+    if(state.three||state.view!=='3d')return;
+    if(!lib.supported()){fallBack("This browser can't draw 3D (no WebGL).");return}
+    state.three=lib.create($('stage3d'),$('map3d'),{
+      colorOf,liveText,kindOf:n=>KIND[n.kind]||'',
+      onSelect:id=>{state.from3d=true;try{select(id,true)}finally{state.from3d=false}},
+      onBackground:()=>{if(state.selected)closeInspector(true)},
+      onFail:fallBack});
+    state.three.setMotion(state.motion);
+    showView();
+    sync3d();
+  }).catch(err=>{console.warn('3D map unavailable',err);state.threeLoading=null;fallBack("The 3D view couldn't start.")});
+}
+$('view2d').onclick=()=>setView('2d',true);
+$('view3d').onclick=()=>setView('3d',true);
+{
+  let asked=null,saved=null;
+  try{asked=new URLSearchParams(location.search).get('view')}catch{/* no query */}
+  try{saved=localStorage.getItem('boardscout.connectionsView')}catch{/* storage off */}
+  setView(asked==='2d'||asked==='3d'?asked:saved||'3d',false);
 }
 
 // The details panel is QuickLiquid glass while it is open (created on first open: a hidden element has no size).

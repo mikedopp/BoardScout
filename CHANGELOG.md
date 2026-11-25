@@ -2,7 +2,7 @@
 
 ## 2.15.0 (2026-11-25)
 
-The board stands up: the Overview and the Topology in 3D.
+The board stands up: the Overview, Topology and Connections in 3D.
 
 ### Added
 - **The Overview board in 3D** (Windows app and browser dashboard). The same board, the same slot names and the
@@ -18,6 +18,12 @@ The board stands up: the Overview and the Topology in 3D.
   as the lanes it carries, so the chipset's shared uplink looks like the narrow place it is. The bus and its
   bandwidth sit on each pipe; hovering a block shows the same card as before. It has the same 2D / 3D switch
   (bottom left) and the same fall-back.
+- **Connections in 3D** (Windows app and browser dashboard). Every device is a block on a wide floor, the CPU at
+  the back and each group running forward in its own column, so the whole map fits one look instead of a long
+  page. A block rises with the traffic through it, dots run along the pipes toward the CPU (reads, downloads) and
+  away from it (writes, uploads), and busy devices carry a tag with their live rates. A click opens the same
+  details panel, search lights up and dims the same devices, and a search result flies the view to it. The 2D / 3D
+  switch sits beside the search box. Crawlers stay on the flat map.
 - **Heat you can see.** A part that reports a temperature (the processor, the graphics card, the chipset, memory
   sticks with a sensor) glows from teal through amber to red as it warms. A part with no reading does not glow.
 - **Busy links light up.** A drive or network adapter that is moving data lights its trace, and dashes run along it.
