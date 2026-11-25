@@ -49,6 +49,35 @@ body.no-glass #legend{background:var(--sr);backdrop-filter:none;border:1px solid
 #legend h5{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--a);margin-bottom:6px}
 #legend .row{display:flex;align-items:center;gap:8px;margin:3px 0}
 #legend .sw{width:18px;height:3px;border-radius:2px}
+#stage3d{position:fixed;inset:0;z-index:1}
+#stage3d[hidden],#topo[hidden]{display:none}
+#topo3d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline-offset:-3px}
+#stage3d .cap{position:absolute;left:24px;top:18px;color:var(--tm);font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;pointer-events:none}
+#stage3d .cap small{display:block;margin-top:6px;font-size:10px;font-weight:400;letter-spacing:0;text-transform:none}
+.tags3d{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.tags3d[hidden],.tag3d[hidden]{display:none}
+.tag3d{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 10px 5px;border-radius:10px;
+  background:rgba(7,13,20,.9);border:1px solid rgba(255,255,255,.18);box-shadow:0 6px 16px rgba(0,0,0,.4);white-space:nowrap;line-height:1.25}
+.tag3d b{font-size:13px;font-weight:650;color:#f1f5fa}
+.tag3d span{font-size:11.5px;color:var(--ts)}
+.tag3d span:empty{display:none}
+.tag3d::after{content:"";position:absolute;left:var(--stem,50%);top:100%;width:1px;height:8px;background:rgba(255,255,255,.4)}
+.tag3d.mute b{color:var(--ts);font-weight:500}
+.tag3d.bus{flex-direction:row;gap:7px;padding:2px 9px 3px;border-radius:999px;background:rgba(12,22,32,.94)}
+.tag3d.bus b{font-size:11px;font-weight:600}
+.tag3d.bus span{font:600 11px/1.3 "Cascadia Mono",Consolas,monospace;color:#cfe3fb}
+.tag3d.bus::after{display:none}
+body.no-glass .tag3d{background:var(--sr)}
+#viewMode{position:fixed;left:18px;bottom:16px;z-index:6;display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(9,17,26,.86);border:1px solid rgba(255,255,255,.1)}
+#viewMode button{background:none;border:0;border-radius:999px;min-width:38px;height:26px;cursor:pointer;color:var(--ts);font:600 12px inherit;font-family:inherit}
+#viewMode button:hover{background:rgba(255,255,255,.08)}
+#viewMode button[aria-pressed="true"]{background:rgba(61,158,255,.22);color:#dbeeff}
+#viewMode button:focus-visible{outline:2px solid #7cc4ff}
+#note3d{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;padding:6px 14px;border-radius:999px;font-size:12px;color:#fde3b5;
+  background:rgba(9,17,26,.9);border:1px solid rgba(245,158,11,.4)}
+#note3d[hidden]{display:none}
+body.three{overflow:hidden}
+@media (forced-colors:active){.tag3d{background:Canvas!important;border:1px solid CanvasText!important}#viewMode button[aria-pressed="true"]{outline:2px solid Highlight}}
 #legend .sw.dashed{background:repeating-linear-gradient(90deg,#4a6080 0 5px,transparent 5px 9px)!important}
 </style>
 </head>
@@ -65,12 +94,21 @@ body.no-glass #legend{background:var(--sr);backdrop-filter:none;border:1px solid
   </div>
 </div>
 <svg id="topo"></svg>
+<div id="stage3d" hidden>
+  <canvas id="topo3d" tabindex="0" aria-label="The topology in 3D: each link is a pipe as thick as the lanes it carries. Drag or use the arrow keys to turn it, plus and minus to zoom, Home to reset. The 2D view lists every node as text."></canvas>
+  <div class="cap">Bandwidth topology<small>A thicker pipe carries more lanes · drag to turn · scroll to zoom · hover any block</small></div>
+</div>
+<div id="note3d" role="status" hidden></div>
+<div id="viewMode" role="group" aria-label="Topology view">
+  <button id="view2d" aria-pressed="true">2D</button>
+  <button id="view3d" aria-pressed="false">3D</button>
+</div>
 <script>
 'use strict';
 const COLORS={cpu:'#3d9eff',memory:'#f59e0b',gpu:'#10b981',storage:'#10b981',chipset:'#a78bfa',
   usb:'#2dd4bf',sata:'#fb923c',open:'#4a6080',lan:'#10b981',wifi:'#10b981',slots:'#4a6080'};
 const BG='#0c1620';
-const state={glass:true,motion:true,scan:null,legendGlass:null,ql:null};
+const state={glass:true,motion:true,scan:null,legendGlass:null,ql:null,view:'2d',three:null,threeLoading:null};
 
 function shortCpu(n){return(n||'CPU').replace(/ with Radeon Graphics/i,'').replace(/AMD /i,'').replace(/Intel\(R\) /i,'')}
 
@@ -249,15 +287,11 @@ function render(scan){
     .attr('stroke-dasharray',d=>d.data.dashed?'6,4':null);
   card.append('line').attr('x1',-nodeW/2+14).attr('x2',nodeW/2-14).attr('y1',-nodeH/2+1.2).attr('y2',-nodeH/2+1.2)
     .attr('stroke','#fff').attr('stroke-opacity',.22).attr('stroke-width',1);
-  node.on('mouseenter',(e,d)=>{
-      tip.style.display='block';
-      tip.replaceChildren();
-      const h4=document.createElement('h4');h4.style.color=d.data.color;h4.textContent=d.data.name;tip.appendChild(h4);
-      tip.appendChild(document.createTextNode(d.data.tip||''));
-      if(d.data.bus){const det=document.createElement('div');det.className='tip-detail';det.textContent=d.data.bus+(d.data.bw?' │ '+d.data.bw:'');tip.appendChild(det)}
-    })
-    .on('mousemove',e=>{tip.style.left=Math.min(e.clientX+16,window.innerWidth-360)+'px';tip.style.top=(e.clientY-10)+'px'})
-    .on('mouseleave',()=>{tip.style.display='none'});
+  node.on('mouseenter',(e,d)=>showTip(d))
+    .on('mousemove',e=>moveTip(e.clientX,e.clientY))
+    .on('mouseleave',hideTip);
+  state.root=root;
+  state.three?.setTree(root);
   node.append('text').attr('class','label').attr('text-anchor','middle').attr('dy',-6)
     .text(d=>{const n=d.data.name;return n.length>24?n.slice(0,22)+'…':n});
   node.append('text').attr('class','detail').attr('text-anchor','middle').attr('dy',14).text(d=>d.data.detail||'');
@@ -274,10 +308,71 @@ function render(scan){
   syncGlass();
 }
 
+// The hover card, shared by the flat tree and the 3D one.
+function showTip(d){
+  const tip=document.getElementById('tip');
+  tip.style.display='block';
+  tip.replaceChildren();
+  const h4=document.createElement('h4');h4.style.color=d.data.color;h4.textContent=d.data.name;tip.appendChild(h4);
+  tip.appendChild(document.createTextNode(d.data.tip||''));
+  if(d.data.bus){const det=document.createElement('div');det.className='tip-detail';det.textContent=d.data.bus+(d.data.bw?' │ '+d.data.bw:'');tip.appendChild(det)}
+}
+function moveTip(x,y){const tip=document.getElementById('tip');tip.style.left=Math.min(x+16,window.innerWidth-360)+'px';tip.style.top=(y-10)+'px'}
+function hideTip(){document.getElementById('tip').style.display='none'}
+
+// ---- 2D or 3D: opens in 3D where the browser can draw it, flat where it can't; the choice is remembered. ----
+function note3d(words){
+  const note=document.getElementById('note3d');
+  note.textContent=words||'';note.hidden=!words;
+  clearTimeout(state.noteTimer);
+  if(words)state.noteTimer=setTimeout(()=>{note.hidden=true},9000);
+}
+function showView(){
+  const three=state.view==='3d'&&!!state.three;
+  document.getElementById('topo').toggleAttribute('hidden',three);
+  document.getElementById('stage3d').hidden=!three;
+  document.body.classList.toggle('three',three);
+  document.getElementById('view2d').setAttribute('aria-pressed',String(state.view!=='3d'));
+  document.getElementById('view3d').setAttribute('aria-pressed',String(state.view==='3d'));
+  hideTip();
+  state.three?.show(three);
+}
+function fallBack(why){
+  state.view='2d';
+  if(state.three){try{state.three.show(false);state.three.dispose()}catch{/* already gone */}state.three=null}
+  showView();
+  note3d(why+' Showing the 2D tree.');
+}
+function setView(view,save){
+  state.view=view==='3d'?'3d':'2d';
+  if(save){try{localStorage.setItem('boardscout.topologyView',state.view)}catch{/* storage off */}note3d('')}
+  showView();
+  if(state.view!=='3d'||state.three)return;
+  state.threeLoading??=import('./vendor/board3d/topo3d.js');
+  state.threeLoading.then(lib=>{
+    if(state.three||state.view!=='3d')return;
+    if(!lib.supported()){fallBack("This browser can't draw 3D (no WebGL).");return}
+    state.three=lib.create(document.getElementById('stage3d'),document.getElementById('topo3d'),
+      {onHover:(d,x,y)=>{showTip(d);moveTip(x,y)},onMove:moveTip,onLeave:hideTip,onFail:fallBack});
+    state.three.setMotion(state.motion);
+    showView();
+    if(state.root)state.three.setTree(state.root);
+  }).catch(err=>{console.warn('3D topology unavailable',err);state.threeLoading=null;fallBack("The 3D view couldn't start.")});
+}
+document.getElementById('view2d').onclick=()=>setView('2d',true);
+document.getElementById('view3d').onclick=()=>setView('3d',true);
+{
+  let asked=null,saved=null;
+  try{asked=new URLSearchParams(location.search).get('view')}catch{/* no query */}
+  try{saved=localStorage.getItem('boardscout.topologyView')}catch{/* storage off */}
+  setView(asked==='2d'||asked==='3d'?asked:saved||'3d',false);
+}
+
 function applySettings(s){
   state.glass=!!s.glass;state.motion=!!s.motion;
   document.body.classList.toggle('no-glass',!state.glass);
   document.body.classList.toggle('no-motion',!state.motion);
+  state.three?.setMotion(state.motion);
   syncGlass();
 }
 

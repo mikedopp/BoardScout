@@ -150,7 +150,7 @@ async function loadParts(url) {
   return models;
 }
 
-const AZ = -.2, POL = .74;   // the first look: a little from the left, tilted back
+const AZ = -.16, POL = .6;   // the first look: a little from the left, tilted back
 const COOL = new THREE.Color('#2dd4bf'), WARM = new THREE.Color('#f59e0b'), HOT = new THREE.Color('#ef4444');
 // How a temperature shows: nothing without a reading, teal when cool, amber by 60 °C, red by 90 °C.
 function heat(celsius) {
@@ -181,7 +181,7 @@ export function create(stage, canvas, api) {
   renderer.toneMappingExposure = 1;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(32, 1, 20, 9000);
+  const camera = new THREE.PerspectiveCamera(26, 1, 20, 12000);
   scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x0a1018, .5));
   const key = new THREE.DirectionalLight(0xffffff, 1.9);
   key.position.set(-380, 900, 520);
@@ -235,6 +235,76 @@ export function create(stage, canvas, api) {
     moved: false, intro: true, halo: null, width: 0, height: 0, focusIndex: -1
   };
 
+  // Names and live readings ride above the parts as flat tags that always face the reader: text painted on a
+  // tilted part is small and skewed, a tag is not. The parts that carry a reading always show theirs; the rest
+  // show when hovered, pinned, or when the board is zoomed in.
+  const tags = document.createElement('div');
+  tags.className = 'tags3d';
+  canvas.after(tags);
+  const anchor = new THREE.Vector3();
+  function tagFor(e) {
+    const p = e.p, empty = p.empty || p.tone === 'off';
+    const short = (p.silk || p.name || '').replace(/^(AMD|Intel)\s+/i, '').replace(/\s+chipset$/i, '');
+    let title = p.name, value = e.live || '', rank = 0;
+    if (p.kind === 'cpu') rank = 80;
+    else if (p.kind === 'gpu' && p.zone === 'slots' && !empty) rank = 70;
+    else if (p.kind === 'chipset') { title = short; rank = 55; }
+    else if (p.kind === 'dimm' && !empty) { title = `${p.name}${p.silk ? ' · ' + p.silk.replace(/^DDR\d_/, '') : ''}`; value = e.temp != null ? `${Math.round(e.temp)}°C` : ''; rank = 50; }
+    else if ((p.kind === 'nvme' || p.kind === 'disk') && !empty) { rank = 45; if (!value && e.temp != null) value = `${Math.round(e.temp)}°C`; }
+    else if (p.kind === 'fan') { title = p.silk || p.name; rank = /RPM/.test(value) ? 30 : 0; }
+    else if (empty) title = `${p.silk ? p.silk + ' · ' : ''}${p.tone === 'off' ? 'Off' : 'Open'}`;
+    else if (p.silk && p.silk !== p.name && p.zone !== 'io') title = `${p.silk} · ${p.name}`;
+    if (e.busy) rank = Math.max(rank, 65);
+    if (p.tone === 'warn') rank = Math.max(rank, 60);
+    if (p.id === S.hovered) rank = 90;
+    if (p.id === S.selected) rank = 100;
+    return { title, value, rank };
+  }
+  function placeTags() {
+    const w = S.width, h = S.height;
+    if (!w || !h) return;
+    const near = S.cam.dist < fitDistance(POL) * .62;
+    const list = [];
+    for (const e of S.entries.values()) {
+      const t = tagFor(e);
+      if (t.rank < 20 && !near) { if (e.tag) e.tag.hidden = true; continue; }
+      anchor.set(e.g.position.x, e.top + e.lift + 5, e.g.position.z).project(camera);
+      if (anchor.z > 1 || Math.abs(anchor.x) > 1.05 || Math.abs(anchor.y) > 1.05) { if (e.tag) e.tag.hidden = true; continue; }
+      list.push({ e, t, x: (anchor.x + 1) / 2 * w, y: (1 - anchor.y) / 2 * h });
+    }
+    list.sort((a, b) => b.t.rank - a.t.rank);
+    const taken = [];
+    for (const { e, t, x, y } of list) {
+      if (!e.tag) {
+        e.tag = document.createElement('div');
+        e.tag.className = 'tag3d';
+        e.tag.append(document.createElement('b'), document.createElement('span'));
+        tags.append(e.tag);
+      }
+      const el = e.tag, key = t.title + '|' + t.value;
+      if (el.dataset.key !== key) {
+        el.dataset.key = key;
+        el.firstChild.textContent = t.title;
+        el.lastChild.textContent = t.value;
+        e.tagW = 0;
+      }
+      const hot = t.value && e.temp != null ? heat(e.temp) : null;
+      el.lastChild.style.color = hot ? '#' + hot.color.clone().lerp(new THREE.Color('#ffffff'), .35).getHexString() : '';
+      el.hidden = false;
+      if (!e.tagW) { e.tagW = el.offsetWidth; e.tagH = el.offsetHeight; }
+      const bw = e.tagW, bh = e.tagH;
+      const left = Math.max(4, Math.min(w - bw - 4, x - bw / 2)), top = y - bh - 10;
+      const clash = top < 2 || taken.some(r => left < r[0] + r[2] + 4 && left + bw + 4 > r[0] && top < r[1] + r[3] + 3 && top + bh + 3 > r[1]);
+      if (clash && t.rank < 90) { el.hidden = true; continue; }
+      taken.push([left, top, bw, bh]);
+      el.classList.toggle('sel', e.p.id === S.selected);
+      el.classList.toggle('warn', e.p.tone === 'warn');
+      el.classList.toggle('mute', !!(e.p.empty || e.p.tone === 'off'));
+      el.style.transform = `translate(${Math.round(left)}px,${Math.round(top)}px)`;
+      el.style.setProperty('--stem', `${Math.round(Math.max(6, Math.min(bw - 6, x - left)))}px`);
+    }
+  }
+
   let PARTS = null;
   loadParts(new URL('./parts.glb', import.meta.url)).then(models => { PARTS = models; if (S.o) { buildBoard(); invalidate(); } })
     .catch(err => console.warn('3D part models unavailable; drawing plain blocks', err));
@@ -250,7 +320,7 @@ export function create(stage, canvas, api) {
       probe.lookAt(0, 0, tz);
       probe.updateProjectionMatrix();
       probe.updateMatrixWorld();
-      for (const x of [-hw, hw]) for (const z of [-hh, hh]) for (const y of [0, 100]) {
+      for (const x of [-hw, hw]) for (const z of [-hh, hh]) for (const y of z < 0 ? [0, 100] : [0]) {
         corner.set(x, y, z).project(probe);
         if (Math.abs(corner.x) > .985 || corner.y > .93 || corner.y < -.86) return false;
       }
@@ -294,6 +364,7 @@ export function create(stage, canvas, api) {
     S.routes = [];
     S.halo = null;
     S.memLabel = null;
+    tags.replaceChildren();
   }
 
   function cardLabel(ctx, w, d, e) {
@@ -867,6 +938,7 @@ export function create(stage, canvas, api) {
       }
     }
     renderer.render(scene, camera);
+    placeTags();
     if (moving || lifting) invalidate();
     else if ((flowing || pulsing) && !document.hidden) {
       // Flowing traces need a steady trickle of frames, not every one.
@@ -990,11 +1062,12 @@ export function create(stage, canvas, api) {
     setMotion(on) { S.motion = on; if (!on) S.intro = false; updateLive(false); },
     show(on) {
       S.shown = on;
+      tags.hidden = !on;
       if (on) { S.width = 0; resize(); invalidate(); }
       else { if (S.raf > 0) cancelAnimationFrame(S.raf); S.raf = 0; setHovered(null); }
     },
     zoomBy, reset,
     zoomPercent() { return Math.round(fitDistance(POL) / S.goal.dist * 100); },
-    dispose() { watcher.disconnect(); clear(); renderer.dispose(); }
+    dispose() { watcher.disconnect(); clear(); tags.remove(); renderer.dispose(); }
   };
 }

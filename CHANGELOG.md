@@ -2,7 +2,7 @@
 
 ## 2.15.0 (2026-11-25)
 
-The board stands up: the Overview in 3D.
+The board stands up: the Overview and the Topology in 3D.
 
 ### Added
 - **The Overview board in 3D** (Windows app and browser dashboard). The same board, the same slot names and the
@@ -10,6 +10,14 @@ The board stands up: the Overview in 3D.
   graphics card with its fans, the chipset heatsink, M.2 drives, SATA ports with their cables, the pin headers and
   the rear I/O shroud. Drag to turn it, right-drag (or Shift-drag) to slide it, scroll to zoom, double-click empty
   board to go back to the first view. Hovering and pinning a part work as before, and so does the inspector.
+- **Readings you can read.** Names and live numbers ride above the parts as flat tags that always face you: the
+  processor's load, temperature and watts, the graphics card's temperature and watts, a busy drive's read and
+  write rates, a busy network adapter's speeds, memory sticks, fans with a reading, and anything worth a look.
+  Zoom in, hover or pin a part to see the tags of the rest.
+- **Topology in 3D** (Windows app and browser dashboard). The same tree, with every link drawn as a pipe as thick
+  as the lanes it carries, so the chipset's shared uplink looks like the narrow place it is. The bus and its
+  bandwidth sit on each pipe; hovering a block shows the same card as before. It has the same 2D / 3D switch
+  (bottom left) and the same fall-back.
 - **Heat you can see.** A part that reports a temperature (the processor, the graphics card, the chipset, memory
   sticks with a sensor) glows from teal through amber to red as it warms. A part with no reading does not glow.
 - **Busy links light up.** A drive or network adapter that is moving data lights its trace, and dashes run along it.
