@@ -335,6 +335,10 @@ when you click it twice: it asks Windows to stop that USB drive, exactly as Safe
   through smartctl (`smartctl -x`: SMART READ DATA and log reads on SATA, Get Log Page on NVMe). These are read-only
   commands: no self-test is started, no setting is changed, and a hard disk that has spun down is left asleep unless
   it has gone a week without a reading.
+- **Coolers through liquidctl** (only if you installed [liquidctl](https://github.com/liquidctl/liquidctl) and it is on
+  PATH): BoardScout runs `liquidctl status --json` about every ten seconds while it shows live readings, never
+  `initialize` or a `set` command. Some coolers report nothing until you run `liquidctl initialize all` yourself. With
+  administrator or root rights only a copy in a system folder is run.
 - **Its own writes** go only to its `Data` folder: scans, reports, settings, drive health readings
   (`DriveHealth`), and the web views' profile.
 - **The interrupt measurement** (administrator) is a kernel trace kept in memory; nothing is saved.

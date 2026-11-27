@@ -7,6 +7,7 @@ Sockets, fan headers and liquid coolers.
 ### Added
 - **Processor socket**, as the firmware names it: on the processor on the Overview, and in the PC details. Linux needs root.
 - **Liquid coolers and USB fan/pump controllers**: coolant temperature, pump and fan speeds, duty, flow and every other value the device reports, as a part on the Overview with live readings. Windows reads the devices LibreHardwareMonitor supports; Linux reads the kernel's cooler drivers.
+- **More coolers through liquidctl** (optional, Windows and Linux): when `liquidctl` is on PATH, BoardScout asks it for status only, never to change a setting. With administrator or root rights only a copy in a system folder is run.
 - **Fan speed setting** (PWM percent) beside a header's speed, when the sensor chip reports it (Windows).
 
 ### Changed

@@ -221,7 +221,7 @@ internal sealed partial class Hub
         ssh = Agent is null ? SshTool.Describe() : null,
         tools = OperatingSystem.IsMacOS()
             ? new[] { "system_profiler", "diskutil", "ioreg", "netstat", "scutil", "ssh", "smartctl" }.Select(n => new { name = n, path = Tools.Find(n) }).ToList()
-            : new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "smartctl", "lsblk", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "snap", "flatpak", "dotnet", "udevadm" }
+            : new[] { "iw", "nmcli", "bluetoothctl", "udisksctl", "fwupdmgr", "systemctl", "smartctl", "lsblk", "apt-get", "dnf", "zypper", "pacman", "apk", "dpkg-query", "rpm", "liquidctl", "snap", "flatpak", "dotnet", "udevadm" }
             .Select(n => new { name = n, path = Tools.Find(n) }).Where(t => t.path is not null || t.name is "iw" or "nmcli" or "bluetoothctl" or "udisksctl" or "fwupdmgr" or "systemctl" or "smartctl").ToList()
     };
 

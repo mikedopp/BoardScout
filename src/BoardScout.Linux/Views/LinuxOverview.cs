@@ -205,7 +205,7 @@ internal static class LinuxOverview
         foreach (var (name, rpm) in Sensors.Fans(capture.Sensors))
             parts.Add(new BoardPart("fan-" + Format.ShortHash(name), "fans", "fan", name, rpm > 0 ? $"{rpm} RPM" : "stopped", rpm > 0 ? "good" : "open",
                 [new("Fan", name), new("Speed", $"{rpm} RPM")], Live: "fan:" + name));
-        parts.AddRange(BoardProfiles.Coolers(Sensors.Coolers(capture.Sensors), Scrub));
+        parts.AddRange(BoardProfiles.Coolers(Liquidctl.Merge(Sensors.Coolers(capture.Sensors), waitForFirst: true), Scrub));
         return parts;
     }
 

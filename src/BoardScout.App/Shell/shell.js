@@ -560,6 +560,7 @@ function renderMeta() {
     udevadm: 'Memory slots, on systems where udev\'s cache isn\'t readable', dnf: 'Updates waiting, from dnf\'s cached metadata (Fedora, RHEL)',
     zypper: 'Updates waiting, from cached repositories (openSUSE)', pacman: 'Installed packages and updates waiting against the last sync (Arch)',
     apk: 'Installed packages and updates waiting (Alpine)',
+    liquidctl: 'More liquid coolers, read with "status" only (optional)',
     smartctl: 'Drive health: each drive\'s own SMART counters, read once a day (needs root; sudo boardscout --drive-health)',
     lsblk: 'Drives, serials and mount points for drive health (util-linux)', diskutil: 'Disks, volumes and macOS\'s own SMART verdict'
   };

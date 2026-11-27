@@ -88,7 +88,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 DiskDetail = disks.Detail,
                 CoreLoads = cores,
                 Dimms = _dimms,
-                Coolers = _coolers,
+                Coolers = Liquidctl.Merge(_coolers),
                 Power = power
             };
         }

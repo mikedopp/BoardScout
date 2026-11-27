@@ -114,7 +114,7 @@ internal sealed class Telemetry
             DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
             readings.FirstOrDefault(r => r.Device == "CPU")?.Watts,
             power,
-            BoardProfiles.Live(Sensors.Coolers(chips), text => privacy ? Privacy.Scrub(text) : text));
+            BoardProfiles.Live(Liquidctl.Merge(Sensors.Coolers(chips)), text => privacy ? Privacy.Scrub(text) : text));
         return (header, flow);
     }
 

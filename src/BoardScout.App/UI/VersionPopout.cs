@@ -170,6 +170,10 @@ internal sealed class VersionPopout : Panel, IMessageFilter
                 : "smartmontools (smartctl), for drive health: not installed. Optional: without it only Windows' own drive counters are read. smartmontools.org",
             width: PopoutWidth - 44));
         Add(Detail(@"Drive health history: DriveHealth in the data folder (one line per reading per drive)", width: PopoutWidth - 44));
+        Add(Detail(Services.Liquidctl.Locate() is { } liquidctl
+                ? $"liquidctl, for more liquid coolers (status only): {liquidctl}"
+                : "liquidctl, for more liquid coolers: not found on PATH. Optional. As administrator, only a copy under Program Files is used. github.com/liquidctl/liquidctl",
+            width: PopoutWidth - 44));
         Add(Detail(DriveHealth.AndroidDevices.LocateAdb() is { } adb
                 ? $"adb (Android platform-tools), for the Phones screen: {adb}"
                 : "adb (Android platform-tools), for the Phones screen: not found. Optional: without it the Phones screen has nothing to ask. developer.android.com/tools/releases/platform-tools",
