@@ -903,7 +903,7 @@ public sealed class MainForm : Form
     }
 
     private static int BoardFans(SystemTelemetry? telemetry) =>
-        telemetry?.Fans.Count(f => !f.Name.StartsWith("GPU", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        (telemetry?.Fans.Count(f => !f.Name.StartsWith("GPU", StringComparison.OrdinalIgnoreCase)) ?? 0) + (telemetry?.Coolers.Count ?? 0) * 100;
 
     private void PostOverviewTelemetry(SystemTelemetry telemetry)
     {

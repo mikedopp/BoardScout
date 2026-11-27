@@ -1,4 +1,5 @@
 using System.Globalization;
+using BoardScout.Models;
 using System.Text.RegularExpressions;
 
 namespace BoardScout.Views;
@@ -15,11 +16,48 @@ internal static partial class BoardProfiles
     /// <param name="board">The board's maker and model, as firmware reports it.</param>
     /// <param name="fanHelp">What to say on a fan header without a reading (it differs per edition).</param>
     /// <param name="memoryGb">Installed memory, for what the memory slots say about it.</param>
-    public static Result Apply(string board, IReadOnlyList<BoardPart> parts, string fanHelp, double memoryGb = 0)
+    /// <param name="socket">The processor socket as firmware names it, when it does.</param>
+    public static Result Apply(string board, IReadOnlyList<BoardPart> parts, string fanHelp, double memoryGb = 0, string? socket = null)
     {
         var noted = parts.Select(p => p.Note is null && PartNotes.For(p, memoryGb) is { } note ? p with { Note = note } : p).ToList();
+        if (socket is not null)
+            noted = noted.Select(p => p.Kind != "cpu" ? p : p with
+            {
+                Silk = p.Silk ?? socket,
+                Facts = p.Facts.Prepend(new Fact("Socket", socket)).ToList()
+            }).ToList();
         if (board.Contains("B550M Steel Legend", StringComparison.OrdinalIgnoreCase)) return SteelLegend(noted, fanHelp);
+        // Any board: say the headers weren't read, instead of leaving them off the drawing.
+        if (!noted.Any(p => p.Zone == "fans" && p.Kind == "fan"))
+            noted.Add(new BoardPart("fan-none", "fans", "fan", "Fan headers", "No reading", "info", [], Note: fanHelp));
         return new Result(noted, null, []);
+    }
+
+    /// <summary>One board part per cooler, listing every value it reports.</summary>
+    public static IEnumerable<BoardPart> Coolers(IReadOnlyList<CoolerDevice> coolers, Func<string, string> scrub) =>
+        Live(coolers, scrub).Select((c, i) => new BoardPart(
+            "cooler-" + i, "fans", "cooler", scrub(coolers[i].Name), c.Line, "good", c.Facts.ToList(), Live: c.Key,
+            Note: "Everything this cooler reports over USB. The maker's own software can hold the device and stop these readings."));
+
+    /// <summary>The same readings as they are right now, keyed to the board parts.</summary>
+    public static List<CoolerLive> Live(IReadOnlyList<CoolerDevice> coolers, Func<string, string> scrub) =>
+        coolers.Select((c, i) => new CoolerLive($"cooler:{i}", CoolerLine(c),
+            c.Sensors.Select(s => new Fact(scrub(s.Label),
+                (s.Value.ToString("0.##", CultureInfo.InvariantCulture) + " " + s.Unit).TrimEnd())).ToList())).ToList();
+
+    // The short line on the part: the first temperature (the coolant's) and the pump or first speed.
+    private static string CoolerLine(CoolerDevice cooler)
+    {
+        var temp = cooler.Sensors.FirstOrDefault(s => s.Kind == "temperature");
+        var speed = cooler.Sensors.FirstOrDefault(s => s.Kind == "speed" && s.Label.Contains("Pump", StringComparison.OrdinalIgnoreCase))
+            ?? cooler.Sensors.FirstOrDefault(s => s.Kind == "speed");
+        var words = new[]
+        {
+            temp is null ? null : temp.Value.ToString("0.#", CultureInfo.InvariantCulture) + " °C",
+            speed is null ? null : speed.Value.ToString("0", CultureInfo.InvariantCulture) + " RPM"
+        }.Where(w => w is not null);
+        var line = string.Join(" · ", words);
+        return line.Length > 0 ? line : $"{cooler.Sensors.Count} readings";
     }
 
     private static string Join(string first, string? second) => second is null ? first : first + " " + second;
@@ -125,12 +163,21 @@ internal static partial class BoardProfiles
                     "A free SATA port for an SSD, a hard drive, or an optical drive.", [new("Port", $"SATA3_{port}"), new("Speed", "6 Gb/s")]));
         }
 
-        // Headers along the board's edge. Fan readings, when there are any, already have parts of their own.
-        if (!list.Any(p => p.Zone == "fans"))
-            foreach (var header in new[] { "CPU_FAN", "CPU/WP", "CHA_1", "CHA_2", "CHA_3", "CHA_4" })
+        // Fan headers. Readings have parts of their own, named by the sensor chip, which doesn't say which printed header
+        // each one is; the printed names then go with the other headers rather than being guessed onto readings.
+        var fanHeaders = new[] { "CPU_FAN", "CPU/WP", "CHA_1", "CHA_2", "CHA_3", "CHA_4" };
+        var fansRead = list.Any(p => p.Zone == "fans" && p.Kind == "fan");
+        if (!fansRead)
+            foreach (var header in fanHeaders)
                 list.Add(new BoardPart("fan-" + header.Replace('/', '-').ToLowerInvariant(), "fans", "fan", header, "No reading", "info",
                     [new("Header", header.Contains("WP", StringComparison.Ordinal) ? "4-pin fan or water pump" : "4-pin fan")],
                     Silk: header, Note: fanHelp));
+        else
+            foreach (var header in fanHeaders)
+                list.Add(new BoardPart("hdr-" + header.Replace('/', '-').ToLowerInvariant(), "headers", "header", header,
+                    header.Contains("WP", StringComparison.Ordinal) ? "4-pin fan or water pump" : "4-pin fan", "info",
+                    [new("Header", header)], Silk: header))
+;
         foreach (var (header, what) in new[]
                  {
                      ("USB3", "Front-panel USB 3 ports"), ("USB2", "Front-panel USB 2 ports"), ("F_AUDIO", "Front-panel headphone and microphone jacks"),

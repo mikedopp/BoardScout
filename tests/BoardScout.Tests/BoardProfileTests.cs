@@ -83,7 +83,9 @@ public class BoardProfileTests
 
         Assert.Null(result.Layout);
         Assert.Empty(result.Notes);
-        Assert.Equal(parts.Count, result.Parts.Count);
+        // Only the note that no fan header was read is added.
+        Assert.Equal(parts.Count + 1, result.Parts.Count);
+        Assert.Equal("Fan headers", result.Parts[^1].Name);
         Assert.All(result.Parts, p => Assert.Null(p.Silk));
         // Notes about what a part suits still come along.
         Assert.StartsWith("Plenty of cores", result.Parts.Single(p => p.Kind == "cpu").Note);

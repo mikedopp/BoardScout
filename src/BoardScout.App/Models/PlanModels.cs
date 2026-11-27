@@ -2,6 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace BoardScout.Models;
 
+/// <summary>One value a cooler reports: coolant temperature, pump speed, duty, flow, and whatever else it has.</summary>
+public sealed record CoolerSensor(string Label, string Kind, double Value, string Unit);
+
+/// <summary>A liquid cooler or fan/pump controller that reports over USB, with everything it says.</summary>
+public sealed record CoolerDevice(string Name, IReadOnlyList<CoolerSensor> Sensors);
+
 // Payload for the Connections view's optimization plan. Property names are the JavaScript field names.
 
 public sealed class OptimizationPlan

@@ -73,6 +73,10 @@ internal sealed record HeaderTelemetry(
     double? GpuWatts,
     string SampledAt,
     double? CpuWatts = null,
-    BoardScout.Models.PowerBreakdown? Power = null);
+    BoardScout.Models.PowerBreakdown? Power = null,
+    IReadOnlyList<CoolerLive>? Coolers = null);
+
+/// <summary>A cooler's readings right now: the part's live key, its short line, and every value.</summary>
+internal sealed record CoolerLive(string Key, string Line, IReadOnlyList<Fact> Facts);
 
 internal sealed record HeaderFan(string Name, int Rpm);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using BoardScout.Models;
 
 namespace BoardScout.Platform;
 
@@ -96,8 +97,48 @@ internal static class Sensors
         return result;
     }
 
-    /// <summary>Fans with a name: "CPU fan", "fan2", "Processor Fan" (dell_smm).</summary>
+    // The kernel's drivers for liquid coolers and pump/fan controllers (its own, and liquidtux's).
+    private static readonly string[] CoolerChips =
+        ["nzxt", "kraken", "x53", "z53", "d5next", "octo", "quadro", "aquaero", "highflow", "farbwerk", "leakshield", "corsaircpro", "waterforce", "ryujin"];
+
+    public static bool IsCooler(string chip) => CoolerChips.Any(c => chip.StartsWith(c, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Every value each liquid cooler or pump controller reports.</summary>
+    public static List<CoolerDevice> Coolers(IReadOnlyList<HwmonChip> chips, string root = "/sys/class/hwmon")
+    {
+        var coolers = new List<CoolerDevice>();
+        foreach (var hwmon in Sys.Children(root))
+        {
+            var path = $"{root}/{hwmon}";
+            if (Sys.Read(Path.Combine(path, "name")) is not { } name || !IsCooler(name)) continue;
+            var sensors = new List<CoolerSensor>();
+            foreach (var file in Sys.Children(path).OrderBy(f => f, StringComparer.Ordinal))
+            {
+                var duty = file.Length == 4 && file.StartsWith("pwm", StringComparison.Ordinal) && char.IsAsciiDigit(file[3]);
+                if (!duty && !file.EndsWith("_input", StringComparison.Ordinal)) continue;
+                if (!double.TryParse(Sys.Read(Path.Combine(path, file)), NumberStyles.Float, CultureInfo.InvariantCulture, out var raw)) continue;
+                var stem = duty ? file : file[..file.LastIndexOf('_')];
+                var label = Sys.Read(Path.Combine(path, stem + "_label")) ?? stem;
+                CoolerSensor? sensor =
+                    duty ? new(label, "duty", Math.Round(raw * 100 / 255), "%")
+                    : stem.StartsWith("temp", StringComparison.Ordinal) ? new(label, "temperature", Math.Round(raw / 1000, 1), "°C")
+                    // Flow meters show up as "fan" channels in tenths of a litre per hour.
+                    : stem.StartsWith("fan", StringComparison.Ordinal) && label.Contains("[dL/h]", StringComparison.Ordinal)
+                        ? new(label.Replace(" [dL/h]", ""), "flow", raw / 10, "L/h")
+                    : stem.StartsWith("fan", StringComparison.Ordinal) ? new(label, "speed", raw, "RPM")
+                    : stem.StartsWith("in", StringComparison.Ordinal) ? new(label, "voltage", raw / 1000, "V")
+                    : stem.StartsWith("curr", StringComparison.Ordinal) ? new(label, "current", raw / 1000, "A")
+                    : stem.StartsWith("power", StringComparison.Ordinal) ? new(label, "power", Math.Round(raw / 1_000_000, 2), "W")
+                    : null;
+                if (sensor is not null) sensors.Add(sensor);
+            }
+            if (sensors.Count > 0) coolers.Add(new CoolerDevice(name, sensors));
+        }
+        return coolers;
+    }
+
+    /// <summary>Fans with a name: "CPU fan", "fan2", "Processor Fan" (dell_smm). A cooler's are listed with the cooler.</summary>
     public static List<(string Name, int Rpm)> Fans(IReadOnlyList<HwmonChip> chips) =>
-        chips.SelectMany(c => c.Fans.Select(f => (Name: f.Label.StartsWith("fan", StringComparison.Ordinal) ? $"{c.Name} {f.Label}" : f.Label, Rpm: (int)f.Value)))
+        chips.Where(c => !IsCooler(c.Name)).SelectMany(c => c.Fans.Select(f => (Name: f.Label.StartsWith("fan", StringComparison.Ordinal) ? $"{c.Name} {f.Label}" : f.Label, Rpm: (int)f.Value)))
             .ToList();
 }

@@ -41,6 +41,7 @@ internal static partial class WindowsOverview
             details.Add(new("Motherboard", board));
         if (slots.FirstOrDefault(s => s.Populated) is { ConfiguredMts: > 0 } stick)
             details.Add(new("Memory speed", $"{stick.ConfiguredMts} / {Math.Max(stick.SpeedMts, stick.ConfiguredMts)} MT/s"));
+        if (capture.Firmware.CpuSocket is { } socket) details.Add(new("CPU socket", socket));
         details.Add(new("Storage", $"{capture.DiskFacts.Count} drives · {volumes.Count} volumes"));
         details.Add(new("USB", $"{nodes.Count(n => n.Link?.Bus == "usb" && n.Kind is not ("usb-hub" or "usb-controller"))} attached devices"));
         var problems = nodes.Count(n => n.Problem);
@@ -50,7 +51,7 @@ internal static partial class WindowsOverview
 
         // A board BoardScout knows slot by slot gets its real labels, empty slots, ports, and headers.
         var profile = BoardProfiles.Apply($"{title} {scan?.SystemInfo.Baseboard.Product}", Parts(capture, map, nodes, scan, telemetry, privacy),
-            "No reading: fan speeds need the PawnIO driver and administrator rights. The version button has the details.", memoryGb);
+            "No reading: fan speeds need the PawnIO driver and administrator rights. The version button has the details.", memoryGb, capture.Firmware.CpuSocket);
         var ages = scan is null ? [] : UpgradePlannerService.GetComponentAges(scan).Where(a => a.AgeYears > 0)
             .Select(a => new PartAge(a.Category, privacy ? Privacy.Scrub(a.Name) : a.Name, a.AgeYears, a.Generation, a.Released)).ToList();
 
@@ -262,7 +263,11 @@ internal static partial class WindowsOverview
         // Board fan headers only: the graphics card's own fan isn't on the board.
         foreach (var fan in (telemetry?.Fans ?? []).Where(f => !f.Name.StartsWith("GPU", StringComparison.OrdinalIgnoreCase)))
             parts.Add(new BoardPart("fan-" + ConnectionsService.ShortHash(fan.Name), "fans", "fan", fan.Name, fan.Rpm > 0 ? $"{fan.Rpm} RPM" : "stopped",
-                fan.Rpm > 0 ? "good" : "open", [new("Fan", fan.Name), new("Speed", $"{fan.Rpm} RPM")], Live: "fan:" + fan.Name));
+                fan.Rpm > 0 ? "good" : "open",
+                fan.DutyPercent is { } duty
+                    ? [new("Fan", fan.Name), new("Speed", $"{fan.Rpm} RPM"), new("Set to", $"{duty:0}% when read")]
+                    : [new("Fan", fan.Name), new("Speed", $"{fan.Rpm} RPM")], Live: "fan:" + fan.Name));
+        parts.AddRange(BoardProfiles.Coolers(telemetry?.Coolers ?? [], Scrub));
         return parts;
     }
 
@@ -387,7 +392,8 @@ internal static partial class WindowsOverview
             telemetry.Power.FirstOrDefault(p => p.Device == "GPU") is { } gpu ? Math.Round(gpu.Watts, 1) : null,
             telemetry.SampledAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
             telemetry.Power.FirstOrDefault(p => p.Device == "CPU") is { } cpu ? Math.Round(cpu.Watts, 1) : null,
-            power);
+            power,
+            BoardProfiles.Live(telemetry.Coolers, text => Privacy.Enabled ? Privacy.Scrub(text) : text));
     }
 
     /// <summary>

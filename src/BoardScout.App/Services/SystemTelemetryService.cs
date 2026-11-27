@@ -39,6 +39,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
 
     private Computer? _computer;
     private IReadOnlyList<DimmSpdInfo> _dimms = [];
+    private IReadOnlyList<CoolerDevice> _coolers = [];
     private int _dimmAttempts;
     private int _samplesSinceDimmRead;
     private bool _sensorsFailed;
@@ -87,6 +88,7 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 DiskDetail = disks.Detail,
                 CoreLoads = cores,
                 Dimms = _dimms,
+                Coolers = _coolers,
                 Power = power
             };
         }
@@ -157,6 +159,8 @@ internal sealed partial class SystemTelemetryService : IDisposable
                     IsMotherboardEnabled = true,
                     IsGpuEnabled = true,
                     IsPsuEnabled = true,
+                    // Liquid coolers and fan/pump controllers with a USB link (NZXT, Aqua Computer, MSI and others).
+                    IsControllerEnabled = true,
                     // Memory sticks with a sensor (DDR5, DDR4 with a TSOD) report their temperature over SMBus.
                     IsMemoryEnabled = true
                 };
@@ -169,23 +173,34 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 ReadDimms();
 
             IEnumerable<IHardware> hardware = _lockedSensorHardware ?? (IEnumerable<IHardware>)_computer.Hardware;
+            var coolers = new List<CoolerDevice>();
             foreach (var hw in hardware)
             {
-                var before = thermals.Count + fans.Count + power.Count;
+                var before = thermals.Count + fans.Count + power.Count + coolers.Count;
                 hw.Update();
-                CollectSensors(hw, thermals, fans, power);
-                foreach (var sub in hw.SubHardware)
+                // A cooler's pump and probes stay together under its name, apart from the board's temperatures and fans.
+                if (hw.HardwareType is HardwareType.Cooler)
                 {
-                    sub.Update();
-                    CollectSensors(sub, thermals, fans, power);
+                    foreach (var sub in hw.SubHardware) sub.Update();
+                    if (ReadCooler(hw) is { } cooler) coolers.Add(cooler);
                 }
-                if (_lockedSensorHardware is null && thermals.Count + fans.Count + power.Count > before)
+                else
+                {
+                    CollectSensors(hw, thermals, fans, power);
+                    foreach (var sub in hw.SubHardware)
+                    {
+                        sub.Update();
+                        CollectSensors(sub, thermals, fans, power);
+                    }
+                }
+                if (_lockedSensorHardware is null && thermals.Count + fans.Count + power.Count + coolers.Count > before)
                     _sensorHardware.Add(hw);
             }
 
             if (_lockedSensorHardware is null && ++_discoveryPasses >= SensorDiscoveryPasses)
                 _lockedSensorHardware = [.. _sensorHardware];
 
+            _coolers = coolers;
             UpdateStatus(thermals.Count, fans.Count, null);
         }
         catch (Exception ex)
@@ -194,6 +209,30 @@ internal sealed partial class SystemTelemetryService : IDisposable
             UpdateStatus(0, 0, ex.Message);
         }
         return (thermals, fans, power);
+    }
+
+    private static CoolerDevice? ReadCooler(IHardware hw)
+    {
+        var sensors = new List<CoolerSensor>();
+        foreach (var sensor in hw.Sensors.Concat(hw.SubHardware.SelectMany(s => s.Sensors)).OrderBy(s => s.SensorType).ThenBy(s => s.Index))
+        {
+            if (sensor.Value is not { } value || !float.IsFinite(value)) continue;
+            var (kind, unit) = sensor.SensorType switch
+            {
+                SensorType.Temperature => ("temperature", "°C"),
+                SensorType.Fan => ("speed", "RPM"),
+                SensorType.Control => ("duty", "%"),
+                SensorType.Flow => ("flow", "L/h"),
+                SensorType.Level or SensorType.Load => ("level", "%"),
+                SensorType.Voltage => ("voltage", "V"),
+                SensorType.Current => ("current", "A"),
+                SensorType.Power => ("power", "W"),
+                SensorType.Clock => ("clock", "MHz"),
+                _ => (sensor.SensorType.ToString().ToLowerInvariant(), "")
+            };
+            sensors.Add(new CoolerSensor(sensor.Name, kind, Math.Round(value, 2), unit));
+        }
+        return sensors.Count > 0 ? new CoolerDevice(hw.Name, sensors) : null;
     }
 
     private void ReadDimms()
@@ -246,7 +285,9 @@ internal sealed partial class SystemTelemetryService : IDisposable
                 case SensorType.Fan:
                 {
                     var rpm = (int)sensor.Value.Value;
-                    fans.Add(new FanReading(ClassifyFan(hw, sensor), rpm, rpm > 0));
+                    // The matching control sensor is the speed this header is being told to run at.
+                    var duty = hw.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Control && s.Name == sensor.Name)?.Value;
+                    fans.Add(new FanReading(ClassifyFan(hw, sensor), rpm, rpm > 0, duty is { } d ? Math.Round(d) : null));
                     break;
                 }
                 case SensorType.Power:

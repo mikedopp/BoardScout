@@ -252,6 +252,7 @@ export function create(stage, canvas, api) {
     else if (p.kind === 'dimm' && !empty) { title = `${p.name}${p.silk ? ' · ' + p.silk.replace(/^DDR\d_/, '') : ''}`; value = e.temp != null ? `${Math.round(e.temp)}°C` : ''; rank = 50; }
     else if ((p.kind === 'nvme' || p.kind === 'disk') && !empty) { rank = 45; if (!value && e.temp != null) value = `${Math.round(e.temp)}°C`; }
     else if (p.kind === 'fan') { title = p.silk || p.name; rank = /RPM/.test(value) ? 30 : 0; }
+    else if (p.kind === 'cooler') rank = 60;
     else if (empty) title = `${p.silk ? p.silk + ' · ' : ''}${p.tone === 'off' ? 'Off' : 'Open'}`;
     else if (p.silk && p.silk !== p.name && p.zone !== 'io') title = `${p.silk} · ${p.name}`;
     if (e.busy) rank = Math.max(rank, 65);
@@ -841,6 +842,9 @@ export function create(stage, canvas, api) {
       } else if (p.live?.startsWith('fan:') && t) {
         const fan = (t.fans || []).find(x => 'fan:' + x.name === p.live);
         if (fan) live = fan.rpm > 0 ? `${fan.rpm} RPM` : 'Stopped';
+      } else if (p.live?.startsWith('cooler:') && t) {
+        const cooler = (t.coolers || []).find(c => c.key === p.live);
+        if (cooler) live = cooler.line;
       } else if (p.live?.startsWith('disk:') && f) {
         const d = f.disk?.[p.live.slice(5)];
         busy = !!d && d[0] + d[1] > 1024;

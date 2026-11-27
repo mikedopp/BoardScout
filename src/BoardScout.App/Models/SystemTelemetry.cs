@@ -2,7 +2,8 @@ namespace BoardScout.Models;
 
 public sealed record ThermalReading(string Zone, double TemperatureCelsius);
 
-public sealed record FanReading(string Name, int Rpm, bool Active);
+/// <summary>A fan header's speed, and the speed setting (PWM percent) when the sensor chip reports it.</summary>
+public sealed record FanReading(string Name, int Rpm, bool Active, double? DutyPercent = null);
 
 /// <summary>
 /// Bytes per second toward the CPU (received or read) and away from it (sent or written). OpsIn/OpsOut
@@ -56,6 +57,9 @@ public sealed record SystemTelemetry(
 
     /// <summary>Each memory stick's SPD chip (maker, date, sensor), read once; empty without administrator rights.</summary>
     public IReadOnlyList<BoardScout.Services.DimmSpdInfo> Dimms { get; init; } = [];
+
+    /// <summary>Liquid coolers and USB fan/pump controllers, with every value they report.</summary>
+    public IReadOnlyList<CoolerDevice> Coolers { get; init; } = [];
 
     public ulong MemoryUsedBytes => MemoryTotalBytes > MemoryAvailableBytes
         ? MemoryTotalBytes - MemoryAvailableBytes

@@ -239,12 +239,13 @@ const KIND = {
   cpu: 'Processor', dimm: 'Memory slot', memory: 'Memory', gpu: 'Graphics', nvme: 'NVMe SSD', disk: 'SATA drive', optical: 'Optical drive',
   sata: 'SATA controller', port: 'SATA port', 'usb-controller': 'USB controller', ethernet: 'Ethernet', wifi: 'Wi-Fi', audio: 'Audio',
   bluetooth: 'Bluetooth', chipset: 'Chipset', monitor: 'Display outputs', fan: 'Fan header', slot: 'Expansion slot', device: 'Device',
-  header: 'Header', 'rear-io': 'Rear I/O'
+  header: 'Header', 'rear-io': 'Rear I/O', cooler: 'Liquid cooling'
 };
 const SIDE_COLOR = { cpu: '#3d9eff', chipset: '#a78bfa' };
 function sideOf(p) { return p.side || (/· CPU$/.test(p.detail || '') ? 'cpu' : /· chipset$/.test(p.detail || '') ? 'chipset' : null); }
 function colorOf(p) {
   if (p.kind === 'fan') return p.tone === 'good' ? '#2dd4bf' : '#6b84a3';
+  if (p.kind === 'cooler') return '#38bdf8';
   if (p.kind === 'header' || p.kind === 'rear-io') return '#6b84a3';
   return SIDE_COLOR[sideOf(p)] || '#6b84a3';
 }
@@ -776,6 +777,10 @@ function renderTelemetry() {
       const fan = (t.fans || []).find(f => 'fan:' + f.name === live);
       if (fan) label.textContent = fan.rpm > 0 ? `${fan.rpm} RPM` : 'Stopped';
     }
+    if (live.startsWith('cooler:') && label) {
+      const cooler = (t.coolers || []).find(c => c.key === live);
+      if (cooler) label.textContent = cooler.line;
+    }
   }
   const gpu = state.o.parts.find(p => p.kind === 'gpu' && p.zone === 'slots');
   if (gpu && (t.gpuTemp != null || t.gpuWatts != null)) {
@@ -834,6 +839,10 @@ function updateInspectorLive() {
   else if (p.live?.startsWith('net:') && f?.net?.[p.live.slice(4)]) { const n = f.net[p.live.slice(4)]; words = `Down ${fmtBits(n[0])} · up ${fmtBits(n[1])}`; }
   else if (p.kind === 'gpu' && p.zone === 'slots' && t && (t.gpuTemp != null || t.gpuWatts != null))
     words = [t.gpuTemp != null ? `${Math.round(t.gpuTemp)}°C` : null, t.gpuWatts != null ? `${Math.round(t.gpuWatts)} W` : null].filter(Boolean).join(' · ') + ' right now';
+  if (p.kind === 'cooler') {
+    const cooler = (t?.coolers || []).find(c => c.key === p.live);
+    if (cooler) words = cooler.facts.map(x => `${x.label} ${x.value}`).join(' · ') + ' right now';
+  }
   box.textContent = words;
 }
 

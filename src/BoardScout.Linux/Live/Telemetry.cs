@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using BoardScout.Models;
 using BoardScout.Platform;
+using BoardScout.Services;
 using BoardScout.Views;
 
 namespace BoardScout.Live;
@@ -112,7 +113,8 @@ internal sealed class Telemetry
             Sensors.GpuWatts(chips) is { } watts ? Math.Round(watts, 1) : null,
             DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
             readings.FirstOrDefault(r => r.Device == "CPU")?.Watts,
-            power);
+            power,
+            BoardProfiles.Live(Sensors.Coolers(chips), text => privacy ? Privacy.Scrub(text) : text));
         return (header, flow);
     }
 

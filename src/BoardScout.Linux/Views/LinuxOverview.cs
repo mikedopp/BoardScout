@@ -25,8 +25,10 @@ internal static class LinuxOverview
         // A board BoardScout knows slot by slot gets its real labels, empty slots, ports, and headers.
         var profile = BoardProfiles.Apply($"{title} {capture.Identity.Board}", BoardParts(capture, map, privacy),
             "No reading: Linux reports no fan speed for this header (the board's sensor chip needs a hwmon driver).",
-            capture.Memory.Firmware.MemorySlots.Sum(s => s.SizeMb) / 1024d);
+            capture.Memory.Firmware.MemorySlots.Sum(s => s.SizeMb) / 1024d,
+            capture.Memory.Firmware.CpuSocket);
         var parts = profile.Parts;
+        var socket = capture.Memory.Firmware.CpuSocket;
         var (total, _, _, _) = Cpu.ReadMemory();
         var used = capture.Volumes.Sum(v => v.SizeBytes - v.FreeBytes);
         var details = new List<Fact>();
@@ -38,6 +40,7 @@ internal static class LinuxOverview
         if (capture.Identity.Board is { } board && board != title) details.Add(new("Motherboard", board));
         if (capture.Memory.Firmware.MemorySlots.FirstOrDefault(s => s.Populated) is { ConfiguredMts: > 0 } stick)
             details.Add(new("Memory speed", $"{stick.ConfiguredMts} / {Math.Max(stick.SpeedMts, stick.ConfiguredMts)} MT/s"));
+        if (socket is not null) details.Add(new("CPU socket", socket));
         details.Add(new("Storage", $"{capture.Disks.Count(d => !d.Optical)} drives · {capture.Volumes.Count} mounted filesystems"));
         details.Add(new("USB", $"{capture.UsbDevices.Count(d => !d.IsHub)} attached devices"));
         var problems = LinuxConnections.Walk(map.Snapshot.Root).Count(n => n.Problem);
@@ -202,6 +205,7 @@ internal static class LinuxOverview
         foreach (var (name, rpm) in Sensors.Fans(capture.Sensors))
             parts.Add(new BoardPart("fan-" + Format.ShortHash(name), "fans", "fan", name, rpm > 0 ? $"{rpm} RPM" : "stopped", rpm > 0 ? "good" : "open",
                 [new("Fan", name), new("Speed", $"{rpm} RPM")], Live: "fan:" + name));
+        parts.AddRange(BoardProfiles.Coolers(Sensors.Coolers(capture.Sensors), Scrub));
         return parts;
     }
 

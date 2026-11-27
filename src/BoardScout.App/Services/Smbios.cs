@@ -53,7 +53,8 @@ internal sealed record FirmwareFacts(
     int SlotCount,
     int ChassisType,
     string? SystemMaker,
-    string? SystemProduct)
+    string? SystemProduct,
+    string? CpuSocket = null)
 {
     /// <summary>Desktop, Laptop, Server, or Virtual machine, from the SMBIOS chassis type and maker.</summary>
     public string FormFactor
@@ -89,7 +90,7 @@ internal static partial class Smbios
     {
         var slots = new List<DimmSlot>();
         int slotCount = 0, chassis = 0;
-        string? maker = null, product = null;
+        string? maker = null, product = null, socket = null;
         try
         {
             for (var p = start; p + 4 <= table.Length;)
@@ -110,6 +111,10 @@ internal static partial class Smbios
                     case 1:
                         maker = Text(0x04);
                         product = Text(0x05);
+                        break;
+                    case 4 when length > 0x04:
+                        // The first processor's "Socket Designation": "AM4", "LGA1700", or the board's own label.
+                        socket ??= Text(0x04);
                         break;
                     case 3:
                         chassis = table[p + 5] & 0x7F;
@@ -140,7 +145,7 @@ internal static partial class Smbios
         catch
         {
         }
-        return new FirmwareFacts(slots, slotCount > 0 ? slotCount : slots.Count, chassis, maker, product);
+        return new FirmwareFacts(slots, slotCount > 0 ? slotCount : slots.Count, chassis, maker, product, socket);
     }
 
     // The string set after a structure: null-terminated strings, ended by an extra null.

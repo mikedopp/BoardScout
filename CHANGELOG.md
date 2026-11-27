@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.16.0 (2026-11-27)
+
+Sockets, fan headers and liquid coolers.
+
+### Added
+- **Processor socket**, as the firmware names it: on the processor on the Overview, and in the PC details. Linux needs root.
+- **Liquid coolers and USB fan/pump controllers**: coolant temperature, pump and fan speeds, duty, flow and every other value the device reports, as a part on the Overview with live readings. Windows reads the devices LibreHardwareMonitor supports; Linux reads the kernel's cooler drivers.
+- **Fan speed setting** (PWM percent) beside a header's speed, when the sensor chip reports it (Windows).
+
+### Changed
+- A board's printed fan headers stay listed when fan readings exist.
+- A board with no fan readings says so instead of drawing no fan headers.
+
 ## 2.15.0 (2026-11-25)
 
 The board stands up: the Overview, Topology and Connections in 3D.
