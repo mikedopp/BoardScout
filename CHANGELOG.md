@@ -10,6 +10,7 @@ Sockets, fan headers and liquid coolers.
 - **Fan speed setting** (PWM percent) beside a header's speed, when the sensor chip reports it (Windows).
 
 ### Changed
+- Connections opens on the flat map again, with its drive streams and live dots; 3D is a switch beside the search box.
 - A board's printed fan headers stay listed when fan readings exist.
 - A board with no fan readings says so instead of drawing no fan headers.
 

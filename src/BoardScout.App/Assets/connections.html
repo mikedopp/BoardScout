@@ -1388,7 +1388,7 @@ $('view3d').onclick=()=>setView('3d',true);
   let asked=null,saved=null;
   try{asked=new URLSearchParams(location.search).get('view')}catch{/* no query */}
   try{saved=localStorage.getItem('boardscout.connectionsView')}catch{/* storage off */}
-  setView(asked==='2d'||asked==='3d'?asked:saved||'3d',false);
+  setView(asked==='2d'||asked==='3d'?asked:saved||'2d',false);
 }
 
 // The details panel is QuickLiquid glass while it is open (created on first open: a hidden element has no size).
